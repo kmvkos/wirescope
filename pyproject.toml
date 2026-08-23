@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.141.1",
+    "pydantic==2.13.4",
     "uvicorn==0.52.4",
 ]
 
@@ -17,11 +18,19 @@ dependencies = [
 dev = [
     "httpx==0.28.1",
     "pytest==9.1.1",
+    "scapy==2.7.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["backend*", "config*", "engine*", "sensors*"]
+include = [
+    "backend*",
+    "config*",
+    "engine*",
+    "parsers*",
+    "providers*",
+    "sensors*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

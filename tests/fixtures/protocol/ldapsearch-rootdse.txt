@@ -1,0 +1,5 @@
+dn:
+namingContexts: DC=example,DC=test
+defaultNamingContext: DC=example,DC=test
+dnsHostName: dc1.example.test
+supportedLDAPVersion: 3

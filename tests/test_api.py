@@ -368,3 +368,77 @@ def test_discovery_rejects_unspecified_and_oversize_scope(api_context):
     assert unspecified.json()["detail"]["code"] == "prohibited_target"
     assert ipv6.json()["detail"]["code"] == "prohibited_target"
     assert oversized.json()["detail"]["code"] == "scope_limit_exceeded"
+
+
+def test_protocol_audit_requires_scope_and_inventory(api_context):
+    app, service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+
+    missing_scope = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/protocol-audits",
+        json={},
+    )
+    assert missing_scope.status_code == 422
+    assert missing_scope.json()["detail"]["code"] == "scope_not_confirmed"
+
+    request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={
+            "interface": "eth0",
+            "scope": ["192.0.2.0/24"],
+            "profile": "standard",
+        },
+    )
+    missing_services = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/protocol-audits",
+        json={"modules": ["ssh"]},
+    )
+    assert missing_services.status_code == 422
+    assert missing_services.json()["detail"]["code"] == "inventory_empty"
+
+    from parsers.nmap import parse_nmap_xml
+    from tests.fixtures.nmap import fixture_path
+
+    app.state.inventory.ingest_nmap_document(
+        audit_id=audit_id,
+        job_id=None,
+        document=parse_nmap_xml(fixture_path("linux_host.xml")),
+    )
+    gated = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/protocol-audits",
+        json={"modules": ["nuclei"]},
+    )
+    unknown = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/protocol-audits",
+        json={"modules": ["ftp-brute"]},
+    )
+    extra_flags = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/protocol-audits",
+        json={"modules": ["ssh"], "raw_flags": "-sC --script vuln"},
+    )
+    assert gated.status_code == 422
+    assert gated.json()["detail"]["code"] == "module_gated"
+    assert unknown.json()["detail"]["code"] == "unknown_module"
+    assert extra_flags.status_code == 202
+    job = service.get_job(extra_flags.json()["job_id"])
+    assert job.type == "protocol_audit"
+    assert job.parameters["modules"] == ["ssh"]
+    assert "raw_flags" not in job.parameters
+    assert job.resource_key == f"audit:{audit_id}"
+    assert job.resource_group == "protocol_audit"
+    listing = request(app, "GET", f"/api/audits/{audit_id}/observations")
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 0
+    assert listing.json()["items"] == []

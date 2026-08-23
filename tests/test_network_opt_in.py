@@ -13,3 +13,14 @@ def test_live_active_discovery_requires_explicit_scope():
             "live active discovery tests"
         )
     pytest.skip("Live Nmap execution is reserved for an explicit lab scope")
+
+
+@pytest.mark.network
+def test_live_protocol_audit_is_opt_in():
+    scope = os.getenv("WIRESCOPE_LIVE_SCOPE")
+    if not scope:
+        pytest.skip(
+            "Set WIRESCOPE_LIVE_SCOPE to an explicit authorized target to run "
+            "live protocol-audit tests"
+        )
+    pytest.skip("Live protocol probes are reserved for an explicit lab scope")

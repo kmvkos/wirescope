@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="arp-response"/>
+<address addr="192.0.2.10" addrtype="ipv4"/>
+<address addr="00:11:22:33:44:55" addrtype="mac" vendor="CIMSYS Inc"/>
+<hostnames><hostname name="linux.example.test" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="OpenSSH" version="8.9p1" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http" product="nginx" version="1.22.1" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https" product="nginx" tunnel="ssl" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="389"><state state="open" reason="syn-ack"/><service name="ldap" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="445"><state state="open" reason="syn-ack"/><service name="microsoft-ds" method="probed" conf="10"/></port>
+<port protocol="udp" portid="53"><state state="open" reason="udp-response"/><service name="domain" product="ISC BIND" method="probed" conf="10"/></port>
+<port protocol="udp" portid="161"><state state="open" reason="udp-response"/><service name="snmp" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="21"><state state="open" reason="syn-ack"/><service name="ftp" product="vsftpd" method="probed" conf="10"/></port>
+</ports>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="1.20" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

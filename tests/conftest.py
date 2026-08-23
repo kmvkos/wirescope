@@ -19,6 +19,7 @@ def durable_settings(tmp_path):
         runtime_dir=tmp_path / "data" / "runtime",
         capture_dir=tmp_path / "data" / "runtime" / "captures",
         nmap_runtime_dir=tmp_path / "data" / "runtime" / "nmap",
+        protocol_runtime_dir=tmp_path / "data" / "runtime" / "protocol",
         worker_poll_interval_seconds=0.02,
         worker_heartbeat_interval_seconds=0.05,
         worker_stale_after_seconds=2,

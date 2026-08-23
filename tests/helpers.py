@@ -1,6 +1,16 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from engine.passive_models import ConfidenceLevel
+from inventory.models import (
+    AssetAddressRecord,
+    AssetNameRecord,
+    AssetRecord,
+    AssetState,
+    DeviceClassHint,
+    ServiceRecord,
+)
+from protocol_audits.models import ProbeTarget
 from providers.tools import ToolError, ToolErrorCode, ToolResult
 
 
@@ -64,3 +74,158 @@ def xml_writer(xml, tmp_path: Path):
         return tool_result(tool="nmap")
 
     return factory
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+def sample_service(
+    *,
+    port: int = 22,
+    protocol: str = "tcp",
+    name: str | None = "ssh",
+    product: str | None = "OpenSSH",
+    state: str = "open",
+    tunnel: str | None = None,
+    asset_id: str = "asset-1",
+    service_id: str = "svc-1",
+) -> ServiceRecord:
+    now = utcnow()
+    return ServiceRecord(
+        id=service_id,
+        audit_id="audit-1",
+        asset_id=asset_id,
+        protocol=protocol,
+        port=port,
+        state=state,
+        reason="syn-ack",
+        service_name=name,
+        product=product,
+        version=None,
+        extra_info=None,
+        tunnel=tunnel,
+        cpe=[],
+        banner=None,
+        method="probed",
+        confidence=ConfidenceLevel.HIGH,
+        source="nmap",
+        first_seen=now,
+        last_seen=now,
+    )
+
+
+def sample_asset(
+    *,
+    address: str = "192.0.2.10",
+    hostname: str = "linux.example.test",
+    asset_id: str = "asset-1",
+) -> AssetRecord:
+    now = utcnow()
+    return AssetRecord(
+        id=asset_id,
+        audit_id="audit-1",
+        state=AssetState.RESPONSIVE,
+        mac="00:11:22:33:44:55",
+        vendor=None,
+        vendor_source=None,
+        vendor_database_version=None,
+        device_class_hint=DeviceClassHint.UNKNOWN,
+        device_class_confidence=ConfidenceLevel.UNKNOWN,
+        os_family=None,
+        os_name=None,
+        os_generation=None,
+        os_accuracy=None,
+        first_seen=now,
+        last_seen=now,
+        metadata={},
+        addresses=[
+            AssetAddressRecord(
+                id="addr-1",
+                asset_id=asset_id,
+                address=address,
+                family=4 if ":" not in address else 6,
+                is_primary=True,
+                first_seen=now,
+                last_seen=now,
+                source="nmap",
+                confidence=ConfidenceLevel.HIGH,
+            )
+        ],
+        names=[
+            AssetNameRecord(
+                id="name-1",
+                asset_id=asset_id,
+                name=hostname,
+                name_type="ptr",
+                source="nmap",
+                confidence=ConfidenceLevel.MEDIUM,
+                first_seen=now,
+                last_seen=now,
+            )
+        ],
+    )
+
+
+def sample_target(**kwargs) -> ProbeTarget:
+    service = kwargs.pop("service", None) or sample_service()
+    asset = kwargs.pop("asset", None) or sample_asset()
+    return ProbeTarget(
+        asset=asset,
+        service=service,
+        address=kwargs.get("address", asset.addresses[0].address),
+        port=kwargs.get("port", service.port),
+        hostname=kwargs.get("hostname", "linux.example.test"),
+        scheme_hint=kwargs.get("scheme_hint"),
+    )
+
+
+class ProtocolRecordingRunner:
+    VERSION_ARGS = {"--version", "-v", "-V", "-VV", "version"}
+
+    def __init__(self, outputs=None, missing=(), versions=None):
+        self.commands = []
+        self.outputs = outputs or {}
+        self.missing = set(missing)
+        self.versions = versions or {}
+
+    def run(self, command, cancellation_token=None):
+        self.commands.append(command)
+        if cancellation_token is not None and cancellation_token.cancelled:
+            return tool_result(
+                tool=command.tool,
+                success=False,
+                exit_code=None,
+                error=ToolError(
+                    code=ToolErrorCode.CANCELLED,
+                    message="cancelled",
+                ),
+            ).model_copy(update={"cancelled": True})
+        tool = Path(command.tool).name
+        if tool in self.missing:
+            return tool_result(
+                tool=command.tool,
+                success=False,
+                exit_code=None,
+                error=ToolError(
+                    code=ToolErrorCode.MISSING_BINARY,
+                    message=f"Tool not found: {command.tool}",
+                ),
+            )
+        if self.VERSION_ARGS.intersection(command.args):
+            version = self.versions.get(tool, f"{tool} 3.2.0")
+            return tool_result(tool=command.tool, stdout=version)
+        output = self.outputs.get(tool)
+        if callable(output):
+            return output(command)
+        if output is None:
+            return tool_result(tool=command.tool, stdout="")
+        if isinstance(output, list):
+            index = sum(1 for item in self.commands if Path(item.tool).name == tool and not self.VERSION_ARGS.intersection(item.args)) - 1
+            chosen = output[min(index, len(output) - 1)]
+            if isinstance(chosen, ToolResult):
+                return chosen
+            return tool_result(tool=command.tool, stdout=chosen)
+        if isinstance(output, ToolResult):
+            return output
+        return tool_result(tool=command.tool, stdout=output)

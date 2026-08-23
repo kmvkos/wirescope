@@ -1,0 +1,7 @@
+; <<>> DiG 9.18.28 <<>> @192.0.2.10 +norecurse id.server CH TXT
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12346
+;; flags: qr aa ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; ANSWER SECTION:
+id.server.		0	CH	TXT	"ns1.example.test"

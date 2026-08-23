@@ -1,0 +1,12 @@
+; <<>> DiG 9.18.28-1~deb12u2-Debian <<>> @192.0.2.10 +norecurse version.bind CH TXT
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12345
+;; flags: qr aa ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; ANSWER SECTION:
+version.bind.		0	CH	TXT	"BIND 9.18.12"
+
+;; Query time: 1 msec
+;; SERVER: 192.0.2.10#53(192.0.2.10) (UDP)
+;; MSG SIZE  rcvd: 64

@@ -1,0 +1,23 @@
+CONNECTED(00000003)
+---
+Certificate chain
+ 0 s:CN = linux.example.test
+   i:CN = Example Test CA
+---
+subject=CN = linux.example.test
+issuer=CN = Example Test CA
+notBefore=Jan  1 00:00:00 2026 GMT
+notAfter=Jan  1 00:00:00 2027 GMT
+---
+SSL handshake has read 1234 bytes and written 390 bytes
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID:
+    Session-ID-ctx:
+    Master-Key:
+    PSK identity: None
+Verify return code: 18 (self signed certificate)
+---

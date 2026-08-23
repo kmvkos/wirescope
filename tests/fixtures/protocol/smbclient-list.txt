@@ -1,0 +1,8 @@
+Anonymous login successful
+
+	Sharename       Type      Comment
+	---------       ----      -------
+	IPC$            IPC       IPC Service
+	print$          Disk      Printer Drivers
+
+SMB1 disabled -- no workgroup available

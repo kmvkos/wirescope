@@ -22,6 +22,11 @@ def _env_int(name: str, default: int) -> int:
     return int(raw_value) if raw_value is not None else default
 
 
+def _env_float(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    return float(raw_value) if raw_value is not None else default
+
+
 def _env_list(name: str) -> tuple[str, ...]:
     raw_value = os.getenv(name, "")
     return tuple(
@@ -39,6 +44,9 @@ class Settings:
     frontend_dir: Path
     data_dir: Path
     capture_dir: Path
+    database_path: Path
+    evidence_dir: Path
+    runtime_dir: Path
     docs_enabled: bool
     allowed_interfaces: tuple[str, ...]
     allow_loopback: bool
@@ -50,14 +58,53 @@ class Settings:
     capture_max_filesize_kb: int
     capture_snaplen: int
     capture_promiscuous: bool
+    passive_retain_capture: bool
+    worker_concurrency: int
+    max_packet_captures: int
+    worker_poll_interval_seconds: float
+    worker_heartbeat_interval_seconds: float
+    worker_stale_after_seconds: int
+    sqlite_busy_timeout_ms: int
+    job_event_retention_days: int
+    temp_file_max_age_seconds: int
     dumpcap_binary: str
     tshark_binary: str
+
+    def __post_init__(self) -> None:
+        if self.passive_duration_min < 1:
+            raise ValueError("passive_duration_min must be positive")
+        if self.passive_duration_max < self.passive_duration_min:
+            raise ValueError("passive_duration_max must not be below minimum")
+        if not (
+            self.passive_duration_min
+            <= self.passive_duration_default
+            <= self.passive_duration_max
+        ):
+            raise ValueError("passive_duration_default is outside policy")
+        if self.worker_concurrency < 1:
+            raise ValueError("worker_concurrency must be at least one")
+        if self.max_packet_captures < 1:
+            raise ValueError("max_packet_captures must be at least one")
+        if self.sqlite_busy_timeout_ms < 1:
+            raise ValueError("sqlite_busy_timeout_ms must be positive")
+
+    @property
+    def database_url(self) -> str:
+        return f"sqlite+pysqlite:///{self.database_path}"
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     default_root = Path(__file__).resolve().parents[1]
     project_root = _env_path("WIRESCOPE_ROOT", default_root)
+    data_dir = _env_path(
+        "WIRESCOPE_DATA_DIR",
+        project_root / "data",
+    )
+    runtime_dir = _env_path(
+        "WIRESCOPE_RUNTIME_DIR",
+        data_dir / "runtime",
+    )
 
     return Settings(
         app_name="WireScope",
@@ -67,14 +114,20 @@ def get_settings() -> Settings:
             "WIRESCOPE_FRONTEND_DIR",
             project_root / "frontend",
         ),
-        data_dir=_env_path(
-            "WIRESCOPE_DATA_DIR",
-            project_root / "data",
-        ),
+        data_dir=data_dir,
         capture_dir=_env_path(
             "WIRESCOPE_CAPTURE_DIR",
-            project_root / "data" / "runtime" / "captures",
+            runtime_dir / "captures",
         ),
+        database_path=_env_path(
+            "WIRESCOPE_DATABASE_PATH",
+            data_dir / "wirescope.db",
+        ),
+        evidence_dir=_env_path(
+            "WIRESCOPE_EVIDENCE_DIR",
+            data_dir / "evidence",
+        ),
+        runtime_dir=runtime_dir,
         docs_enabled=_env_bool("WIRESCOPE_DOCS_ENABLED", True),
         allowed_interfaces=_env_list("WIRESCOPE_ALLOWED_INTERFACES"),
         allow_loopback=_env_bool("WIRESCOPE_ALLOW_LOOPBACK", False),
@@ -100,6 +153,36 @@ def get_settings() -> Settings:
         capture_promiscuous=_env_bool(
             "WIRESCOPE_CAPTURE_PROMISCUOUS",
             False,
+        ),
+        passive_retain_capture=_env_bool(
+            "WIRESCOPE_PASSIVE_RETAIN_CAPTURE",
+            False,
+        ),
+        worker_concurrency=_env_int("WIRESCOPE_WORKER_CONCURRENCY", 1),
+        max_packet_captures=_env_int("WIRESCOPE_MAX_PACKET_CAPTURES", 1),
+        worker_poll_interval_seconds=_env_float(
+            "WIRESCOPE_WORKER_POLL_INTERVAL_SECONDS",
+            0.5,
+        ),
+        worker_heartbeat_interval_seconds=_env_float(
+            "WIRESCOPE_WORKER_HEARTBEAT_INTERVAL_SECONDS",
+            5.0,
+        ),
+        worker_stale_after_seconds=_env_int(
+            "WIRESCOPE_WORKER_STALE_AFTER_SECONDS",
+            20,
+        ),
+        sqlite_busy_timeout_ms=_env_int(
+            "WIRESCOPE_SQLITE_BUSY_TIMEOUT_MS",
+            5_000,
+        ),
+        job_event_retention_days=_env_int(
+            "WIRESCOPE_JOB_EVENT_RETENTION_DAYS",
+            30,
+        ),
+        temp_file_max_age_seconds=_env_int(
+            "WIRESCOPE_TEMP_FILE_MAX_AGE_SECONDS",
+            86_400,
         ),
         dumpcap_binary=os.getenv("WIRESCOPE_DUMPCAP_BINARY", "dumpcap"),
         tshark_binary=os.getenv("WIRESCOPE_TSHARK_BINARY", "tshark"),

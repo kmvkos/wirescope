@@ -1,0 +1,270 @@
+"""Minimal durable schema for audits, jobs, events, and artifacts."""
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class AuditModel(Base):
+    __tablename__ = "audits"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('created','running','completed','failed',"
+            "'cancelled','interrupted')",
+            name="ck_audits_status",
+        ),
+        Index("ix_audits_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    profile: Mapped[str] = mapped_column(String(64), nullable=False)
+    interface: Mapped[str | None] = mapped_column(String(64))
+    scope_json: Mapped[dict[str, Any]] = mapped_column(
+        "scope",
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    actor: Mapped[str | None] = mapped_column(String(128))
+    environment_snapshot_reference: Mapped[str | None] = mapped_column(
+        String(36)
+    )
+    summary: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    jobs: Mapped[list["JobModel"]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+    )
+    artifacts: Mapped[list["ArtifactModel"]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+    )
+
+
+class JobModel(Base):
+    __tablename__ = "jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued','running','completed','failed',"
+            "'cancelled','interrupted')",
+            name="ck_jobs_status",
+        ),
+        CheckConstraint(
+            "progress >= 0 AND progress <= 100",
+            name="ck_jobs_progress",
+        ),
+        Index(
+            "ix_jobs_queue_claim",
+            "status",
+            "priority",
+            "created_at",
+        ),
+        Index("ix_jobs_audit_created", "audit_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    stage: Mapped[str] = mapped_column(
+        String(64),
+        default="queued",
+        nullable=False,
+    )
+    message: Mapped[str | None] = mapped_column(String(512))
+    target: Mapped[str | None] = mapped_column(String(512))
+    parameters: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    result_reference: Mapped[str | None] = mapped_column(String(36))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_category: Mapped[str | None] = mapped_column(String(32))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    error_component: Mapped[str | None] = mapped_column(String(128))
+    error_retryable: Mapped[bool | None] = mapped_column(Boolean)
+    error_details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    worker_id: Mapped[str | None] = mapped_column(String(128))
+    attempt: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    resource_key: Mapped[str | None] = mapped_column(String(256))
+    resource_group: Mapped[str | None] = mapped_column(String(64))
+    resource_limit: Mapped[int | None] = mapped_column(Integer)
+
+    audit: Mapped[AuditModel] = relationship(back_populates="jobs")
+    events: Mapped[list["JobEventModel"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
+    artifacts: Mapped[list["ArtifactModel"]] = relationship(
+        back_populates="job",
+    )
+
+
+class JobEventModel(Base):
+    __tablename__ = "job_events"
+    __table_args__ = (
+        Index("ix_job_events_job_created", "job_id", "created_at"),
+        Index("ix_job_events_audit_created", "audit_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage: Mapped[str | None] = mapped_column(String(64))
+    progress: Mapped[int | None] = mapped_column(Integer)
+    message: Mapped[str] = mapped_column(String(512), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+
+    job: Mapped[JobModel] = relationship(back_populates="events")
+
+
+class ArtifactModel(Base):
+    __tablename__ = "artifacts"
+    __table_args__ = (
+        CheckConstraint(
+            "retention_class IN ('temporary','audit','debug','report')",
+            name="ck_artifacts_retention_class",
+        ),
+        UniqueConstraint("relative_path", name="uq_artifacts_relative_path"),
+        Index("ix_artifacts_audit_created", "audit_id", "created_at"),
+        Index("ix_artifacts_job_created", "job_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL")
+    )
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    retention_class: Mapped[str] = mapped_column(String(20), nullable=False)
+    schema_name: Mapped[str | None] = mapped_column(String(64))
+    schema_version: Mapped[int | None] = mapped_column(Integer)
+
+    audit: Mapped[AuditModel] = relationship(back_populates="artifacts")
+    job: Mapped[JobModel | None] = relationship(back_populates="artifacts")
+
+
+class ResourceLockModel(Base):
+    __tablename__ = "resource_locks"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_resource_locks_job_id"),
+        Index("ix_resource_locks_group", "resource_group"),
+    )
+
+    resource_key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    resource_group: Mapped[str | None] = mapped_column(String(64))
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    worker_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+
+class WorkerModel(Base):
+    __tablename__ = "workers"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('starting','idle','running','stopped')",
+            name="ck_workers_status",
+        ),
+        Index("ix_workers_heartbeat", "heartbeat_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    heartbeat_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    current_job_id: Mapped[str | None] = mapped_column(String(36))

@@ -228,23 +228,38 @@ Every external tool invocation produces:
 - timeout and cancellation state;
 - normalized error category.
 
-## Passive parsing direction
+## Passive pipeline
 
-Milestone 1 will replace repeated pcap reads with:
+Milestone 1 uses a fixed two-process budget for a normal live scan:
 
 ```text
-dumpcap capture once
+validated interface
     ↓
-small number of tshark structured-output passes
+dumpcap capture once → bounded temporary pcap
     ↓
-normalized packet/event representation
+tshark -T ek -l -n decode once → line-oriented structured output
     ↓
-independent sensors
+normalized PacketRecord collection
+    ↓
+independent in-process sensors
+    ↓
+assessment with explicit confidence and evidence references
 ```
 
-The implementation will be benchmarked on representative small pcaps before a
-Python packet library is considered. Avoiding twenty subprocesses is required;
-replacing a mature decoder with a large custom parser is not.
+`dumpcap` is responsible only for capture. `tshark` is responsible only for
+decoding an existing pcap. Sensors never invoke either tool. A pcap-only
+analysis therefore uses one subprocess; a live capture plus analysis uses two.
+Tool-version discovery may be cached outside the per-scan budget.
+
+EK was selected because it is line-oriented and can be written to a bounded
+temporary decode file instead of materializing a large JSON array in memory.
+The parser reads that file incrementally and normalizes field names while
+retaining raw field values for protocol-specific sensors. Capture duration,
+packet count, pcap size, and command output are bounded for Raspberry Pi.
+
+Supplemental decode passes are not part of the default design. If a required
+field cannot be represented by EK, an exception must be benchmarked,
+documented, and instrumented rather than added inside an individual sensor.
 
 ## Privilege model
 

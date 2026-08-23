@@ -6,9 +6,9 @@ systems on AMD64.
 
 The current `0.1.0` codebase is an early prototype being stabilized in
 milestones. It can inspect the host network environment, capture through
-`dumpcap`, and decode one normalized stream for fourteen passive sensors.
-Audit sessions, jobs, progress, events, cancellation, and result artifacts are
-durable across backend restarts. Active discovery, findings, reporting,
+`dumpcap`, decode one normalized stream for fourteen passive sensors, persist
+durable jobs, run authorized active discovery into an asset/service inventory,
+and enqueue service-aware protocol audits. Findings, reporting,
 authentication, and appliance deployment are planned work and are not
 complete.
 
@@ -22,6 +22,8 @@ complete.
 - `providers/` — controlled external-tool and packet-capture boundaries.
 - `parsers/` — single-pass tshark EK decoding.
 - `sensors/` — passive protocol sensors.
+- `inventory/` — authorized scope, assets, services, and correlation.
+- `protocol_audits/` — inventory-driven protocol modules and observations.
 - `frontend/` — minimal environment dashboard.
 - `config/` — centralized application paths and runtime settings.
 - `tests/` — tests that do not require live packet capture.
@@ -80,7 +82,7 @@ Run tests:
 ```bash
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
-  parsers persistence providers sensors storage tests
+  parsers persistence protocol_audits providers sensors storage tests
 .venv/bin/pip check
 ```
 
@@ -117,6 +119,16 @@ through the `wireshark` group. See
   to one.
 - `WIRESCOPE_MAX_ACTIVE_DISCOVERY_JOBS` — concurrent Nmap pipelines; defaults
   to one.
+- `WIRESCOPE_MAX_PROTOCOL_AUDIT_JOBS` — concurrent protocol-audit jobs;
+  defaults to one.
+- `WIRESCOPE_PROTOCOL_AUDIT_CONCURRENCY` — in-job module parallelism; defaults
+  to one and cannot exceed four.
+- `WIRESCOPE_PROTOCOL_AUDIT_TIMEOUT_SECONDS` — per-invocation tool timeout
+  ceiling; defaults to 20.
+- `WIRESCOPE_SSH_AUDIT_BINARY`, `WIRESCOPE_OPENSSL_BINARY`,
+  `WIRESCOPE_CURL_BINARY`, `WIRESCOPE_DIG_BINARY`,
+  `WIRESCOPE_SMBCLIENT_BINARY`, `WIRESCOPE_SNMPGET_BINARY`,
+  `WIRESCOPE_LDAPSEARCH_BINARY` — protocol-audit tool names or paths.
 - `WIRESCOPE_DISCOVERY_MAX_TARGETS`, `WIRESCOPE_STANDARD_MAX_TARGETS`,
   `WIRESCOPE_DEEP_MAX_TARGETS`, `WIRESCOPE_IPV6_MAX_TARGETS` — authorized
   scope address caps.

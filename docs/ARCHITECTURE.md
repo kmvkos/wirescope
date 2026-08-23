@@ -43,7 +43,8 @@ backend/app.py
     ├── engine/routes.py
     ├── jobs/  +  persistence/  +  storage/
     ├── engine/passive.py
-    └── inventory/
+    ├── inventory/
+    └── protocol_audits/
 ```
 
 ### `backend/`
@@ -133,8 +134,8 @@ The `/24` grouping is a hint and is not treated as a discovered subnet mask.
 persists audits, jobs, progress, events, worker heartbeats, and resource locks
 through short SQLAlchemy sessions. `JobWorker` claims queued work atomically
 and dispatches it through `HandlerRegistry`; handlers never appear in an
-`if/elif` chain. `passive_discovery` and `active_discovery` are registered
-handlers.
+`if/elif` chain. `passive_discovery`, `active_discovery`, and
+`protocol_audit` are registered handlers.
 
 `EvidenceStore` writes generated files under a controlled root using a
 temporary suffix, `fsync`, and atomic replacement. SQLite stores only metadata,
@@ -144,6 +145,13 @@ a database BLOB.
 `InventoryService` owns confirmed scopes, assets, addresses, names, services,
 vendor lookup, and deterministic MAC/IP correlation. Job status never inlines
 the inventory; clients use the dedicated inventory endpoints.
+
+`protocol_audits/` is the Milestone 4 plugin package. Each module declares
+service predicates, a required tool, safety class, argv-only command builder,
+and a parser that emits normalized observations. `ProtocolAuditHandler`
+dispatches modules only when inventory services match. Raw tool output is an
+evidence artifact; `protocol_observations` rows are bounded JSON facts, not
+findings.
 
 ### `frontend/`
 
@@ -163,10 +171,12 @@ backend contracts incrementally and must remain usable at 480×320.
 - `GET /api/audits/{audit_id}`
 - `POST /api/audits/{audit_id}/passive`
 - `POST /api/audits/{audit_id}/discovery`
+- `POST /api/audits/{audit_id}/protocol-audits`
 - `GET /api/audits/{audit_id}/assets`
 - `GET /api/audits/{audit_id}/assets/{asset_id}`
 - `GET /api/audits/{audit_id}/services`
 - `GET /api/audits/{audit_id}/inventory`
+- `GET /api/audits/{audit_id}/observations`
 - `GET /api/audits/{audit_id}/jobs`
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs`
@@ -383,7 +393,8 @@ capabilities. Capture arguments, interface names, durations, and output paths
 are validated before invocation. Active discovery uses Nmap only after scope
 and route validation. If `CAP_NET_RAW` is absent, the Nmap provider falls back
 to TCP connect scans and skips ARP, UDP, and OS detection instead of
-elevating the backend.
+elevating the backend. Protocol audits run unprivileged against confirmed
+inventory addresses only and never raise process capabilities.
 
 The verified Debian development configuration is:
 
@@ -414,7 +425,9 @@ Current tables:
 - `workers` — process/thread heartbeat and readiness state;
 - `confirmed_scopes` — immutable authorized active-scan snapshots;
 - `assets`, `asset_addresses`, `asset_names`, `services`,
-  `asset_observations` — inventory with provenance.
+  `asset_observations` — inventory with provenance;
+- `protocol_observations` — idempotent protocol facts with confidence,
+  bounded JSON data, and evidence artifact references.
 
 SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
 `synchronous=FULL` by default for appliance power-loss durability. Scanner work
@@ -517,8 +530,9 @@ and listening interfaces are explicit deployment settings.
 ## Known transitional debt
 
 - authentication and authorization are absent;
-- active audit scope validation does not exist yet;
 - frontend supports environment display only;
+- protocol observations are inventory enrichment, not findings; the findings
+  engine remains Milestone 5;
 - structured logs include audit/job context in the worker, but there is no
   separate security audit-log table yet;
 - retention cleanup is conservative and does not yet delete completed audits

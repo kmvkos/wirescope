@@ -388,26 +388,32 @@ Status: implemented on `milestone-3-active-discovery`. See
 
 ## Milestone 4 — Service-aware protocol audits
 
+Status: implemented on `milestone-4-protocol-audits`. See
+[SCANNING_MODEL.md](SCANNING_MODEL.md#protocol-audits).
+
 Create a provider/plugin interface with:
 
 - supported service predicates;
 - required tool and minimum version;
-- safety classification;
-- command builder;
-- parser;
-- normalized observations;
+- safety classification (`safe` / `gated` / `never-default`);
+- command builder (argv arrays only);
+- parser independent of persistence;
+- normalized observations with confidence;
 - timeout and resource budget;
 - fixture tests.
 
 Initial modules:
 
-1. SSH: `ssh-audit`, selected Nmap NSE.
-2. TLS: OpenSSL first, optional testssl.sh, selected NSE.
-3. HTTP: curl metadata and safe checks; optional Nikto/Nuclei profiles.
-4. SMB: smbclient/rpcclient/enum4linux-ng and selected NSE.
-5. DNS: dig and selected NSE.
-6. SNMP: explicitly scoped read-only queries.
-7. LDAP/AD: ldapsearch and TLS configuration.
+1. SSH: `ssh-audit` non-intrusive fingerprinting. No brute force.
+2. TLS: OpenSSL `s_client` handshake and certificate metadata.
+3. HTTP: curl headers/status/title. Nikto and Nuclei are gated off.
+4. SMB: unauthenticated `smbclient -N -L` null-session probe only.
+5. DNS: in-scope `dig` CHAOS identity and flag observations.
+6. SNMP: SNMPv3 noAuth probe only; no community guessing or walks.
+7. LDAP: anonymous `ldapsearch` base DSE only.
+
+NSE is not used. Optional tools (`testssl.sh`, Nikto, Nuclei) are registered
+as `never-default` stubs and cannot be dispatched.
 
 The orchestrator dispatches a module only when normalized service evidence
 matches it. Each optional tool reports availability without preventing the

@@ -10,6 +10,9 @@
 - Nmap runs unprivileged by default and only after authorized-scope and route
   validation. Raw-socket features are used only when the process already has
   `CAP_NET_RAW`; the backend is not granted extra privileges for scanning.
+- Protocol-audit tools run unprivileged against confirmed inventory addresses
+  that still lie inside authorized scope. Command builders emit argument
+  arrays only; user-supplied tool flags are rejected.
 - SQLite and evidence roots are writable only by the WireScope service user.
 
 Authentication and authorization are not implemented yet. Keep the API bound
@@ -24,7 +27,9 @@ groups through a cooperative token.
 
 Only one healthy worker supervisor may run. Database-backed resource locks
 prevent simultaneous passive captures on one interface, serialize active
-discovery against that same interface, and enforce global capture/Nmap limits.
+discovery against that same interface, enforce global capture/Nmap limits,
+and serialize protocol audits per audit (`audit:<id>` plus the
+`protocol_audit` group).
 
 API errors contain typed safe fields. Python tracebacks remain in structured
 debug logs and are not returned as HTTP responses.

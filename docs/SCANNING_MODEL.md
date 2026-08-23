@@ -192,3 +192,111 @@ noisier; keep the address cap at `/24` unless an administrator raises it.
 IPv6 scans never brute-force a `/64`. Cancellation kills the Nmap process
 group and marks the job `cancelled`, not `failed`. Partial inventory from
 completed stages is kept.
+
+## Protocol audits
+
+Milestone 4 adds **gated, service-aware protocol audits**. They enrich the
+inventory with normalized protocol observations. They are **not** a findings
+engine. Weak SSH algorithms, expired certificates, missing HTTP headers, and
+similar facts stay observations until Milestone 5 rules interpret them.
+
+```text
+Asset / Service inventory (M3)
+        ↓
+Service predicate match
+        ↓
+Enqueue protocol_audit job
+        ↓
+Provider command builder (argv arrays, ToolRunner)
+        ↓
+Parse fixture/tool output
+        ↓
+Normalized observations + evidence artifacts
+        ↓
+Persist against asset/service
+        ↓
+Compact job summary + listing API
+```
+
+### Plugin contract
+
+Each module in `protocol_audits/modules/` declares:
+
+- predicates on port, transport, service name, product, and tunnel;
+- required tool and optional minimum version;
+- safety class: `safe` (default profile), `gated`, or `never-default`;
+- argv-only command builder;
+- parser that does not touch SQLite;
+- timeout budget (default 20 seconds, never Nmap `-T5`).
+
+Adding a module is a registry registration. The orchestrator is not edited.
+
+### Dispatch
+
+The job loads open inventory services, confirmed-scope addresses, and the
+module registry. A module runs only when a predicate matches **and** the
+asset address is inside the authorized scope. FTP-only hosts produce no SSH
+work. Missing tools produce `tool_unavailable` observations and do not fail
+the job or claim that the protocol is absent.
+
+### Default modules
+
+| Module | Predicates (summary) | Tool | What is recorded |
+| ------ | -------------------- | ---- | ---------------- |
+| SSH | TCP/22, `ssh`, OpenSSH/Dropbear | `ssh-audit` | banner, KEX/host-key/cipher/MAC lists |
+| TLS | 443/636/993/995/465/8443, `https`/`ldaps`, `tunnel=ssl` | `openssl s_client` | protocol, cipher, cert subject/issuer/dates, verify code |
+| HTTP | 80/8080/443/…, `http`/`https` | `curl` | status, selected headers, HTML title |
+| DNS | TCP/UDP 53, `domain` | `dig` CHAOS `version.bind` / `id.server` | identity strings, RA/RD/AA flags |
+| SMB | 139/445, `microsoft-ds` | `smbclient -N -L` | null-session accepted or NT_STATUS refusal |
+| SNMP | UDP/161, `snmp` | `snmpget -v3 -l noAuthNoPriv` | unauthenticated response or timeout |
+| LDAP | 389/`ldap`, 636/`ldaps` | `ldapsearch -x` base DSE | anonymous bind attributes or refusal |
+
+### Safety limits
+
+- Confirmed inventory addresses only; still inside authorized scope.
+- No credential store; no password or community guessing.
+- No automatic Internet callbacks. DNS uses CHAOS names, not `example.com`.
+- HTTP does not follow redirects (`--max-redirs 0`).
+- SNMP walks and v2c `public`/`private` probes are out of the default profile.
+- Authenticated AD/LDAP audit is out of scope until credentials exist.
+- SMB is a conservative null-session list; `enum4linux-ng` is not invoked.
+- Raspberry Pi default: one protocol-audit job (`WIRESCOPE_MAX_PROTOCOL_AUDIT_JOBS=1`)
+  and sequential module execution (`WIRESCOPE_PROTOCOL_AUDIT_CONCURRENCY=1`).
+
+### NSE policy
+
+Protocol audits **do not** invoke Nmap Scripting Engine. There is no
+`-sC`, `vuln`, `brute`, `exploit`, `dos`, or `auth` script allowlist because
+NSE is not on this path. Dedicated tools are preferred.
+
+`testssl.sh`, Nikto, and Nuclei exist only as `never-default` stubs. API
+requests that name them receive `module_gated`. They cannot build commands.
+
+### Resource locking
+
+A protocol-audit job takes exclusive `audit:<audit_id>` and the
+`protocol_audit` group (default max 1). It does **not** take
+`interface:<name>`. Capture and Nmap keep the interface lock. Default worker
+concurrency is still one, so a Pi will not overlap these jobs unless an
+administrator raises both limits. Protocol probes can appear in a concurrent
+capture if those limits are raised together; that is documented rather than
+silently blocked.
+
+### Cancellation and evidence
+
+Cooperative cancellation terminates the subprocess group. The job ends
+`cancelled`, not `failed`. Observations already persisted remain. Raw stdout
+and stderr are filesystem artifacts (`protocol_tool_output`) hashed with
+SHA-256. Job listings stay compact.
+
+Re-processing upserts on
+`(audit, asset, service, module, kind, dedupe_key)` and updates `last_seen`
+instead of duplicating rows.
+
+### What Milestone 5 should consume
+
+Findings rules should read `protocol_observations` kinds such as
+`ssh_algorithms`, `tls_session`, `tls_certificate`, `http_response`,
+`dns_flags`, `smb_null_session`, `snmp_unauthenticated`, and `ldap_rootdse`.
+They must not parse raw `ssh-audit` or OpenSSL stdout. A missing tool is not
+evidence that a protocol is absent.

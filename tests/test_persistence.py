@@ -52,3 +52,4 @@ def test_sqlite_connections_enable_wal_foreign_keys_and_busy_timeout(
             connection.execute(text("PRAGMA busy_timeout")).scalar()
             == durable_settings.sqlite_busy_timeout_ms
         )
+        assert connection.execute(text("PRAGMA synchronous")).scalar() == 2

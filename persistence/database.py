@@ -81,6 +81,7 @@ class Database:
 
     def _configure_sqlite(self, engine: Engine) -> None:
         busy_timeout = self.settings.sqlite_busy_timeout_ms
+        synchronous = self.settings.sqlite_synchronous
 
         @event.listens_for(engine, "connect")
         def set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
@@ -88,7 +89,7 @@ class Database:
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute(f"PRAGMA busy_timeout={busy_timeout}")
             cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute(f"PRAGMA synchronous={synchronous}")
             cursor.close()
 
     @staticmethod

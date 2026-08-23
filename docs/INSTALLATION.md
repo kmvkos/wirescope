@@ -59,7 +59,8 @@ lifetimes. The worker performs restart recovery before accepting queued work.
 ## Power loss
 
 SQLite runs in WAL mode with foreign keys, short transactions, busy timeout,
-and `synchronous=NORMAL`. Evidence uses temporary files and atomic rename.
+and `synchronous=FULL` by default. Evidence uses temporary files and atomic
+rename.
 Startup removes abandoned temporary files, stale managed capture directories,
 orphan final files, and abandoned locks.
 

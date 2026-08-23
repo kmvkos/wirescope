@@ -22,6 +22,7 @@ def test_settings_default_to_source_checkout(monkeypatch):
         "WIRESCOPE_CAPTURE_PROMISCUOUS",
         "WIRESCOPE_WORKER_CONCURRENCY",
         "WIRESCOPE_MAX_PACKET_CAPTURES",
+        "WIRESCOPE_SQLITE_SYNCHRONOUS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -46,6 +47,7 @@ def test_settings_default_to_source_checkout(monkeypatch):
     assert settings.runtime_dir == settings.data_dir / "runtime"
     assert settings.worker_concurrency == 1
     assert settings.max_packet_captures == 1
+    assert settings.sqlite_synchronous == "FULL"
 
 
 def test_settings_reject_unsafe_worker_limits(monkeypatch):

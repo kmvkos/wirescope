@@ -397,7 +397,8 @@ Current tables:
 - `workers` — process/thread heartbeat and readiness state.
 
 SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
-`synchronous=NORMAL`. Scanner work never runs inside a database transaction.
+`synchronous=FULL` by default for appliance power-loss durability. Scanner work
+never runs inside a database transaction.
 Atomic claiming and restart recovery use short `BEGIN IMMEDIATE`
 transactions.
 
@@ -476,7 +477,7 @@ The lightweight benchmark on the Debian AMD64 development host (50 jobs,
 - progress/event update median: about 0.8 ms;
 - atomic result persistence median: about 0.6 ms;
 - completion/event update median: about 1.4 ms;
-- listing 50 jobs: about 2.6 ms.
+- listing 50 jobs: about 2.8 ms.
 
 These numbers are regression indicators, not Raspberry Pi guarantees. The
 design performs commits per meaningful stage/event and result, never per

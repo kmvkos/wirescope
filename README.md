@@ -116,6 +116,8 @@ through the `wireshark` group. See
 - `WIRESCOPE_MAX_PACKET_CAPTURES` — global concurrent capture limit; defaults
   to one.
 - `WIRESCOPE_SQLITE_BUSY_TIMEOUT_MS` — SQLite lock wait limit.
+- `WIRESCOPE_SQLITE_SYNCHRONOUS` — `FULL` by default; `NORMAL` is an explicit
+  performance/durability trade-off.
 - `WIRESCOPE_WORKER_STALE_AFTER_SECONDS` — worker readiness/lease timeout.
 - `WIRESCOPE_JOB_EVENT_RETENTION_DAYS` — explicit terminal-event retention
   policy used by maintenance.

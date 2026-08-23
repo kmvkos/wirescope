@@ -65,6 +65,7 @@ class Settings:
     worker_heartbeat_interval_seconds: float
     worker_stale_after_seconds: int
     sqlite_busy_timeout_ms: int
+    sqlite_synchronous: str
     job_event_retention_days: int
     temp_file_max_age_seconds: int
     dumpcap_binary: str
@@ -87,6 +88,8 @@ class Settings:
             raise ValueError("max_packet_captures must be at least one")
         if self.sqlite_busy_timeout_ms < 1:
             raise ValueError("sqlite_busy_timeout_ms must be positive")
+        if self.sqlite_synchronous not in {"FULL", "NORMAL"}:
+            raise ValueError("sqlite_synchronous must be FULL or NORMAL")
 
     @property
     def database_url(self) -> str:
@@ -176,6 +179,10 @@ def get_settings() -> Settings:
             "WIRESCOPE_SQLITE_BUSY_TIMEOUT_MS",
             5_000,
         ),
+        sqlite_synchronous=os.getenv(
+            "WIRESCOPE_SQLITE_SYNCHRONOUS",
+            "FULL",
+        ).strip().upper(),
         job_event_retention_days=_env_int(
             "WIRESCOPE_JOB_EVENT_RETENTION_DAYS",
             30,

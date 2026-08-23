@@ -100,11 +100,11 @@ def lldp_sensor(dataset: PacketDataset):
                     "lldp.tlv.management.addr",
                 )
             ),
-            "capabilities": split_values(
-                packet.values(
-                    "lldp.tlv.system.cap",
-                    "lldp.tlv.system.cap.enabled",
-                )
+            "capabilities_supported": split_values(
+                packet.values("lldp.tlv.system_cap")
+            ),
+            "capabilities_enabled": split_values(
+                packet.values("lldp.tlv.enable_system_cap")
             ),
             "pvid": integer_value(
                 packet,

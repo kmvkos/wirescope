@@ -68,27 +68,30 @@ Discovers local host context through Linux-native sources:
 - `/etc/resolv.conf`;
 - `socket.gethostname()`.
 
-Environment discovery is separate from passive packet analysis. Interface
-allowlisting and scope validation are planned for the passive foundation.
+Environment discovery is separate from passive packet analysis. Passive
+capture accepts only an exactly discovered interface that passes loopback,
+allowlist, and link-state policy. Active scope validation remains Milestone 3.
 
 ### `engine/passive.py`
 
-Owns the prototype passive pipeline:
+Owns the passive pipeline:
 
-1. create a secure temporary pcap;
-2. invoke `tshark` for capture;
-3. invoke passive sensors over the pcap;
-4. aggregate source MAC addresses;
-5. build an assessment;
-6. remove the pcap in a `finally` block.
+1. validate the requested interface against discovered interfaces and policy;
+2. ask the capture provider to create one bounded pcap with `dumpcap`;
+3. decode that pcap once through line-oriented tshark EK output;
+4. normalize packets and run all sensors in process;
+5. build evidence-backed assessment conclusions;
+6. remove temporary decode and capture files.
 
-The current parser launches many `tshark` subprocesses. This is retained only
-for compatibility during Milestone 0 and will be replaced in Milestone 1.
+The result includes capture/decode subprocess metrics. Normal pcap analysis
+uses one subprocess regardless of sensor count; live capture plus analysis uses
+two.
 
 ### `sensors/passive.py`
 
-Contains the current protocol-specific extraction functions:
+Contains independent protocol-specific consumers of normalized packet records:
 
+- Ethernet/source MAC;
 - VLAN;
 - ARP;
 - LLDP;
@@ -99,12 +102,13 @@ Contains the current protocol-specific extraction functions:
 - LLMNR;
 - SSDP;
 - IPv6 Router Advertisement;
-- IPv6 Neighbor Solicitation;
-- IPv6 Neighbor Advertisement.
+- IPv6 Neighbor Solicitation and Advertisement;
+- DHCPv6;
+- NBNS.
 
-The current common shape is `{name, detected, hits, data}`. It does not yet
-represent provider errors consistently. Milestone 1 introduces a normalized
-Pydantic contract containing errors and evidence references.
+Each sensor returns a Pydantic `SensorResult` with status, hit count,
+observations, summary, warnings, and errors. Sensors never execute external
+tools.
 
 ### `engine/assessment.py`
 
@@ -122,8 +126,8 @@ The `/24` grouping is a hint and is not treated as a discovered subnet mask.
 
 ### `engine/jobs.py`
 
-The current job engine is a process-local dictionary protected by a lock and a
-two-thread executor. It is suitable only for the prototype. It has no
+The transitional job engine is a process-local dictionary protected by a lock
+and a two-thread executor. It is suitable only for the prototype. It has no
 persistence, cancellation, cleanup, or multi-process coordination.
 
 ### `frontend/`
@@ -136,16 +140,17 @@ backend contracts incrementally and must remain usable at 480×320.
 
 - `GET /api/status`
 - `GET /api/environment`
-- `GET /api/passive/{interface}`
-- `POST /api/passive/start`
+- `GET /api/interfaces`
+- `POST /api/passive/start` with a JSON request model
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs`
 - `GET /`
 - `/static/*`
 
 Swagger, ReDoc, and OpenAPI routes are enabled in development and can be
-disabled by configuration. The synchronous passive route is legacy prototype
-behavior and will be removed after the durable job API is available.
+disabled by configuration. The blocking synchronous passive route was removed;
+the temporary job implementation will be replaced by durable jobs in
+Milestone 2.
 
 ## Target logical architecture
 
@@ -261,6 +266,76 @@ Supplemental decode passes are not part of the default design. If a required
 field cannot be represented by EK, an exception must be benchmarked,
 documented, and instrumented rather than added inside an individual sensor.
 
+### Sensor result contract
+
+Every registered sensor produces `SensorResult`:
+
+- `name`;
+- `status`;
+- `hits`;
+- typed observation envelopes containing protocol-specific data;
+- aggregate `summary`;
+- `warnings`;
+- structured `errors`;
+- computed `detected` compatibility flag.
+
+Status semantics:
+
+- `absent` — parsing succeeded and no matching protocol evidence was present;
+- `detected` — one or more trustworthy observations were produced;
+- `partial` — observations were produced, but parser/sensor errors mean the
+  result may be incomplete;
+- `error` — the sensor could not make a trustworthy presence/absence
+  determination.
+
+An errored parser therefore makes a sensor `error` or `partial`, never
+`absent`.
+
+### Observation and evidence model
+
+An observation is a fact with:
+
+- sensor and fact kind;
+- timestamp;
+- source/destination MAC and IP where available;
+- protocol;
+- packet evidence reference and frame number;
+- protocol-specific data.
+
+Protocol-specific structures remain nested. DHCP options, LLDP neighbors, IPv6
+prefixes, and naming records are not forced into one lossy flat schema.
+
+### Error model
+
+Tool errors retain exit code and stderr. The common runner distinguishes:
+
+- missing binary;
+- permission denied;
+- timeout;
+- cancellation;
+- non-zero exit;
+- process/output startup failure.
+
+Pipeline errors distinguish interface, capture, decode, malformed input,
+sensor, cancellation, and cleanup failures. Raw stderr is evidence detail and
+is not converted into `detected=false`.
+
+### Confidence model
+
+- `confirmed` — directly and independently verified fact; passive assessments
+  use this sparingly because they do not actively verify configuration.
+- `high` — explicit protocol configuration or direct advertisement, such as a
+  DHCP mask/router option or LLDP neighbor.
+- `medium` — multiple direct observations support an interpretation, such as
+  multiple tagged VLANs suggesting trunk-like behavior.
+- `low` — limited direct evidence supports more than one interpretation.
+- `hint` — useful grouping or weak inference, such as ARP addresses grouped by
+  the first 24 bits.
+- `unknown` — evidence is absent, failed, or insufficient.
+
+Assessment conclusions include rationale, source references, and limitations.
+Facts remain in sensor observations and are not duplicated as conclusions.
+
 ## Privilege model
 
 Production must use:
@@ -278,6 +353,18 @@ controlled capture path
 The Python backend must not run as root and must not receive broad network
 capabilities. Capture arguments, interface names, durations, and output paths
 are validated before invocation.
+
+The verified Debian development configuration is:
+
+- `/usr/bin/dumpcap` owned by `root:wireshark`, mode `0750`, not setuid;
+- file capabilities `cap_net_admin,cap_net_raw=eip`;
+- `wirescope` is a member of `wireshark`;
+- bounded capture as `wirescope` succeeds without root.
+
+Normal capture disables promiscuous mode by default (`dumpcap -p`), uses a
+65,535-byte snap length, and enforces independent duration, packet-count, and
+file-size limits. Capture directories are `0700`; decode output is `0600`.
+Dropped packet counters produce warnings even when dumpcap exits successfully.
 
 ## Persistence and jobs
 
@@ -301,15 +388,19 @@ and listening interfaces are explicit deployment settings.
 
 ## Known transitional debt
 
-- passive parsing still uses repeated `tshark` subprocesses;
-- sensor error contracts are inconsistent;
 - jobs are not durable;
-- API models are mostly implicit dictionaries;
+- the process-local job engine does not yet propagate cancellation tokens or
+  stage-level progress;
 - authentication and authorization are absent;
-- interface and scope validation are incomplete;
+- active audit scope validation does not exist yet;
 - frontend supports environment display only;
-- no structured logging or audit log exists yet;
-- production capture capabilities and systemd units are not configured.
+- JSON logging exists, but there is no persistent audit log or job/audit
+  context propagation;
+- retained raw evidence has no durable evidence store or retention policy;
+- tshark field compatibility is tested against 4.4 fixtures and still requires
+  release testing against the Raspberry Pi OS package version;
+- production capability setup, verification tooling, and systemd units are not
+  automated yet.
 
 These limitations are scheduled explicitly in
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).

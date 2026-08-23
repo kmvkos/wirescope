@@ -1,6 +1,5 @@
 """Bounded dumpcap packet capture provider."""
 
-from datetime import datetime, timezone
 from pathlib import Path
 import re
 import shutil
@@ -19,6 +18,10 @@ from providers.tools import CancellationToken, ToolCommand, ToolRunner
 
 
 PACKET_COUNT_PATTERN = re.compile(r"Packets captured:\s*(\d+)", re.IGNORECASE)
+DROPPED_COUNT_PATTERN = re.compile(
+    r"Packets dropped(?: by kernel)?:\s*(\d+)",
+    re.IGNORECASE,
+)
 
 
 class CaptureProvider:
@@ -50,22 +53,29 @@ class CaptureProvider:
             },
         )
 
+        args = ["-i", interface.name]
+        if not self.settings.capture_promiscuous:
+            args.append("-p")
+        args.extend(
+            [
+                "-s",
+                str(self.settings.capture_snaplen),
+                "-a",
+                f"duration:{duration_seconds}",
+                "-c",
+                str(self.settings.capture_max_packets),
+                "-a",
+                f"filesize:{self.settings.capture_max_filesize_kb}",
+                "-w",
+                str(pcap_path),
+                "-q",
+            ]
+        )
+
         tool_result = self.runner.run(
             ToolCommand(
                 tool=self.settings.dumpcap_binary,
-                args=[
-                    "-i",
-                    interface.name,
-                    "-a",
-                    f"duration:{duration_seconds}",
-                    "-c",
-                    str(self.settings.capture_max_packets),
-                    "-a",
-                    f"filesize:{self.settings.capture_max_filesize_kb}",
-                    "-w",
-                    str(pcap_path),
-                    "-q",
-                ],
+                args=args,
                 timeout_seconds=duration_seconds + 15,
                 environment={"LC_ALL": "C"},
             ),
@@ -122,6 +132,12 @@ class CaptureProvider:
             status = CaptureStatus.COMPLETED
 
         frame_count = self._packet_count(tool_result.stderr)
+        dropped_packets = self._dropped_count(tool_result.stderr)
+        warnings = []
+        if dropped_packets:
+            warnings.append(
+                f"dumpcap reported {dropped_packets} dropped packets"
+            )
         result = CaptureResult(
             interface=interface.name,
             status=status,
@@ -129,9 +145,11 @@ class CaptureProvider:
             finished_at=tool_result.finished_at,
             duration_seconds=tool_result.duration_seconds,
             frame_count=frame_count,
+            dropped_packets=dropped_packets,
             pcap_path=str(pcap_path),
             pcap_reference=f"capture:{capture_directory.name}/capture.pcap",
             retained=retain,
+            warnings=warnings,
             errors=errors,
             tool_result=tool_result,
         )
@@ -208,4 +226,9 @@ class CaptureProvider:
     @staticmethod
     def _packet_count(stderr: str) -> int | None:
         match = PACKET_COUNT_PATTERN.search(stderr)
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def _dropped_count(stderr: str) -> int | None:
+        match = DROPPED_COUNT_PATTERN.search(stderr)
         return int(match.group(1)) if match else None

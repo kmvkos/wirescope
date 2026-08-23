@@ -367,6 +367,8 @@ def ipv6_nd_sensor(dataset: PacketDataset):
         option_mac = first_value(
             packet,
             "icmpv6.opt.linkaddr",
+            "icmpv6.opt.src_linkaddr",
+            "icmpv6.opt.target_linkaddr",
             "icmpv6.nd.opt.src_linkaddr",
             "icmpv6.nd.opt.tgt_linkaddr",
         )

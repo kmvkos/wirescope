@@ -11,11 +11,12 @@ from tests.helpers import tool_result
 
 class SuccessfulDumpcap:
     def run(self, command, cancellation_token=None):
+        self.command = command
         output = Path(command.args[command.args.index("-w") + 1])
         output.write_bytes(b"pcap")
         return tool_result(
             tool="dumpcap",
-            stderr="Packets captured: 4\n",
+            stderr="Packets captured: 4\nPackets dropped: 2\n",
         )
 
 
@@ -51,8 +52,9 @@ def interface():
 
 
 def test_capture_provider_separates_capture_metadata_and_cleanup(tmp_path):
+    runner = SuccessfulDumpcap()
     provider = CaptureProvider(
-        runner=SuccessfulDumpcap(),
+        runner=runner,
         settings=settings_for(tmp_path),
     )
 
@@ -60,9 +62,15 @@ def test_capture_provider_separates_capture_metadata_and_cleanup(tmp_path):
 
     assert result.status == CaptureStatus.COMPLETED
     assert result.frame_count == 4
+    assert result.dropped_packets == 2
+    assert result.warnings == ["dumpcap reported 2 dropped packets"]
     assert result.pcap_path is not None
     assert Path(result.pcap_path).is_file()
     assert result.errors == []
+    assert "-p" in runner.command.args
+    assert runner.command.args[
+        runner.command.args.index("-s") + 1
+    ] == "65535"
 
     assert provider.cleanup(result) == []
     assert result.pcap_path is None

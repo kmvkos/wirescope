@@ -48,6 +48,8 @@ class Settings:
     passive_duration_default: int
     capture_max_packets: int
     capture_max_filesize_kb: int
+    capture_snaplen: int
+    capture_promiscuous: bool
     dumpcap_binary: str
     tshark_binary: str
 
@@ -93,6 +95,11 @@ def get_settings() -> Settings:
         capture_max_filesize_kb=_env_int(
             "WIRESCOPE_CAPTURE_MAX_FILESIZE_KB",
             16_384,
+        ),
+        capture_snaplen=_env_int("WIRESCOPE_CAPTURE_SNAPLEN", 65_535),
+        capture_promiscuous=_env_bool(
+            "WIRESCOPE_CAPTURE_PROMISCUOUS",
+            False,
         ),
         dumpcap_binary=os.getenv("WIRESCOPE_DUMPCAP_BINARY", "dumpcap"),
         tshark_binary=os.getenv("WIRESCOPE_TSHARK_BINARY", "tshark"),

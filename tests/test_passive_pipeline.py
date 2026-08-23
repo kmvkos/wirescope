@@ -144,3 +144,16 @@ def test_malformed_ek_input_is_reported():
     assert len(packets) == 1
     assert len(errors) == 1
     assert errors[0].component == "passive_parser"
+
+
+def test_malformed_pcap_becomes_decode_error(tmp_path):
+    pcap = tmp_path / "malformed.pcap"
+    pcap.write_bytes(b"not a pcap")
+
+    result = pipeline().analyze_pcap(pcap)
+
+    assert result.errors
+    assert all(
+        sensor.status == SensorStatus.ERROR
+        for sensor in result.sensors.values()
+    )

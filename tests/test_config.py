@@ -13,6 +13,8 @@ def test_settings_default_to_source_checkout(monkeypatch):
         "WIRESCOPE_ALLOWED_INTERFACES",
         "WIRESCOPE_ALLOW_LOOPBACK",
         "WIRESCOPE_REQUIRE_INTERFACE_UP",
+        "WIRESCOPE_CAPTURE_SNAPLEN",
+        "WIRESCOPE_CAPTURE_PROMISCUOUS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -30,6 +32,8 @@ def test_settings_default_to_source_checkout(monkeypatch):
     assert settings.allowed_interfaces == ()
     assert settings.allow_loopback is False
     assert settings.require_interface_up is True
+    assert settings.capture_snaplen == 65_535
+    assert settings.capture_promiscuous is False
 
 
 def test_settings_accept_environment_overrides(monkeypatch, tmp_path):

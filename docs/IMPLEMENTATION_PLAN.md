@@ -83,6 +83,8 @@ passive pipeline prematurely.
 
 ## Milestone 1 — Passive foundation
 
+Status: implemented on `milestone-1-passive-foundation`.
+
 ### 1. External tool runner
 
 Create a shared `providers/tools` layer before changing sensors.
@@ -210,15 +212,15 @@ Dependencies: normalized packet events.
 
 Dependencies: sensor contracts.
 
-### 7. Passive API and minimal UI
+### 7. Passive API
 
 - replace the synchronous scan endpoint with a job-oriented contract;
 - add request/response Pydantic models;
 - expose capture stage, sensor progress, warnings, and errors;
-- add interface selection, start/stop, progress, and summary to the minimal UI;
-- keep the UI usable at 480×320.
 
-Dependencies: M1 contracts; temporary job adapter may be used until M2.
+The existing process-local job adapter remains until Milestone 2. Minimal UI
+integration is deferred until durable job status/stage contracts exist, rather
+than coupling the UI to a transitional queue.
 
 ### Milestone 1 acceptance criteria
 
@@ -229,7 +231,26 @@ Dependencies: M1 contracts; temporary job adapter may be used until M2.
 - invalid interfaces are rejected before capture;
 - backend runs unprivileged with documented dumpcap permissions;
 - fixture-based tests cover all required passive protocols;
-- the UI can run and observe a passive scan.
+- malformed input, missing tools, permission failures, and protocol absence
+  remain distinguishable.
+
+Implementation evidence:
+
+- generated sanitized pcap fixtures cover VLAN/QinQ, ARP, DHCPv4, LLDP, CDP,
+  STP, IPv6 RA/ND, DHCPv6, mDNS, and SSDP;
+- normalized packet fixtures cover multiple VLANs, multiple DHCP servers,
+  multiple IPv6 routers, LLMNR, and NBNS;
+- pcap-only analysis reports one tshark subprocess for all fourteen sensors;
+- live capture is bounded to one dumpcap process plus one tshark decode;
+- the Debian development host verified bounded dumpcap capture as the
+  unprivileged `wirescope` user.
+
+Deferred refinements:
+
+- optional ethtool/systemd-resolved environment enrichment;
+- cached provider version inventory;
+- durable evidence storage and retention;
+- UI progress workflow, which depends on Milestone 2 durable jobs.
 
 ---
 

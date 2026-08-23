@@ -41,9 +41,11 @@ class CaptureResult(BaseModel):
     finished_at: datetime
     duration_seconds: float
     frame_count: int | None = None
+    dropped_packets: int | None = None
     pcap_path: str | None = None
     pcap_reference: str | None = None
     retained: bool = False
+    warnings: list[str] = Field(default_factory=list)
     errors: list[PipelineError] = Field(default_factory=list)
     tool_result: ToolResult
 

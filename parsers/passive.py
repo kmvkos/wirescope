@@ -17,6 +17,33 @@ from engine.passive_models import (
 from providers.tools import CancellationToken, ToolCommand, ToolRunner
 
 
+EK_PROTOCOL_SELECTION = " ".join(
+    [
+        "frame",
+        "eth",
+        "vlan",
+        "ieee8021ad",
+        "llc",
+        "arp",
+        "dhcp",
+        "lldp",
+        "cdp",
+        "stp",
+        "ip",
+        "ipv6",
+        "icmpv6",
+        "udp",
+        "dhcpv6",
+        "dns",
+        "mdns",
+        "llmnr",
+        "nbns",
+        "ssdp",
+        "http",
+    ]
+)
+
+
 class PassivePacketParser:
     def __init__(
         self,
@@ -55,6 +82,8 @@ class PassivePacketParser:
                         "-l",
                         "-T",
                         "ek",
+                        "-J",
+                        EK_PROTOCOL_SELECTION,
                     ],
                     timeout_seconds=max(
                         30,

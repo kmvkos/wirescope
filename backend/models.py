@@ -7,6 +7,12 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from engine.interfaces import InterfaceInfo
+from engine.scope import ActiveProfile
+from inventory.models import (
+    AssetRecord,
+    InventorySummary,
+    ServiceRecord,
+)
 from jobs.models import AuditStatus, JobError, JobStatus
 
 
@@ -25,6 +31,13 @@ class CreateAuditRequest(BaseModel):
 
 class PassiveJobRequest(BaseModel):
     duration_seconds: int | None = None
+    priority: int = Field(default=0, ge=-100, le=100)
+
+
+class DiscoveryJobRequest(BaseModel):
+    interface: str = Field(min_length=1, max_length=64)
+    scope: list[str] = Field(min_length=1, max_length=256)
+    profile: ActiveProfile = ActiveProfile.STANDARD
     priority: int = Field(default=0, ge=-100, le=100)
 
 
@@ -119,3 +132,21 @@ class ReadinessResponse(BaseModel):
 
 class InterfaceListResponse(BaseModel):
     interfaces: list[InterfaceInfo]
+
+
+class AssetPageResponse(BaseModel):
+    items: list[AssetRecord]
+    limit: int
+    offset: int
+    total: int
+
+
+class ServicePageResponse(BaseModel):
+    items: list[ServiceRecord]
+    limit: int
+    offset: int
+    total: int
+
+
+class InventorySummaryResponse(InventorySummary):
+    pass

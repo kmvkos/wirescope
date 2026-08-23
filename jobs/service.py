@@ -752,6 +752,7 @@ class JobService:
             worker_id=model.worker_id,
             attempt=model.attempt,
             resource_key=model.resource_key,
+            resource_group=model.resource_group,
             error=error,
         )
 

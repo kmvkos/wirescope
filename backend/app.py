@@ -7,11 +7,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.models import (
+    AssetPageResponse,
     AuditPageResponse,
     AuditResponse,
     CreateAuditRequest,
+    DiscoveryJobRequest,
     HealthResponse,
     InterfaceListResponse,
+    InventorySummaryResponse,
     JobAcceptedResponse,
     JobEventPageResponse,
     JobEventResponse,
@@ -19,14 +22,20 @@ from backend.models import (
     JobResponse,
     PassiveJobRequest,
     ReadinessResponse,
+    ServicePageResponse,
 )
 from config.settings import Settings, get_settings
+from engine.active_profiles import profile_for
 from engine.environment import get_environment
 from engine.interfaces import (
     InterfaceService,
     InterfaceValidationCode,
     InterfaceValidationError,
 )
+from engine.routes import RouteResolver, RouteValidationError
+from engine.scope import ScopeValidationError, ScopeValidator
+from inventory.models import AssetRecord, AssetState, DeviceClassHint
+from inventory.service import InventoryService
 from jobs.errors import JobExecutionError
 from jobs.models import (
     AuditRecord,
@@ -50,6 +59,8 @@ def create_app(
     job_service: JobService | None = None,
     evidence_store: EvidenceStore | None = None,
     interface_service: InterfaceService | None = None,
+    route_resolver: RouteResolver | None = None,
+    inventory_service: InventoryService | None = None,
     environment_provider: Callable[[], dict[str, Any]] = get_environment,
 ) -> FastAPI:
     active_settings = settings or get_settings()
@@ -61,6 +72,14 @@ def create_app(
     )
     active_interfaces = interface_service or InterfaceService(
         settings=active_settings
+    )
+    active_routes = route_resolver or RouteResolver(
+        interfaces=active_interfaces
+    )
+    active_inventory = inventory_service or InventoryService(
+        active_database,
+        active_settings,
+        active_evidence,
     )
 
     application = FastAPI(
@@ -77,6 +96,8 @@ def create_app(
     application.state.jobs = active_jobs
     application.state.evidence = active_evidence
     application.state.interfaces = active_interfaces
+    application.state.routes = active_routes
+    application.state.inventory = active_inventory
 
     @application.get("/api/health", response_model=HealthResponse)
     @application.get("/api/status", response_model=HealthResponse)
@@ -100,6 +121,7 @@ def create_app(
         dependencies = {
             "dumpcap": shutil.which(active_settings.dumpcap_binary) is not None,
             "tshark": shutil.which(active_settings.tshark_binary) is not None,
+            "nmap": shutil.which(active_settings.nmap_binary) is not None,
         }
         ready_state = (
             database_ready
@@ -279,6 +301,187 @@ def create_app(
             status_url=f"/api/jobs/{job.id}",
         )
 
+    @application.post(
+        "/api/audits/{audit_id}/discovery",
+        response_model=JobAcceptedResponse,
+        status_code=202,
+    )
+    def enqueue_discovery(
+        audit_id: str,
+        request: DiscoveryJobRequest,
+    ) -> JobAcceptedResponse:
+        try:
+            audit = active_jobs.get_audit(audit_id)
+            if audit.interface and request.interface != audit.interface:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "interface_mismatch",
+                        "message": (
+                            "Discovery interface must match the audit interface"
+                        ),
+                    },
+                )
+            active_interfaces.validate(request.interface)
+            scope = ScopeValidator(active_settings).validate(
+                request.scope,
+                request.profile,
+            )
+            resolved = active_routes.resolve(request.interface, scope)
+            scan_profile = profile_for(request.profile, active_settings)
+            confirmed = active_inventory.confirm_scope(
+                audit_id=audit.id,
+                scope=scope,
+                interface=request.interface,
+                route_context=resolved.model_dump(mode="json"),
+                actor=audit.actor,
+                timing_policy=scan_profile.timing,
+            )
+            job = active_jobs.create_job(
+                audit_id=audit.id,
+                job_type="active_discovery",
+                target=request.interface,
+                parameters={
+                    "interface": request.interface,
+                    "scope": scope.canonical_targets,
+                    "profile": request.profile.value,
+                    "confirmed_scope_id": confirmed.id,
+                },
+                priority=request.priority,
+                resource_key=f"interface:{request.interface}",
+                resource_group="active_discovery",
+                resource_limit=active_settings.max_active_discovery_jobs,
+            )
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except InterfaceValidationError as exc:
+            raise _interface_http_error(exc) from exc
+        except ScopeValidationError as exc:
+            raise _scope_http_error(exc) from exc
+        except RouteValidationError as exc:
+            raise _route_http_error(exc) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_state_transition",
+                    "message": str(exc),
+                },
+            ) from exc
+        return JobAcceptedResponse(
+            audit_id=audit.id,
+            job_id=job.id,
+            status=job.status,
+            status_url=f"/api/jobs/{job.id}",
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/assets",
+        response_model=AssetPageResponse,
+    )
+    def list_assets(
+        audit_id: str,
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        address: str | None = None,
+        hostname: str | None = None,
+        mac: str | None = None,
+        vendor: str | None = None,
+        state: AssetState | None = None,
+        device_class: DeviceClassHint | None = None,
+    ) -> AssetPageResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        page = active_inventory.list_assets(
+            audit_id=audit_id,
+            limit=limit,
+            offset=offset,
+            address=address,
+            hostname=hostname,
+            mac=mac,
+            vendor=vendor,
+            state=state,
+            device_class=device_class,
+        )
+        return AssetPageResponse(
+            items=page.items,
+            limit=page.limit,
+            offset=page.offset,
+            total=page.total,
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/assets/{asset_id}",
+        response_model=AssetRecord,
+    )
+    def get_asset(audit_id: str, asset_id: str):
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        asset = active_inventory.get_asset(audit_id, asset_id)
+        if asset is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "not_found",
+                    "message": f"Asset not found: {asset_id}",
+                },
+            )
+        return asset
+
+    @application.get(
+        "/api/audits/{audit_id}/services",
+        response_model=ServicePageResponse,
+    )
+    def list_services(
+        audit_id: str,
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        asset_id: str | None = None,
+        protocol: str | None = None,
+        port: int | None = Query(default=None, ge=0, le=65_535),
+        state: str | None = None,
+        service_name: str | None = None,
+        product: str | None = None,
+    ) -> ServicePageResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        page = active_inventory.list_services(
+            audit_id=audit_id,
+            limit=limit,
+            offset=offset,
+            asset_id=asset_id,
+            protocol=protocol,
+            port=port,
+            state=state,
+            service_name=service_name,
+            product=product,
+        )
+        return ServicePageResponse(
+            items=page.items,
+            limit=page.limit,
+            offset=page.offset,
+            total=page.total,
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/inventory",
+        response_model=InventorySummaryResponse,
+    )
+    def inventory_summary(audit_id: str) -> InventorySummaryResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        return InventorySummaryResponse(
+            **active_inventory.summary(audit_id).model_dump()
+        )
+
     @application.get(
         "/api/audits/{audit_id}/jobs",
         response_model=JobPageResponse,
@@ -399,6 +602,28 @@ def create_app(
         return FileResponse(active_settings.frontend_dir / "index.html")
 
     return application
+
+
+def _scope_http_error(error: ScopeValidationError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": error.code.value,
+            "message": error.message,
+            "details": error.details,
+        },
+    )
+
+
+def _route_http_error(error: RouteValidationError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": error.code.value,
+            "message": error.message,
+            "details": error.details,
+        },
+    )
 
 
 def _interface_http_error(

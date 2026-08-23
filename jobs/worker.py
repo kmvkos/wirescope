@@ -11,7 +11,7 @@ from typing import Any
 from config.logging import bind_log_context, get_logger
 from config.settings import Settings, get_settings
 from jobs.errors import JobCancelled, JobExecutionError
-from jobs.handlers import PassiveDiscoveryHandler
+from jobs.handlers import ActiveDiscoveryHandler, PassiveDiscoveryHandler
 from jobs.maintenance import MaintenanceService
 from jobs.models import AuditRecord, ErrorCategory, JobError, JobRecord
 from jobs.registry import HandlerContext, HandlerRegistry
@@ -249,6 +249,7 @@ class WorkerSupervisor:
 def build_registry() -> HandlerRegistry:
     registry = HandlerRegistry()
     registry.register("passive_discovery", PassiveDiscoveryHandler())
+    registry.register("active_discovery", ActiveDiscoveryHandler())
     return registry
 
 

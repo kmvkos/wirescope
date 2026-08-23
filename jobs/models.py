@@ -101,6 +101,7 @@ class JobRecord(BaseModel):
     worker_id: str | None
     attempt: int
     resource_key: str | None
+    resource_group: str | None = None
     error: JobError | None
 
     @property

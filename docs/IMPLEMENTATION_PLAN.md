@@ -256,37 +256,37 @@ Deferred refinements:
 
 ## Milestone 2 — Jobs, persistence, and audit sessions
 
+Status: implemented on `milestone-2-jobs-persistence`.
+
 ### Persistence
 
 Use SQLite with SQLAlchemy 2 and Alembic. This adds modest local dependencies
 but provides explicit transactions, relationships, and durable migrations for
 the growing schema.
 
-Create entities and migrations for:
+Milestone 2 intentionally creates only:
 
-- users and roles;
-- audits and audit scope;
-- interfaces and observed networks;
-- jobs and job events;
-- assets and services;
-- observations and assessments;
-- evidence metadata;
-- findings;
-- reports;
-- application settings and audit log.
+- audit sessions;
+- universal jobs;
+- job events;
+- evidence/artifact metadata;
+- durable resource locks;
+- worker heartbeat/lease records.
+
+Passive results remain versioned JSON artifacts. Asset, service, observation,
+finding, report, user, and role normalization remains deferred.
 
 Operational requirements:
 
 - enable foreign keys;
 - use WAL mode where appropriate;
-- define backup/export and corruption recovery;
 - avoid storing large raw evidence blobs in frequently queried tables;
 - test forward migration from every released schema.
 
 ### Durable local worker
 
 - implement a controlled worker that claims jobs transactionally from SQLite;
-- states: queued, running, completed, failed, cancelled;
+- states: queued, running, completed, failed, cancelled, interrupted;
 - stages and monotonic progress;
 - cooperative cancellation plus subprocess termination;
 - startup recovery for interrupted jobs;
@@ -306,19 +306,6 @@ No Redis or Celery.
 - enqueue passive and later active stages;
 - expose audit history and job event polling.
 
-### Authentication foundation
-
-Authentication must exist before active scanning is remotely accessible:
-
-- local users with Argon2id password hashes;
-- roles: admin, auditor, viewer;
-- secure session or short-lived token design suitable for a local appliance;
-- initial-admin bootstrap flow;
-- login throttling and audit log;
-- CSRF protection if cookie sessions are used;
-- configurable bind address and trusted proxy behavior;
-- authorization tests for every state-changing endpoint.
-
 ### Acceptance criteria
 
 - jobs and audits survive backend restart;
@@ -326,7 +313,31 @@ Authentication must exist before active scanning is remotely accessible:
 - two workers cannot claim the same job;
 - concurrent capture on one interface is prevented;
 - migrations build a new database and upgrade the previous schema;
-- protected API endpoints require the correct role.
+- progress, events, typed errors, and result references persist;
+- result artifacts are atomic, hashed, and stored outside SQLite;
+- audit/job lists are paginated;
+- passive fixture integration survives reconstruction of application objects.
+
+Implementation evidence:
+
+- one Alembic revision creates the full Milestone 2 schema from an empty DB;
+- SQLite uses WAL, foreign keys, busy timeout, and short transactions;
+- production process model separates `wirescope-api` and
+  `wirescope-worker`;
+- worker startup interrupts abandoned running jobs and retains queued jobs;
+- persistent interface and capture-group locks serialize passive capture;
+- cooperative cancellation reaches `ToolRunner`;
+- startup maintenance removes stale temporary captures, temporary artifact
+  files, and unregistered orphan files;
+- the offline passive integration test persists progress, result, assessment,
+  and environment references across object restart.
+
+Deferred operational work:
+
+- automated SQLite backup/export and corruption-recovery tooling;
+- explicit manual retry endpoint;
+- policy-driven deletion of completed audits and registered evidence;
+- authentication and authorization before remote active-scanning exposure.
 
 ---
 

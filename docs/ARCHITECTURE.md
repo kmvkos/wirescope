@@ -124,11 +124,17 @@ Converts observations into explicitly qualified interpretations:
 
 The `/24` grouping is a hint and is not treated as a discovered subnet mask.
 
-### `engine/jobs.py`
+### `jobs/`, `persistence/`, and `storage/`
 
-The transitional job engine is a process-local dictionary protected by a lock
-and a two-thread executor. It is suitable only for the prototype. It has no
-persistence, cancellation, cleanup, or multi-process coordination.
+`JobService` is the only domain layer allowed to change audit/job state. It
+persists audits, jobs, progress, events, worker heartbeats, and resource locks
+through short SQLAlchemy sessions. `JobWorker` claims queued work atomically
+and dispatches it through `HandlerRegistry`; handlers never appear in an
+`if/elif` chain.
+
+`EvidenceStore` writes generated files under a controlled root using a
+temporary suffix, `fsync`, and atomic replacement. SQLite stores only metadata,
+hashes, schema versions, and relative paths.
 
 ### `frontend/`
 
@@ -139,18 +145,26 @@ backend contracts incrementally and must remain usable at 480×320.
 ## Current HTTP surface
 
 - `GET /api/status`
+- `GET /api/health`
+- `GET /api/ready`
 - `GET /api/environment`
 - `GET /api/interfaces`
-- `POST /api/passive/start` with a JSON request model
+- `POST /api/audits`
+- `GET /api/audits`
+- `GET /api/audits/{audit_id}`
+- `POST /api/audits/{audit_id}/passive`
+- `GET /api/audits/{audit_id}/jobs`
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs`
+- `POST /api/jobs/{job_id}/cancel`
+- `GET /api/jobs/{job_id}/events`
+- `GET /api/jobs/{job_id}/result`
 - `GET /`
 - `/static/*`
 
 Swagger, ReDoc, and OpenAPI routes are enabled in development and can be
-disabled by configuration. The blocking synchronous passive route was removed;
-the temporary job implementation will be replaced by durable jobs in
-Milestone 2.
+disabled by configuration. Audit and job list endpoints are paginated. Job
+status does not inline potentially large result documents.
 
 ## Target logical architecture
 
@@ -368,19 +382,111 @@ Dropped packet counters produce warnings even when dumpcap exits successfully.
 
 ## Persistence and jobs
 
-SQLite will persist audits, jobs, assets, interfaces, observations, services,
-findings, evidence, reports, and settings. Schema migrations are mandatory.
+Milestone 2 uses SQLite through SQLAlchemy 2 and Alembic. Production schema is
+created only through migrations, not `Base.metadata.create_all()`.
 
-A controlled local worker will claim queued jobs from SQLite, update stages and
-progress, support cooperative cancellation, and recover interrupted jobs after
-restart. The design must ensure that UI or kiosk failure does not terminate an
-audit.
+Current tables:
+
+- `audits` — session scope, profile, lifecycle, environment reference, summary;
+- `jobs` — universal task state, monotonic progress, parameters, typed error,
+  result reference, cancellation, attempt, and resource requirements;
+- `job_events` — bounded lifecycle/progress history, not scanner stdout;
+- `artifacts` — relative path, content type, size, SHA-256, retention and
+  result-schema metadata;
+- `resource_locks` — durable exclusive-resource ownership;
+- `workers` — process/thread heartbeat and readiness state.
+
+SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
+`synchronous=NORMAL`. Scanner work never runs inside a database transaction.
+Atomic claiming and restart recovery use short `BEGIN IMMEDIATE`
+transactions.
+
+### Process model
+
+Production runs two processes over one SQLite database:
+
+```text
+wirescope-api                       wirescope-worker
+     │                                    │
+     └──────────── SQLite WAL ────────────┘
+                       │
+                controlled evidence root
+```
+
+The API creates metadata and never owns execution lifetime. The worker process
+starts a configurable bounded thread pool (default one), claims queued jobs,
+and invokes registered handlers. This keeps SQLite and appliance operation
+simple while preserving a future process split. The kiosk remains a third,
+independent process.
+
+Only one healthy worker supervisor process may hold the supervisor lease.
+Configured concurrency is therefore not multiplied accidentally by launching
+another worker command.
+
+### State and recovery semantics
+
+Job transitions:
+
+```text
+queued  → running
+queued  → cancelled
+running → completed | failed | cancelled | interrupted
+```
+
+Terminal jobs are immutable. There are no automatic retries; the typed error
+records whether a later explicit retry may be reasonable.
+
+On worker startup, jobs left `running` by a previous worker become
+`interrupted` with code `application_restart`. Their locks are released.
+Queued jobs remain queued and can be claimed normally. Arbitrary scanner jobs
+are never resumed automatically.
+
+Queued cancellation is immediate. Running cancellation sets a persistent
+request; a worker-side monitor sets the Milestone 1 cancellation token, which
+terminates the active subprocess group cooperatively. Cancellation ends as
+`cancelled`, not `failed`.
+
+Passive jobs request both `interface:<name>` and the `packet_capture` resource
+group. Locks live in SQLite, so two worker threads cannot capture the same
+interface and the configured global capture limit is enforced.
+
+### Artifact durability and cleanup
+
+Artifact paths are generated from internal UUIDs; API callers cannot supply
+filesystem paths. Result JSON is versioned (`passive-result`, schema version
+1). A file is written as `*.tmp-<uuid>`, flushed, atomically renamed, hashed,
+then registered in SQLite. Power loss before metadata commit can leave only an
+orphan final file, which startup maintenance removes. Partial temporary files
+and stale managed capture directories are also cleaned conservatively.
+
+Raw PCAP retention is disabled by default. When enabled, a completed capture is
+imported into evidence storage and the runtime capture directory is force
+cleaned. Audit records and registered evidence are never deleted without an
+explicit retention policy.
+
+### Persistence baseline
+
+The lightweight benchmark on the Debian AMD64 development host (50 jobs,
+2 KiB result documents) measured:
+
+- initial migration: about 20 ms;
+- persistence object startup: under 1 ms;
+- job insertion median: about 0.9 ms;
+- progress/event update median: about 0.8 ms;
+- atomic result persistence median: about 0.6 ms;
+- completion/event update median: about 1.4 ms;
+- listing 50 jobs: about 2.6 ms.
+
+These numbers are regression indicators, not Raspberry Pi guarantees. The
+design performs commits per meaningful stage/event and result, never per
+captured frame.
 
 ## Deployment boundaries
 
-The eventual appliance has separate lifecycle units for:
+The appliance process boundary is:
 
-- WireScope application and worker;
+- WireScope API;
+- WireScope worker;
 - local kiosk/browser.
 
 The backend binds conservatively by default. Remote access, TLS termination,
@@ -388,15 +494,16 @@ and listening interfaces are explicit deployment settings.
 
 ## Known transitional debt
 
-- jobs are not durable;
-- the process-local job engine does not yet propagate cancellation tokens or
-  stage-level progress;
 - authentication and authorization are absent;
 - active audit scope validation does not exist yet;
 - frontend supports environment display only;
-- JSON logging exists, but there is no persistent audit log or job/audit
-  context propagation;
-- retained raw evidence has no durable evidence store or retention policy;
+- structured logs include audit/job context in the worker, but there is no
+  separate security audit-log table yet;
+- retention cleanup is conservative and does not yet delete completed audits
+  or registered evidence automatically;
+- terminal-job retry records and a manual retry API are not implemented;
+- SQLite backup/export and corruption-recovery operator tooling remain future
+  appliance work;
 - tshark field compatibility is tested against 4.4 fixtures and still requires
   release testing against the Raspberry Pi OS package version;
 - production capability setup, verification tooling, and systemd units are not

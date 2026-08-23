@@ -7,15 +7,18 @@ systems on AMD64.
 The current `0.1.0` codebase is an early prototype being stabilized in
 milestones. It can inspect the host network environment, capture through
 `dumpcap`, and decode one normalized stream for fourteen passive sensors.
-Active discovery,
-durable jobs, findings, reporting, authentication, and appliance deployment
-are planned work and are not complete.
+Audit sessions, jobs, progress, events, cancellation, and result artifacts are
+durable across backend restarts. Active discovery, findings, reporting,
+authentication, and appliance deployment are planned work and are not
+complete.
 
 ## Current components
 
 - `backend/` — FastAPI application and HTTP endpoints.
-- `engine/` — environment discovery, passive orchestration, assessment, and
-  prototype jobs.
+- `engine/` — environment discovery, passive orchestration, and assessment.
+- `jobs/` — durable state service, handler registry, worker, and maintenance.
+- `persistence/` — SQLAlchemy schema and Alembic migrations.
+- `storage/` — atomic evidence files and metadata integration.
 - `providers/` — controlled external-tool and packet-capture boundaries.
 - `parsers/` — single-pass tshark EK decoding.
 - `sensors/` — passive protocol sensors.
@@ -25,6 +28,9 @@ are planned work and are not complete.
 
 See [Architecture](docs/ARCHITECTURE.md) for current boundaries and
 [Implementation plan](docs/IMPLEMENTATION_PLAN.md) for the milestone roadmap.
+Operational details are in [Development](docs/DEVELOPMENT.md),
+[Installation](docs/INSTALLATION.md), and
+[Security model](docs/SECURITY_MODEL.md).
 
 ## Development setup
 
@@ -44,25 +50,38 @@ Required host tools for the current prototype:
 - `tshark` for pcap decoding;
 - packet capture permissions configured separately from the backend process.
 
-Run the API from the project root:
+Create or upgrade the local database:
+
+```bash
+WIRESCOPE_DATA_DIR="$PWD/data" .venv/bin/alembic upgrade head
+```
+
+Run the API and worker as separate development processes:
 
 ```bash
 .venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000
+.venv/bin/python -m jobs.worker
 ```
 
 Start passive work through the job-oriented API:
 
 ```bash
 curl http://127.0.0.1:8000/api/interfaces
-curl -X POST http://127.0.0.1:8000/api/passive/start \
+curl -X POST http://127.0.0.1:8000/api/audits \
   -H 'content-type: application/json' \
-  -d '{"interface":"eth0","duration_seconds":30}'
+  -d '{"profile":"passive","interface":"eth0","scope":{}}'
+curl -X POST http://127.0.0.1:8000/api/audits/AUDIT_ID/passive \
+  -H 'content-type: application/json' \
+  -d '{"duration_seconds":30}'
 ```
 
 Run tests:
 
 ```bash
 .venv/bin/pytest
+.venv/bin/python -m compileall -q backend config engine jobs parsers \
+  persistence providers sensors storage tests
+.venv/bin/pip check
 ```
 
 Do not run the WireScope backend as root. Give only `/usr/bin/dumpcap`
@@ -75,6 +94,10 @@ through the `wireshark` group. See
 - `WIRESCOPE_ROOT` — application root; defaults to the source checkout.
 - `WIRESCOPE_FRONTEND_DIR` — static frontend directory.
 - `WIRESCOPE_DATA_DIR` — runtime data directory.
+- `WIRESCOPE_DATABASE_PATH` — SQLite database path; defaults below the data
+  directory.
+- `WIRESCOPE_EVIDENCE_DIR` — controlled artifact root.
+- `WIRESCOPE_RUNTIME_DIR` — temporary runtime state root.
 - `WIRESCOPE_CAPTURE_DIR` — parent directory for temporary bounded captures.
 - `WIRESCOPE_ALLOWED_INTERFACES` — comma-separated interface allowlist; empty
   means any interface that passes policy.
@@ -87,6 +110,16 @@ through the `wireshark` group. See
 - `WIRESCOPE_CAPTURE_SNAPLEN` — packet snapshot length; defaults to 65,535.
 - `WIRESCOPE_CAPTURE_PROMISCUOUS` — opt in to promiscuous mode; defaults to
   false.
+- `WIRESCOPE_PASSIVE_RETAIN_CAPTURE` — retain successful PCAP as audit
+  evidence; defaults to false.
+- `WIRESCOPE_WORKER_CONCURRENCY` — bounded worker threads; defaults to one.
+- `WIRESCOPE_MAX_PACKET_CAPTURES` — global concurrent capture limit; defaults
+  to one.
+- `WIRESCOPE_SQLITE_BUSY_TIMEOUT_MS` — SQLite lock wait limit.
+- `WIRESCOPE_WORKER_STALE_AFTER_SECONDS` — worker readiness/lease timeout.
+- `WIRESCOPE_JOB_EVENT_RETENTION_DAYS` — explicit terminal-event retention
+  policy used by maintenance.
+- `WIRESCOPE_TEMP_FILE_MAX_AGE_SECONDS` — stale runtime cleanup threshold.
 - `WIRESCOPE_DUMPCAP_BINARY` and `WIRESCOPE_TSHARK_BINARY` — tool paths or
   names.
 - `WIRESCOPE_DOCS_ENABLED` — enables FastAPI OpenAPI, Swagger, and ReDoc

@@ -1,0 +1,59 @@
+# WireScope security model
+
+## Trust boundaries
+
+- FastAPI validates external requests and creates durable metadata.
+- `JobService` owns state transitions and transaction boundaries.
+- The worker executes only registered internal job types.
+- `ToolRunner` executes argument arrays without a shell.
+- `dumpcap` is the only component with packet-capture capabilities.
+- SQLite and evidence roots are writable only by the WireScope service user.
+
+Authentication and authorization are not implemented yet. Keep the API bound
+to loopback or another trusted local boundary; do not expose state-changing
+endpoints to an untrusted network.
+
+## Job safety
+
+Terminal jobs cannot transition back to running. There are no automatic
+retries. Running cancellation is persistent and propagated to subprocess
+groups through a cooperative token.
+
+Only one healthy worker supervisor may run. Database-backed resource locks
+prevent simultaneous passive captures on one interface and enforce the global
+capture limit.
+
+API errors contain typed safe fields. Python tracebacks remain in structured
+debug logs and are not returned as HTTP responses.
+
+## Evidence
+
+Clients never choose evidence paths. Internal UUIDs generate relative paths
+below the configured evidence root. Files are mode `0600`; directories are
+mode `0700`.
+
+Finished artifacts are flushed, atomically renamed, hashed with SHA-256, then
+registered in SQLite. Result JSON includes a schema name and version.
+
+Raw PCAP can contain credentials, identifiers, and private traffic. Retention
+is disabled by default. Enabling retention is an operator policy decision and
+requires protected storage and eventual deletion/export procedures.
+
+## Database
+
+SQLite foreign keys are enabled on every application connection. WAL and short
+transactions permit one API and one controlled worker process without holding
+locks during scans.
+
+The database contains user-selected scope, target/interface values, event
+history, structured errors, and references to evidence. File permissions and
+backup handling must protect it as audit data.
+
+## Recovery
+
+After worker restart, previously running jobs become `interrupted` with
+`application_restart`; they are not resumed automatically. Queued jobs remain
+eligible. Resource locks and stale worker records are cleared transactionally.
+
+Startup cleanup only removes controlled temporary/orphan files. It never
+deletes registered audit evidence without explicit retention policy.

@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Runtime state
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+data/runtime/
+logs/
+captures/
+*.pcap
+*.pcapng
+
+# Generated reports and exports
+reports/generated/
+reports/exports/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+secrets/
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store

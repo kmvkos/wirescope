@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>WireScope</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/style.css"
+    >
+</head>
+
+<body>
+
+<div class="app">
+
+    <header>
+        <div>
+            <h1>WireScope</h1>
+            <p>Network Audit Appliance</p>
+        </div>
+
+        <div
+            id="system-status"
+            class="status unknown"
+        >
+            CHECKING
+        </div>
+    </header>
+
+
+    <main>
+
+        <section class="card">
+
+            <h2>Environment</h2>
+
+            <div class="grid">
+
+                <div class="item">
+                    <span>Hostname</span>
+                    <strong id="hostname">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>Interface</span>
+                    <strong id="interface">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>Link</span>
+                    <strong id="link">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>Speed</span>
+                    <strong id="speed">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>IPv4</span>
+                    <strong id="ipv4">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>Gateway</span>
+                    <strong id="gateway">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>MAC</span>
+                    <strong id="mac">—</strong>
+                </div>
+
+                <div class="item">
+                    <span>MTU</span>
+                    <strong id="mtu">—</strong>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <section class="card">
+
+            <h2>DNS</h2>
+
+            <div id="dns">
+                —
+            </div>
+
+        </section>
+
+
+        <button
+            class="primary"
+            onclick="loadEnvironment()"
+        >
+            REFRESH
+        </button>
+
+    </main>
+
+</div>
+
+<script src="/static/app.js"></script>
+
+</body>
+
+</html>

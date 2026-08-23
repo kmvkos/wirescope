@@ -33,6 +33,7 @@ include = [
     "jobs*",
     "parsers*",
     "persistence*",
+    "protocol_audits*",
     "providers*",
     "sensors*",
     "storage*",

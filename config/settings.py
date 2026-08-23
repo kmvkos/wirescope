@@ -48,6 +48,7 @@ class Settings:
     evidence_dir: Path
     runtime_dir: Path
     nmap_runtime_dir: Path
+    protocol_runtime_dir: Path
     oui_database_path: Path
     docs_enabled: bool
     allowed_interfaces: tuple[str, ...]
@@ -64,6 +65,9 @@ class Settings:
     worker_concurrency: int
     max_packet_captures: int
     max_active_discovery_jobs: int
+    max_protocol_audit_jobs: int
+    protocol_audit_concurrency: int
+    protocol_audit_timeout_seconds: int
     active_discovery_max_targets: int
     active_standard_max_targets: int
     active_deep_max_targets: int
@@ -82,6 +86,13 @@ class Settings:
     dumpcap_binary: str
     tshark_binary: str
     nmap_binary: str
+    ssh_audit_binary: str
+    openssl_binary: str
+    curl_binary: str
+    dig_binary: str
+    smbclient_binary: str
+    snmpget_binary: str
+    ldapsearch_binary: str
 
     def __post_init__(self) -> None:
         if self.passive_duration_min < 1:
@@ -100,6 +111,14 @@ class Settings:
             raise ValueError("max_packet_captures must be at least one")
         if self.max_active_discovery_jobs < 1:
             raise ValueError("max_active_discovery_jobs must be at least one")
+        if self.max_protocol_audit_jobs < 1:
+            raise ValueError("max_protocol_audit_jobs must be at least one")
+        if self.protocol_audit_concurrency < 1:
+            raise ValueError("protocol_audit_concurrency must be at least one")
+        if self.protocol_audit_concurrency > 4:
+            raise ValueError("protocol_audit_concurrency must not exceed 4")
+        if self.protocol_audit_timeout_seconds < 1:
+            raise ValueError("protocol_audit_timeout_seconds must be positive")
         if min(
             self.active_discovery_max_targets,
             self.active_standard_max_targets,
@@ -156,6 +175,10 @@ def get_settings() -> Settings:
             "WIRESCOPE_NMAP_RUNTIME_DIR",
             runtime_dir / "nmap",
         ),
+        protocol_runtime_dir=_env_path(
+            "WIRESCOPE_PROTOCOL_RUNTIME_DIR",
+            runtime_dir / "protocol",
+        ),
         oui_database_path=_env_path(
             "WIRESCOPE_OUI_DATABASE_PATH",
             Path("/usr/share/ieee-data/oui.txt"),
@@ -195,6 +218,18 @@ def get_settings() -> Settings:
         max_active_discovery_jobs=_env_int(
             "WIRESCOPE_MAX_ACTIVE_DISCOVERY_JOBS",
             1,
+        ),
+        max_protocol_audit_jobs=_env_int(
+            "WIRESCOPE_MAX_PROTOCOL_AUDIT_JOBS",
+            1,
+        ),
+        protocol_audit_concurrency=_env_int(
+            "WIRESCOPE_PROTOCOL_AUDIT_CONCURRENCY",
+            1,
+        ),
+        protocol_audit_timeout_seconds=_env_int(
+            "WIRESCOPE_PROTOCOL_AUDIT_TIMEOUT_SECONDS",
+            20,
         ),
         active_discovery_max_targets=_env_int(
             "WIRESCOPE_DISCOVERY_MAX_TARGETS",
@@ -259,4 +294,14 @@ def get_settings() -> Settings:
         dumpcap_binary=os.getenv("WIRESCOPE_DUMPCAP_BINARY", "dumpcap"),
         tshark_binary=os.getenv("WIRESCOPE_TSHARK_BINARY", "tshark"),
         nmap_binary=os.getenv("WIRESCOPE_NMAP_BINARY", "nmap"),
+        ssh_audit_binary=os.getenv("WIRESCOPE_SSH_AUDIT_BINARY", "ssh-audit"),
+        openssl_binary=os.getenv("WIRESCOPE_OPENSSL_BINARY", "openssl"),
+        curl_binary=os.getenv("WIRESCOPE_CURL_BINARY", "curl"),
+        dig_binary=os.getenv("WIRESCOPE_DIG_BINARY", "dig"),
+        smbclient_binary=os.getenv("WIRESCOPE_SMBCLIENT_BINARY", "smbclient"),
+        snmpget_binary=os.getenv("WIRESCOPE_SNMPGET_BINARY", "snmpget"),
+        ldapsearch_binary=os.getenv(
+            "WIRESCOPE_LDAPSEARCH_BINARY",
+            "ldapsearch",
+        ),
     )

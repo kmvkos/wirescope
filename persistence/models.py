@@ -81,6 +81,12 @@ class AuditModel(Base):
         back_populates="audit",
         cascade="all, delete-orphan",
     )
+    protocol_observations: Mapped[list["ProtocolObservationModel"]] = (
+        relationship(
+            back_populates="audit",
+            cascade="all, delete-orphan",
+        )
+    )
 
 
 class JobModel(Base):
@@ -391,6 +397,11 @@ class AssetModel(Base):
     observations: Mapped[list["AssetObservationModel"]] = relationship(
         back_populates="asset",
     )
+    protocol_observations: Mapped[list["ProtocolObservationModel"]] = (
+        relationship(
+            back_populates="asset",
+        )
+    )
 
 
 class AssetAddressModel(Base):
@@ -525,6 +536,11 @@ class ServiceModel(Base):
     )
 
     asset: Mapped[AssetModel] = relationship(back_populates="services")
+    protocol_observations: Mapped[list["ProtocolObservationModel"]] = (
+        relationship(
+            back_populates="service",
+        )
+    )
 
 
 class AssetObservationModel(Base):
@@ -557,4 +573,86 @@ class AssetObservationModel(Base):
 
     asset: Mapped[AssetModel | None] = relationship(
         back_populates="observations"
+    )
+
+
+class ProtocolObservationModel(Base):
+    __tablename__ = "protocol_observations"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence IN ('confirmed','high','medium','low',"
+            "'hint','unknown')",
+            name="ck_protocol_observations_confidence",
+        ),
+        UniqueConstraint(
+            "audit_id",
+            "asset_id",
+            "service_id",
+            "module",
+            "kind",
+            "dedupe_key",
+            name="uq_protocol_observations_identity",
+        ),
+        Index(
+            "ix_protocol_observations_audit_module",
+            "audit_id",
+            "module",
+            "protocol",
+        ),
+        Index(
+            "ix_protocol_observations_audit_asset",
+            "audit_id",
+            "asset_id",
+        ),
+        Index(
+            "ix_protocol_observations_audit_service",
+            "audit_id",
+            "service_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    service_id: Mapped[str] = mapped_column(
+        ForeignKey("services.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    protocol: Mapped[str] = mapped_column(String(32), nullable=False)
+    module: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+        nullable=False,
+    )
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_artifact_id: Mapped[str | None] = mapped_column(String(36))
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    audit: Mapped["AuditModel"] = relationship(
+        back_populates="protocol_observations"
+    )
+    asset: Mapped[AssetModel] = relationship(
+        back_populates="protocol_observations"
+    )
+    service: Mapped[ServiceModel] = relationship(
+        back_populates="protocol_observations"
     )

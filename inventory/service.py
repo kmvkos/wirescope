@@ -112,6 +112,16 @@ class InventoryService:
             model = session.get(ConfirmedScopeModel, scope_id)
             return None if model is None else self._scope_record(model)
 
+    def latest_scope(self, audit_id: str) -> ConfirmedScopeRecord | None:
+        with self.database.session() as session:
+            model = session.scalar(
+                select(ConfirmedScopeModel)
+                .where(ConfirmedScopeModel.audit_id == audit_id)
+                .order_by(ConfirmedScopeModel.created_at.desc())
+                .limit(1)
+            )
+            return None if model is None else self._scope_record(model)
+
     def activate_scope(self, scope_id: str) -> ConfirmedScopeRecord:
         with self.database.session() as session, session.begin():
             model = session.get(ConfirmedScopeModel, scope_id)

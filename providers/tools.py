@@ -37,7 +37,7 @@ class ToolCommand(BaseModel):
 
     tool: str = Field(min_length=1)
     args: list[str] = Field(default_factory=list)
-    timeout_seconds: float = Field(default=30.0, gt=0, le=3600)
+    timeout_seconds: float = Field(default=30.0, gt=0, le=21_600)
     cwd: Path | None = None
     stdout_path: Path | None = None
     environment: dict[str, str] = Field(default_factory=dict, exclude=True)

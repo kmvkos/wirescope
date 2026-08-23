@@ -29,6 +29,7 @@ include = [
     "backend*",
     "config*",
     "engine*",
+    "inventory*",
     "jobs*",
     "parsers*",
     "persistence*",
@@ -37,7 +38,14 @@ include = [
     "storage*",
 ]
 
+[tool.setuptools.package-data]
+inventory = ["data/oui.txt"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = ["-ra"]
+addopts = ["-ra", "-m", "not network"]
+markers = [
+    "network: opt-in tests that may contact a live network",
+    "integration: broader pipeline tests that still stay fixture-based unless also marked network",
+]

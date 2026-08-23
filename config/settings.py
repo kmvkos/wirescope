@@ -47,6 +47,8 @@ class Settings:
     database_path: Path
     evidence_dir: Path
     runtime_dir: Path
+    nmap_runtime_dir: Path
+    oui_database_path: Path
     docs_enabled: bool
     allowed_interfaces: tuple[str, ...]
     allow_loopback: bool
@@ -61,6 +63,15 @@ class Settings:
     passive_retain_capture: bool
     worker_concurrency: int
     max_packet_captures: int
+    max_active_discovery_jobs: int
+    active_discovery_max_targets: int
+    active_standard_max_targets: int
+    active_deep_max_targets: int
+    active_ipv6_max_targets: int
+    active_allow_large_scopes: bool
+    nmap_discovery_timeout_seconds: int
+    nmap_standard_timeout_seconds: int
+    nmap_deep_timeout_seconds: int
     worker_poll_interval_seconds: float
     worker_heartbeat_interval_seconds: float
     worker_stale_after_seconds: int
@@ -70,6 +81,7 @@ class Settings:
     temp_file_max_age_seconds: int
     dumpcap_binary: str
     tshark_binary: str
+    nmap_binary: str
 
     def __post_init__(self) -> None:
         if self.passive_duration_min < 1:
@@ -86,6 +98,15 @@ class Settings:
             raise ValueError("worker_concurrency must be at least one")
         if self.max_packet_captures < 1:
             raise ValueError("max_packet_captures must be at least one")
+        if self.max_active_discovery_jobs < 1:
+            raise ValueError("max_active_discovery_jobs must be at least one")
+        if min(
+            self.active_discovery_max_targets,
+            self.active_standard_max_targets,
+            self.active_deep_max_targets,
+            self.active_ipv6_max_targets,
+        ) < 1:
+            raise ValueError("active scope limits must be positive")
         if self.sqlite_busy_timeout_ms < 1:
             raise ValueError("sqlite_busy_timeout_ms must be positive")
         if self.sqlite_synchronous not in {"FULL", "NORMAL"}:
@@ -131,6 +152,14 @@ def get_settings() -> Settings:
             data_dir / "evidence",
         ),
         runtime_dir=runtime_dir,
+        nmap_runtime_dir=_env_path(
+            "WIRESCOPE_NMAP_RUNTIME_DIR",
+            runtime_dir / "nmap",
+        ),
+        oui_database_path=_env_path(
+            "WIRESCOPE_OUI_DATABASE_PATH",
+            Path("/usr/share/ieee-data/oui.txt"),
+        ),
         docs_enabled=_env_bool("WIRESCOPE_DOCS_ENABLED", True),
         allowed_interfaces=_env_list("WIRESCOPE_ALLOWED_INTERFACES"),
         allow_loopback=_env_bool("WIRESCOPE_ALLOW_LOOPBACK", False),
@@ -163,6 +192,42 @@ def get_settings() -> Settings:
         ),
         worker_concurrency=_env_int("WIRESCOPE_WORKER_CONCURRENCY", 1),
         max_packet_captures=_env_int("WIRESCOPE_MAX_PACKET_CAPTURES", 1),
+        max_active_discovery_jobs=_env_int(
+            "WIRESCOPE_MAX_ACTIVE_DISCOVERY_JOBS",
+            1,
+        ),
+        active_discovery_max_targets=_env_int(
+            "WIRESCOPE_DISCOVERY_MAX_TARGETS",
+            4_096,
+        ),
+        active_standard_max_targets=_env_int(
+            "WIRESCOPE_STANDARD_MAX_TARGETS",
+            1_024,
+        ),
+        active_deep_max_targets=_env_int(
+            "WIRESCOPE_DEEP_MAX_TARGETS",
+            256,
+        ),
+        active_ipv6_max_targets=_env_int(
+            "WIRESCOPE_IPV6_MAX_TARGETS",
+            256,
+        ),
+        active_allow_large_scopes=_env_bool(
+            "WIRESCOPE_ALLOW_LARGE_SCOPES",
+            False,
+        ),
+        nmap_discovery_timeout_seconds=_env_int(
+            "WIRESCOPE_NMAP_DISCOVERY_TIMEOUT_SECONDS",
+            900,
+        ),
+        nmap_standard_timeout_seconds=_env_int(
+            "WIRESCOPE_NMAP_STANDARD_TIMEOUT_SECONDS",
+            3_600,
+        ),
+        nmap_deep_timeout_seconds=_env_int(
+            "WIRESCOPE_NMAP_DEEP_TIMEOUT_SECONDS",
+            14_400,
+        ),
         worker_poll_interval_seconds=_env_float(
             "WIRESCOPE_WORKER_POLL_INTERVAL_SECONDS",
             0.5,
@@ -193,4 +258,5 @@ def get_settings() -> Settings:
         ),
         dumpcap_binary=os.getenv("WIRESCOPE_DUMPCAP_BINARY", "dumpcap"),
         tshark_binary=os.getenv("WIRESCOPE_TSHARK_BINARY", "tshark"),
+        nmap_binary=os.getenv("WIRESCOPE_NMAP_BINARY", "nmap"),
     )

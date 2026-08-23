@@ -1,0 +1,14 @@
+# Bundled IEEE OUI subset for offline vendor resolution.
+# Format matches /usr/share/ieee-data/oui.txt.
+00-00-0C   (hex)		Cisco Systems, Inc
+00-1A-A0   (hex)		Dell Inc.
+00-50-56   (hex)		VMware, Inc.
+B8-27-EB   (hex)		Raspberry Pi Foundation
+DC-A6-32   (hex)		Raspberry Pi Trading Ltd
+00-11-22   (hex)		CIMSYS Inc
+00-0C-29   (hex)		VMware, Inc.
+00-15-5D   (hex)		Microsoft Corporation
+AC-DE-48   (hex)		Private
+00-1B-63   (hex)		Apple, Inc.
+00-14-22   (hex)		Dell Inc.
+00-21-5A   (hex)		Hewlett Packard

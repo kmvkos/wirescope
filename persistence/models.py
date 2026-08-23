@@ -73,6 +73,14 @@ class AuditModel(Base):
         back_populates="audit",
         cascade="all, delete-orphan",
     )
+    confirmed_scopes: Mapped[list["ConfirmedScopeModel"]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+    )
+    assets: Mapped[list["AssetModel"]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+    )
 
 
 class JobModel(Base):
@@ -268,3 +276,285 @@ class WorkerModel(Base):
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     current_job_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class ConfirmedScopeModel(Base):
+    __tablename__ = "confirmed_scopes"
+    __table_args__ = (
+        UniqueConstraint(
+            "audit_id",
+            "snapshot_hash",
+            name="uq_confirmed_scopes_audit_hash",
+        ),
+        Index("ix_confirmed_scopes_audit_created", "audit_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    profile: Mapped[str] = mapped_column(String(20), nullable=False)
+    interface: Mapped[str] = mapped_column(String(64), nullable=False)
+    targets: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    address_families: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    address_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    route_context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    timing_policy: Mapped[str] = mapped_column(String(8), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(128))
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    audit: Mapped[AuditModel] = relationship(
+        back_populates="confirmed_scopes"
+    )
+
+
+class AssetModel(Base):
+    __tablename__ = "assets"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('observed','responsive','unresponsive','unknown')",
+            name="ck_assets_state",
+        ),
+        UniqueConstraint("audit_id", "mac", name="uq_assets_audit_mac"),
+        Index("ix_assets_audit_state", "audit_id", "state"),
+        Index("ix_assets_audit_vendor", "audit_id", "vendor"),
+        Index(
+            "ix_assets_audit_device_class",
+            "audit_id",
+            "device_class_hint",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    mac: Mapped[str | None] = mapped_column(String(17))
+    vendor: Mapped[str | None] = mapped_column(String(256))
+    vendor_source: Mapped[str | None] = mapped_column(String(128))
+    vendor_database_version: Mapped[str | None] = mapped_column(String(64))
+    device_class_hint: Mapped[str] = mapped_column(
+        String(32),
+        default="unknown",
+        nullable=False,
+    )
+    device_class_confidence: Mapped[str] = mapped_column(
+        String(16),
+        default="unknown",
+        nullable=False,
+    )
+    os_family: Mapped[str | None] = mapped_column(String(128))
+    os_name: Mapped[str | None] = mapped_column(String(512))
+    os_generation: Mapped[str | None] = mapped_column(String(64))
+    os_accuracy: Mapped[int | None] = mapped_column(Integer)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+
+    audit: Mapped[AuditModel] = relationship(back_populates="assets")
+    addresses: Mapped[list["AssetAddressModel"]] = relationship(
+        back_populates="asset",
+        cascade="all, delete-orphan",
+    )
+    names: Mapped[list["AssetNameModel"]] = relationship(
+        back_populates="asset",
+        cascade="all, delete-orphan",
+    )
+    services: Mapped[list["ServiceModel"]] = relationship(
+        back_populates="asset",
+        cascade="all, delete-orphan",
+    )
+    observations: Mapped[list["AssetObservationModel"]] = relationship(
+        back_populates="asset",
+    )
+
+
+class AssetAddressModel(Base):
+    __tablename__ = "asset_addresses"
+    __table_args__ = (
+        UniqueConstraint(
+            "audit_id",
+            "address",
+            name="uq_asset_addresses_audit_address",
+        ),
+        Index("ix_asset_addresses_asset", "asset_id"),
+        Index("ix_asset_addresses_audit_family", "audit_id", "family"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    address: Mapped[str] = mapped_column(String(45), nullable=False)
+    family: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    asset: Mapped[AssetModel] = relationship(back_populates="addresses")
+
+
+class AssetNameModel(Base):
+    __tablename__ = "asset_names"
+    __table_args__ = (
+        UniqueConstraint(
+            "asset_id",
+            "name",
+            "name_type",
+            "source",
+            name="uq_asset_names_provenance",
+        ),
+        Index("ix_asset_names_audit_name", "audit_id", "name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    asset: Mapped[AssetModel] = relationship(back_populates="names")
+
+
+class ServiceModel(Base):
+    __tablename__ = "services"
+    __table_args__ = (
+        UniqueConstraint(
+            "asset_id",
+            "protocol",
+            "port",
+            name="uq_services_asset_protocol_port",
+        ),
+        Index("ix_services_audit_protocol_port", "audit_id", "protocol", "port"),
+        Index("ix_services_audit_name", "audit_id", "service_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    protocol: Mapped[str] = mapped_column(String(8), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(128))
+    service_name: Mapped[str | None] = mapped_column(String(128))
+    product: Mapped[str | None] = mapped_column(String(256))
+    version: Mapped[str | None] = mapped_column(String(128))
+    extra_info: Mapped[str | None] = mapped_column(String(512))
+    tunnel: Mapped[str | None] = mapped_column(String(32))
+    cpe: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    banner: Mapped[str | None] = mapped_column(Text)
+    method: Mapped[str | None] = mapped_column(String(32))
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    asset: Mapped[AssetModel] = relationship(back_populates="services")
+
+
+class AssetObservationModel(Base):
+    __tablename__ = "asset_observations"
+    __table_args__ = (
+        Index("ix_asset_observations_audit_created", "audit_id", "created_at"),
+        Index("ix_asset_observations_asset_created", "asset_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL")
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL")
+    )
+    observation_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence_reference: Mapped[str | None] = mapped_column(String(128))
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    asset: Mapped[AssetModel | None] = relationship(
+        back_populates="observations"
+    )

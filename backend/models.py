@@ -1,61 +1,120 @@
-"""Versioned HTTP contracts for passive discovery."""
+"""Typed HTTP contracts for durable audits and jobs."""
 
 from datetime import datetime
-from enum import Enum
+import json
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from config.settings import get_settings
 from engine.interfaces import InterfaceInfo
-from engine.passive_models import PassiveResult
+from jobs.models import AuditStatus, JobError, JobStatus
 
 
-class PassiveStartRequest(BaseModel):
+class CreateAuditRequest(BaseModel):
+    profile: str = Field(default="passive", min_length=1, max_length=64)
     interface: str = Field(min_length=1, max_length=64)
-    duration_seconds: int | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
+    actor: str | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
-    def validate_duration(self) -> "PassiveStartRequest":
-        settings = get_settings()
-        if self.duration_seconds is None:
-            self.duration_seconds = settings.passive_duration_default
-        if not (
-            settings.passive_duration_min
-            <= self.duration_seconds
-            <= settings.passive_duration_max
-        ):
-            raise ValueError(
-                "duration_seconds must be between "
-                f"{settings.passive_duration_min} and "
-                f"{settings.passive_duration_max}"
-            )
+    def validate_scope_size(self) -> "CreateAuditRequest":
+        if len(json.dumps(self.scope, default=str).encode("utf-8")) > 16_384:
+            raise ValueError("scope exceeds the 16 KiB limit")
         return self
 
 
-class PassiveStartResponse(BaseModel):
-    job_id: str
-    status: str
+class PassiveJobRequest(BaseModel):
+    duration_seconds: int | None = None
+    priority: int = Field(default=0, ge=-100, le=100)
 
 
-class JobStatus(str, Enum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+class AuditResponse(BaseModel):
+    id: str
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    status: AuditStatus
+    profile: str
+    interface: str | None
+    scope: dict[str, Any]
+    actor: str | None
+    environment_snapshot_reference: str | None
+    summary: dict[str, Any]
+    error: dict[str, Any] | None
 
 
 class JobResponse(BaseModel):
     id: str
+    audit_id: str
     type: str
-    target: str
     status: JobStatus
+    priority: int
     created_at: datetime
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: datetime | None
+    finished_at: datetime | None
     progress: int = Field(ge=0, le=100)
-    result: PassiveResult | None = None
-    error: str | None = None
+    stage: str
+    message: str | None
+    target: str | None
+    cancel_requested: bool
+    attempt: int
+    error: JobError | None
+    result_available: bool
+    result_url: str | None
+
+
+class JobAcceptedResponse(BaseModel):
+    audit_id: str
+    job_id: str
+    status: JobStatus
+    status_url: str
+
+
+class AuditPageResponse(BaseModel):
+    items: list[AuditResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class JobPageResponse(BaseModel):
+    items: list[JobResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class JobEventResponse(BaseModel):
+    id: int
+    audit_id: str
+    job_id: str
+    created_at: datetime
+    event_type: str
+    stage: str | None
+    progress: int | None
+    message: str
+    details: dict[str, Any]
+
+
+class JobEventPageResponse(BaseModel):
+    items: list[JobEventResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class HealthResponse(BaseModel):
+    status: str
+    product: str
+    version: str
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    database: bool
+    migrations: bool
+    worker: bool
+    dependencies: dict[str, bool]
 
 
 class InterfaceListResponse(BaseModel):

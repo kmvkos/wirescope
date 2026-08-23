@@ -1,5 +1,8 @@
 """Small structured JSON logging foundation for WireScope."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import json
 import logging
@@ -32,6 +35,10 @@ STANDARD_RECORD_FIELDS = {
     "thread",
     "threadName",
 }
+LOG_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
+    "wirescope_log_context",
+    default={},
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -42,6 +49,7 @@ class JsonFormatter(logging.Formatter):
             "component": record.name,
             "message": record.getMessage(),
         }
+        payload.update(LOG_CONTEXT.get())
 
         for key, value in record.__dict__.items():
             if key not in STANDARD_RECORD_FIELDS and not key.startswith("_"):
@@ -69,3 +77,13 @@ def configure_logging(level: str = "INFO") -> None:
 def get_logger(component: str) -> logging.Logger:
     configure_logging()
     return logging.getLogger(f"wirescope.{component}")
+
+
+@contextmanager
+def bind_log_context(**values: Any) -> Iterator[None]:
+    context = {**LOG_CONTEXT.get(), **values}
+    token = LOG_CONTEXT.set(context)
+    try:
+        yield
+    finally:
+        LOG_CONTEXT.reset(token)

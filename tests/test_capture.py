@@ -92,3 +92,18 @@ def test_capture_permission_error_is_not_silent_absence(tmp_path):
         == ToolErrorCode.PERMISSION_DENIED.value
     )
     assert result.pcap_path is None
+
+
+def test_force_cleanup_removes_retained_capture(tmp_path):
+    provider = CaptureProvider(
+        runner=SuccessfulDumpcap(),
+        settings=settings_for(tmp_path),
+    )
+    result = provider.capture(interface(), 1, retain=True)
+    capture_path = Path(result.pcap_path)
+
+    assert provider.cleanup(result) == []
+    assert capture_path.exists()
+    assert provider.cleanup(result, force=True) == []
+    assert not capture_path.exists()
+    assert result.retained is False

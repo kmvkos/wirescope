@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from collections.abc import Callable
 
 from config.settings import Settings, get_settings
 from engine.assessment import build_assessment
@@ -27,6 +28,9 @@ from providers.tools import (
     ToolRunner,
 )
 from sensors.passive import PASSIVE_SENSORS, run_passive_sensors
+
+
+ProgressCallback = Callable[[int, str, str], None]
 
 
 class PassivePipeline:
@@ -61,14 +65,27 @@ class PassivePipeline:
         *,
         retain_capture: bool = False,
         cancellation_token: CancellationToken | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> PassiveResult:
         duration = (
             duration_seconds
             if duration_seconds is not None
             else self.settings.passive_duration_default
         )
+        self._progress(
+            progress_callback,
+            5,
+            "preparing_interface",
+            "Preparing interface",
+        )
         interface = self.interfaces.validate(interface_name)
         before = self.runner.metrics_snapshot()
+        self._progress(
+            progress_callback,
+            10,
+            "capturing",
+            "Starting packet capture",
+        )
         capture = self.capture_provider.capture(
             interface,
             duration,
@@ -77,8 +94,20 @@ class PassivePipeline:
         )
 
         errors = list(capture.errors)
+        self._progress(
+            progress_callback,
+            50,
+            "capture_complete",
+            "Packet capture complete",
+        )
         if capture.status != CaptureStatus.COMPLETED or not capture.pcap_path:
             sensors = self._unavailable_sensors(errors)
+            self._progress(
+                progress_callback,
+                95,
+                "building_assessment",
+                "Building partial assessment",
+            )
             assessment = build_assessment(capture, sensors)
             return PassiveResult(
                 interface=interface.name,
@@ -92,12 +121,24 @@ class PassivePipeline:
 
         try:
             try:
+                self._progress(
+                    progress_callback,
+                    60,
+                    "parsing_packets",
+                    "Parsing captured packets",
+                )
                 dataset = self.parser.decode(
                     Path(capture.pcap_path),
                     cancellation_token=cancellation_token,
                 )
                 capture.frame_count = len(dataset.packets)
                 errors.extend(dataset.errors)
+                self._progress(
+                    progress_callback,
+                    85,
+                    "running_sensors",
+                    "Running passive sensors",
+                )
                 sensors = run_passive_sensors(dataset)
             except Exception as exc:
                 parser_error = PipelineError(
@@ -107,6 +148,12 @@ class PassivePipeline:
                 )
                 errors.append(parser_error)
                 sensors = self._unavailable_sensors([parser_error])
+            self._progress(
+                progress_callback,
+                95,
+                "building_assessment",
+                "Building assessment",
+            )
             assessment = build_assessment(capture, sensors)
         finally:
             if not retain_capture:
@@ -166,6 +213,16 @@ class PassivePipeline:
             capture_subprocesses=max(0, capture_count),
             decode_subprocesses=max(0, decode_count),
         )
+
+    @staticmethod
+    def _progress(
+        callback: ProgressCallback | None,
+        percentage: int,
+        stage: str,
+        message: str,
+    ) -> None:
+        if callback is not None:
+            callback(percentage, stage, message)
 
     @staticmethod
     def _unavailable_sensors(

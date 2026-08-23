@@ -155,7 +155,7 @@ class CaptureProvider:
         )
 
         if status != CaptureStatus.COMPLETED:
-            self.cleanup(result)
+            self.cleanup(result, force=True)
         self.logger.log(
             20 if status == CaptureStatus.COMPLETED else 40,
             "packet capture finished",
@@ -168,8 +168,13 @@ class CaptureProvider:
         )
         return result
 
-    def cleanup(self, capture_result: CaptureResult) -> list[PipelineError]:
-        if capture_result.retained or not capture_result.pcap_path:
+    def cleanup(
+        self,
+        capture_result: CaptureResult,
+        *,
+        force: bool = False,
+    ) -> list[PipelineError]:
+        if (capture_result.retained and not force) or not capture_result.pcap_path:
             return []
 
         pcap_path = Path(capture_result.pcap_path)
@@ -180,6 +185,7 @@ class CaptureProvider:
                 raise ValueError("capture path is outside the managed root")
             shutil.rmtree(parent)
             capture_result.pcap_path = None
+            capture_result.retained = False
             return []
         except (OSError, ValueError) as exc:
             error = PipelineError(

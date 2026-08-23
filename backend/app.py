@@ -20,7 +20,10 @@ from backend.models import (
     JobEventResponse,
     JobPageResponse,
     JobResponse,
+    ObservationPageResponse,
     PassiveJobRequest,
+    ProtocolAuditRequest,
+    ProtocolObservationResponse,
     ReadinessResponse,
     ServicePageResponse,
 )
@@ -49,6 +52,8 @@ from jobs.service import EntityNotFound, JobService
 from jobs.state import InvalidTransition
 from persistence.database import Database
 from persistence.schema import migrations_current
+from protocol_audits.registry import default_registry
+from protocol_audits.store import ProtocolObservationStore
 from storage.evidence import EvidenceStore
 
 
@@ -61,6 +66,7 @@ def create_app(
     interface_service: InterfaceService | None = None,
     route_resolver: RouteResolver | None = None,
     inventory_service: InventoryService | None = None,
+    observation_store: ProtocolObservationStore | None = None,
     environment_provider: Callable[[], dict[str, Any]] = get_environment,
 ) -> FastAPI:
     active_settings = settings or get_settings()
@@ -81,6 +87,10 @@ def create_app(
         active_settings,
         active_evidence,
     )
+    active_observations = observation_store or ProtocolObservationStore(
+        active_database
+    )
+    module_registry = default_registry()
 
     application = FastAPI(
         title=active_settings.app_name,
@@ -98,6 +108,7 @@ def create_app(
     application.state.interfaces = active_interfaces
     application.state.routes = active_routes
     application.state.inventory = active_inventory
+    application.state.observations = active_observations
 
     @application.get("/api/health", response_model=HealthResponse)
     @application.get("/api/status", response_model=HealthResponse)
@@ -480,6 +491,144 @@ def create_app(
             raise _not_found(exc) from exc
         return InventorySummaryResponse(
             **active_inventory.summary(audit_id).model_dump()
+        )
+
+    @application.post(
+        "/api/audits/{audit_id}/protocol-audits",
+        response_model=JobAcceptedResponse,
+        status_code=202,
+    )
+    def enqueue_protocol_audit(
+        audit_id: str,
+        request: ProtocolAuditRequest,
+    ) -> JobAcceptedResponse:
+        try:
+            audit = active_jobs.get_audit(audit_id)
+            scope = active_inventory.latest_scope(audit.id)
+            if scope is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "scope_not_confirmed",
+                        "message": (
+                            "Protocol audits require a confirmed authorized scope"
+                        ),
+                    },
+                )
+            summary = active_inventory.summary(audit.id)
+            if summary.services < 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "inventory_empty",
+                        "message": (
+                            "Protocol audits require persisted inventory services"
+                        ),
+                    },
+                )
+            if request.modules:
+                gated = [
+                    name
+                    for name in request.modules
+                    if module_registry.is_gated(name)
+                ]
+                unknown = [
+                    name
+                    for name in request.modules
+                    if name not in module_registry.default_names
+                    and name not in gated
+                ]
+                if gated:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "module_gated",
+                            "message": (
+                                "Requested protocol modules are gated off"
+                            ),
+                            "details": {"modules": gated},
+                        },
+                    )
+                if unknown:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "unknown_module",
+                            "message": (
+                                "Requested protocol modules are not available"
+                            ),
+                            "details": {"modules": unknown},
+                        },
+                    )
+            job = active_jobs.create_job(
+                audit_id=audit.id,
+                job_type="protocol_audit",
+                target=scope.interface,
+                parameters={
+                    "profile": request.profile,
+                    "modules": request.modules,
+                    "confirmed_scope_id": scope.id,
+                },
+                priority=request.priority,
+                resource_key=f"audit:{audit.id}",
+                resource_group="protocol_audit",
+                resource_limit=active_settings.max_protocol_audit_jobs,
+            )
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_state_transition",
+                    "message": str(exc),
+                },
+            ) from exc
+        return JobAcceptedResponse(
+            audit_id=audit.id,
+            job_id=job.id,
+            status=job.status,
+            status_url=f"/api/jobs/{job.id}",
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/observations",
+        response_model=ObservationPageResponse,
+    )
+    def list_observations(
+        audit_id: str,
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        asset_id: str | None = None,
+        protocol: str | None = None,
+        module: str | None = None,
+        kind: str | None = None,
+        service_id: str | None = None,
+    ) -> ObservationPageResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        page = active_observations.list_observations(
+            audit_id=audit_id,
+            limit=limit,
+            offset=offset,
+            asset_id=asset_id,
+            protocol=protocol,
+            module=module,
+            kind=kind,
+            service_id=service_id,
+        )
+        return ObservationPageResponse(
+            items=[
+                ProtocolObservationResponse(
+                    **item.model_dump(mode="json")
+                )
+                for item in page.items
+            ],
+            limit=page.limit,
+            offset=page.offset,
+            total=page.total,
         )
 
     @application.get(

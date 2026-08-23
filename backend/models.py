@@ -150,3 +150,46 @@ class ServicePageResponse(BaseModel):
 
 class InventorySummaryResponse(InventorySummary):
     pass
+
+
+class ProtocolAuditRequest(BaseModel):
+    profile: str = "default"
+    modules: list[str] | None = Field(default=None, max_length=32)
+    priority: int = Field(default=0, ge=-100, le=100)
+
+    @model_validator(mode="after")
+    def validate_modules(self) -> "ProtocolAuditRequest":
+        if self.profile != "default":
+            raise ValueError("Only the default protocol-audit profile is available")
+        if self.modules is not None:
+            if not self.modules:
+                raise ValueError("modules must not be empty when provided")
+            for name in self.modules:
+                if not name or len(name) > 32 or not name.replace("-", "").isalnum():
+                    raise ValueError(f"Invalid protocol module name: {name}")
+                if name != name.lower():
+                    raise ValueError("Protocol module names must be lowercase")
+        return self
+
+
+class ProtocolObservationResponse(BaseModel):
+    id: str
+    audit_id: str
+    asset_id: str
+    service_id: str
+    protocol: str
+    module: str
+    kind: str
+    data: dict[str, Any]
+    confidence: str
+    source: str
+    evidence_artifact_id: str | None
+    first_seen: datetime
+    last_seen: datetime
+
+
+class ObservationPageResponse(BaseModel):
+    items: list[ProtocolObservationResponse]
+    limit: int
+    offset: int
+    total: int

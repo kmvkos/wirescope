@@ -226,13 +226,28 @@ class EvidenceStore:
                 removed += 1
         return removed
 
-    def cleanup_orphan_files(self) -> int:
+    def cleanup_orphan_files(
+        self,
+        *,
+        older_than_seconds: int | None = None,
+    ) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=(
+                older_than_seconds
+                if older_than_seconds is not None
+                else self.settings.temp_file_max_age_seconds
+            )
+        )
         with self.database.session() as session:
             known = set(session.scalars(select(ArtifactModel.relative_path)))
         removed = 0
         for path in self._artifact_files():
             relative = str(path.relative_to(self.root))
-            if relative not in known:
+            modified = datetime.fromtimestamp(
+                path.stat().st_mtime,
+                tz=timezone.utc,
+            )
+            if relative not in known and modified < cutoff:
                 path.unlink(missing_ok=True)
                 removed += 1
         return removed

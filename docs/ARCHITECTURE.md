@@ -456,8 +456,9 @@ Artifact paths are generated from internal UUIDs; API callers cannot supply
 filesystem paths. Result JSON is versioned (`passive-result`, schema version
 1). A file is written as `*.tmp-<uuid>`, flushed, atomically renamed, hashed,
 then registered in SQLite. Power loss before metadata commit can leave only an
-orphan final file, which startup maintenance removes. Partial temporary files
-and stale managed capture directories are also cleaned conservatively.
+orphan final file, which startup maintenance removes only after the configured
+stale-file age to avoid racing a concurrent metadata commit. Partial temporary
+files and stale managed capture directories are also cleaned conservatively.
 
 Raw PCAP retention is disabled by default. When enabled, a completed capture is
 imported into evidence storage and the runtime capture directory is force

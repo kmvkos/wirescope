@@ -66,6 +66,7 @@ def test_file_import_and_orphan_cleanup(
     )
     orphan = evidence_store.root / "orphan.bin"
     orphan.write_bytes(b"orphan")
+    os.utime(orphan, (1, 1))
 
     assert evidence_store.path_for(artifact).read_bytes() == b"pcap fixture"
     assert evidence_store.cleanup_orphan_files() == 1

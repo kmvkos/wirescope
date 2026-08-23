@@ -13,6 +13,7 @@ def test_startup_cleanup_removes_only_stale_runtime_files(
     os.utime(temporary, (1, 1))
     orphan = evidence_store.root / "orphan.json"
     orphan.write_text("{}", encoding="utf-8")
+    os.utime(orphan, (1, 1))
 
     stale_capture = (
         durable_settings.capture_dir / "wirescope_interrupted"

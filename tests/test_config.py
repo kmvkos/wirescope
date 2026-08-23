@@ -47,6 +47,9 @@ def test_settings_default_to_source_checkout(monkeypatch):
     assert settings.runtime_dir == settings.data_dir / "runtime"
     assert settings.worker_concurrency == 1
     assert settings.max_packet_captures == 1
+    assert settings.max_active_discovery_jobs == 1
+    assert settings.active_standard_max_targets == 1_024
+    assert settings.nmap_binary == "nmap"
     assert settings.sqlite_synchronous == "FULL"
 
 

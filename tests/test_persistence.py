@@ -26,10 +26,16 @@ def test_migrations_build_working_schema_from_empty_database(
         assert {
             "alembic_version",
             "artifacts",
+            "asset_addresses",
+            "asset_names",
+            "asset_observations",
+            "assets",
             "audits",
+            "confirmed_scopes",
             "job_events",
             "jobs",
             "resource_locks",
+            "services",
             "workers",
         } <= tables
         assert migrations_current(database, settings.project_root)

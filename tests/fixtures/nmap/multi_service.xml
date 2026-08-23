@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="echo-reply"/>
+<address addr="192.0.2.15" addrtype="ipv4"/>
+<address addr="2001:db8::15" addrtype="ipv6"/>
+<address addr="B8:27:EB:10:20:30" addrtype="mac" vendor="Raspberry Pi Foundation"/>
+<hostnames>
+<hostname name="app.example.test" type="PTR"/>
+<hostname name="app.local" type="user"/>
+</hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="OpenSSH" version="9.2p1" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http" product="nginx" version="1.24.0" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="http" product="nginx" version="1.24.0" tunnel="ssl" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="3306"><state state="open" reason="syn-ack"/><service name="mysql" product="MySQL" version="8.0.36" method="probed" conf="10"/></port>
+<port protocol="udp" portid="53"><state state="open" reason="udp-response"/><service name="domain" product="dnsmasq" version="2.89" method="probed" conf="10"/></port>
+</ports>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="3.00" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

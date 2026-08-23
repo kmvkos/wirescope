@@ -11,6 +11,7 @@ from engine.interfaces import (
     InterfaceValidationCode,
     InterfaceValidationError,
 )
+from engine.routes import ResolvedScope, TargetRoute
 from jobs.models import RetentionClass
 from storage.evidence import EvidenceStore
 
@@ -25,6 +26,31 @@ def request(app, method, path, **kwargs):
             return await client.request(method, path, **kwargs)
 
     return asyncio.run(send())
+
+
+class RouteStub:
+    def resolve(self, interface_name, scope):
+        return ResolvedScope(
+            interface=interface_name,
+            interface_state="UP",
+            vlan_subinterface="." in interface_name,
+            routes=[
+                TargetRoute(
+                    target=target.value,
+                    representative_address=target.value.split("/", 1)[0],
+                    family=target.family,
+                    interface=interface_name,
+                    source_address=(
+                        "192.0.2.10"
+                        if target.family == 4
+                        else "2001:db8::10"
+                    ),
+                    gateway=None,
+                    directly_connected=True,
+                )
+                for target in scope.targets
+            ],
+        )
 
 
 class InterfaceStub:
@@ -58,6 +84,7 @@ def api_context(
         durable_settings,
         dumpcap_binary="/bin/true",
         tshark_binary="/bin/true",
+        nmap_binary="/bin/true",
     )
     environment = {
         "hostname": "wirescope-test",
@@ -72,6 +99,7 @@ def api_context(
         job_service=job_service,
         evidence_store=evidence_store,
         interface_service=InterfaceStub(),
+        route_resolver=RouteStub(),
         environment_provider=lambda: environment,
     )
     return app, job_service, evidence_store, environment
@@ -274,3 +302,69 @@ def test_root_serves_frontend(api_context):
 
     assert response.status_code == 200
     assert "WireScope" in response.text
+
+
+def test_enqueue_discovery_confirms_scope_and_lists_empty_inventory(api_context):
+    app, service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+
+    response = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={
+            "interface": "eth0",
+            "scope": ["192.0.2.0/24"],
+            "profile": "standard",
+        },
+    )
+
+    assert response.status_code == 202
+    job = service.get_job(response.json()["job_id"])
+    assert job.type == "active_discovery"
+    assert job.parameters["scope"] == ["192.0.2.0/24"]
+    assert job.parameters["confirmed_scope_id"]
+    assert job.resource_key == "interface:eth0"
+    assert job.resource_group == "active_discovery"
+    status = request(app, "GET", f"/api/jobs/{job.id}")
+    assert "assets" not in status.json()
+    assets = request(app, "GET", f"/api/audits/{audit_id}/assets")
+    services = request(
+        app,
+        "GET",
+        f"/api/audits/{audit_id}/services",
+        params={"port": 443},
+    )
+    summary = request(app, "GET", f"/api/audits/{audit_id}/inventory")
+    assert assets.status_code == 200
+    assert assets.json()["total"] == 0
+    assert services.json()["total"] == 0
+    assert summary.json()["assets"] == 0
+
+
+def test_discovery_rejects_unspecified_and_oversize_scope(api_context):
+    app, _service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+
+    unspecified = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={"interface": "eth0", "scope": ["0.0.0.0/0"], "profile": "discovery"},
+    )
+    ipv6 = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={"interface": "eth0", "scope": ["::/0"], "profile": "standard"},
+    )
+    oversized = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={"interface": "eth0", "scope": ["10.0.0.0/8"], "profile": "standard"},
+    )
+    assert unspecified.status_code == 422
+    assert unspecified.json()["detail"]["code"] == "prohibited_target"
+    assert ipv6.json()["detail"]["code"] == "prohibited_target"
+    assert oversized.json()["detail"]["code"] == "scope_limit_exceeded"

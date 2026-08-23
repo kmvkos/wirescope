@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="syn-ack"/>
+<address addr="192.0.2.80" addrtype="ipv4"/>
+<hostnames><hostname name="www.example.test" type="user"/></hostnames>
+<ports>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http" product="Apache httpd" version="2.4.57" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.4.57</cpe></service></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https" product="Apache httpd" version="2.4.57" tunnel="ssl" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.4.57</cpe></service></port>
+</ports>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="0.80" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

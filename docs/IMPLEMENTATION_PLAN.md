@@ -343,55 +343,46 @@ Deferred operational work:
 
 ## Milestone 3 — Active discovery
 
+Status: implemented on `milestone-3-active-discovery`. See
+[SCANNING_MODEL.md](SCANNING_MODEL.md).
+
 ### Scope model
 
 - represent IPv4/IPv6 hosts and CIDRs with `ipaddress`;
-- derive suggested scope from confirmed interface configuration only;
-- require user confirmation;
-- enforce maximum scope size per profile;
-- prevent scans outside the stored scope;
-- store who approved scope and when;
-- require explicit confirmation before creating VLAN subinterfaces.
+- distinguish observed network hints from authorized audit scope;
+- require confirmation before Nmap runs;
+- enforce configurable per-profile address caps;
+- reject unspecified/multicast targets including `0.0.0.0/0` and `::/0`;
+- store an immutable confirmed-scope snapshot with interface, profile, route
+  context, and timing policy.
 
 ### Nmap provider
 
-- detect version and capabilities;
-- generate argument arrays from approved profiles;
+- detect version and `CAP_NET_RAW` without raising backend privileges;
+- generate argument arrays from Discovery/Standard/Deep profiles;
 - prefer XML output for stable parsing;
 - store raw XML as evidence;
 - normalize hosts, addresses, MAC/vendor, ports, protocols, states, services,
   versions, and OS hints;
 - distinguish provider failure from zero discovered hosts;
-- support cancellation and timeouts.
-
-Profiles:
-
-- Discovery: ARP/host discovery and minimal probes;
-- Standard: selected TCP ports, limited UDP, versions;
-- Deep: full TCP and extended diagnostics;
-- Intrusive/Lab: reserved, separately gated, never default.
+- support cancellation and timeouts;
+- never enable NSE/`-sC`/vulnerability scripts.
 
 ### Asset and service inventory
 
-- correlate passive MAC/IP observations with active hosts;
-- maintain confidence and provenance for identity merges;
-- track services by asset, transport, port, and observation time;
-- preserve conflicting evidence rather than silently overwriting it.
-
-### Minimal UI
-
-- scope confirmation;
-- profile selection;
-- active-stage progress;
-- asset and service summary.
+- correlate passive MAC/IP observations with active hosts using exact MAC then
+  exact IP;
+- keep hostname provenance (PTR, DHCP, mDNS, LLMNR, NBNS, Nmap);
+- upsert services by asset, protocol, and port;
+- preserve conflicting evidence rather than silently merging identities.
 
 ### Acceptance criteria
 
 - Nmap XML fixtures parse without Nmap installed;
-- live integration tests are opt-in;
+- live integration tests are opt-in (`pytest -m network`);
 - generated commands cannot escape confirmed scope;
-- provider selection is profile- and service-aware;
-- assets and services persist with evidence provenance.
+- assets and services persist with evidence provenance;
+- inventory listing is paginated and filtered independently of job status.
 
 ---
 

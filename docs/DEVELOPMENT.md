@@ -49,15 +49,18 @@ parser runs.
 
 ```bash
 .venv/bin/pytest
-.venv/bin/python -m compileall -q backend config engine jobs parsers \
-  persistence providers sensors storage tests
+.venv/bin/python -m compileall -q backend config engine inventory jobs \
+  parsers persistence providers sensors storage tests
 .venv/bin/pip check
 .venv/bin/python -m scripts.benchmark_persistence
+.venv/bin/python -m scripts.benchmark_inventory
 ```
 
 Tests use a temporary migrated SQLite database and temporary evidence root.
-The passive end-to-end test uses a generated PCAP and does not access the live
-network.
+The default `pytest` invocation excludes `@pytest.mark.network`. Passive and
+active end-to-end tests use fixtures and do not scan the live network. Live
+Nmap tests require an explicit `WIRESCOPE_LIVE_SCOPE` and
+`pytest -m network`.
 
 ## Durable handler contract
 

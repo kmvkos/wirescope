@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sn 192.0.2.0/28" start="1700000000" version="7.95" xmloutputversion="1.05">
+<runstats>
+<finished time="1700000001" elapsed="0.20" summary="Nmap done"/>
+<hosts up="0" down="0" total="0"/>
+</runstats>
+</nmaprun>

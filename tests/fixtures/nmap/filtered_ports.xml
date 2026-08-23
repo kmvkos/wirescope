@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sS" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="echo-reply"/>
+<address addr="192.0.2.50" addrtype="ipv4"/>
+<ports>
+<port protocol="tcp" portid="22"><state state="filtered" reason="no-response"/></port>
+<port protocol="tcp" portid="80"><state state="filtered" reason="admin-prohibited"/></port>
+<port protocol="tcp" portid="443"><state state="closed" reason="reset"/></port>
+</ports>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="1.00" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

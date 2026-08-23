@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -6 -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="neighbor-advertisement"/>
+<address addr="2001:db8::20" addrtype="ipv6"/>
+<address addr="00:1B:63:AA:BB:CC" addrtype="mac" vendor="Apple, Inc."/>
+<hostnames><hostname name="v6host.example.test" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="OpenSSH" version="9.6p1" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="548"><state state="open" reason="syn-ack"/><service name="afp" method="table" conf="3"/></port>
+</ports>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="1.10" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

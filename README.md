@@ -79,8 +79,8 @@ Run tests:
 
 ```bash
 .venv/bin/pytest
-.venv/bin/python -m compileall -q backend config engine jobs parsers \
-  persistence providers sensors storage tests
+.venv/bin/python -m compileall -q backend config engine inventory jobs \
+  parsers persistence providers sensors storage tests
 .venv/bin/pip check
 ```
 
@@ -115,6 +115,17 @@ through the `wireshark` group. See
 - `WIRESCOPE_WORKER_CONCURRENCY` — bounded worker threads; defaults to one.
 - `WIRESCOPE_MAX_PACKET_CAPTURES` — global concurrent capture limit; defaults
   to one.
+- `WIRESCOPE_MAX_ACTIVE_DISCOVERY_JOBS` — concurrent Nmap pipelines; defaults
+  to one.
+- `WIRESCOPE_DISCOVERY_MAX_TARGETS`, `WIRESCOPE_STANDARD_MAX_TARGETS`,
+  `WIRESCOPE_DEEP_MAX_TARGETS`, `WIRESCOPE_IPV6_MAX_TARGETS` — authorized
+  scope address caps.
+- `WIRESCOPE_ALLOW_LARGE_SCOPES` — administrator override for those caps;
+  defaults to false. Unspecified networks remain prohibited.
+- `WIRESCOPE_NMAP_BINARY` — Nmap executable name or path.
+- `WIRESCOPE_NMAP_RUNTIME_DIR` — controlled directory for Nmap target lists
+  and temporary XML.
+- `WIRESCOPE_OUI_DATABASE_PATH` — local IEEE OUI text database.
 - `WIRESCOPE_SQLITE_BUSY_TIMEOUT_MS` — SQLite lock wait limit.
 - `WIRESCOPE_SQLITE_SYNCHRONOUS` — `FULL` by default; `NORMAL` is an explicit
   performance/durability trade-off.

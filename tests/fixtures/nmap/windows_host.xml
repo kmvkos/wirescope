@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV -O" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="echo-reply"/>
+<address addr="192.0.2.20" addrtype="ipv4"/>
+<address addr="00:15:5D:00:01:02" addrtype="mac" vendor="Microsoft"/>
+<hostnames><hostname name="winsrv.example.test" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="135"><state state="open" reason="syn-ack"/><service name="msrpc" product="Microsoft Windows RPC" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="445"><state state="open" reason="syn-ack"/><service name="microsoft-ds" product="Windows Server 2019" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="3389"><state state="open" reason="syn-ack"/><service name="ms-wbt-server" product="Microsoft Terminal Services" method="probed" conf="10"/></port>
+</ports>
+<os>
+<osmatch name="Microsoft Windows Server 2019" accuracy="93">
+<osclass vendor="Microsoft" osfamily="Windows" osgen="10" type="server"><cpe>cpe:/o:microsoft:windows_server_2019</cpe></osclass>
+</osmatch>
+</os>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="2.00" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

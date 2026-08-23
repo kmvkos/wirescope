@@ -7,6 +7,9 @@
 - The worker executes only registered internal job types.
 - `ToolRunner` executes argument arrays without a shell.
 - `dumpcap` is the only component with packet-capture capabilities.
+- Nmap runs unprivileged by default and only after authorized-scope and route
+  validation. Raw-socket features are used only when the process already has
+  `CAP_NET_RAW`; the backend is not granted extra privileges for scanning.
 - SQLite and evidence roots are writable only by the WireScope service user.
 
 Authentication and authorization are not implemented yet. Keep the API bound
@@ -20,8 +23,8 @@ retries. Running cancellation is persistent and propagated to subprocess
 groups through a cooperative token.
 
 Only one healthy worker supervisor may run. Database-backed resource locks
-prevent simultaneous passive captures on one interface and enforce the global
-capture limit.
+prevent simultaneous passive captures on one interface, serialize active
+discovery against that same interface, and enforce global capture/Nmap limits.
 
 API errors contain typed safe fields. Python tracebacks remain in structured
 debug logs and are not returned as HTTP responses.

@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -O" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="echo-reply"/>
+<address addr="192.0.2.30" addrtype="ipv4"/>
+<os>
+<osmatch name="Linux 5.10 - 5.15" accuracy="92">
+<osclass vendor="Linux" osfamily="Linux" osgen="5.X" type="general purpose"><cpe>cpe:/o:linux:linux_kernel:5</cpe></osclass>
+</osmatch>
+<osmatch name="Linux 4.15 - 5.6" accuracy="87">
+<osclass vendor="Linux" osfamily="Linux" osgen="4.X" type="general purpose"/>
+</osmatch>
+</os>
+<distance value="2"/>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="4.00" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

@@ -38,10 +38,12 @@ frontend/
     ▼
 backend/app.py
     ├── engine/environment.py
-    ├── engine/jobs.py
-    └── engine/passive.py
-            ├── sensors/passive.py
-            └── engine/assessment.py
+    ├── engine/interfaces.py
+    ├── engine/scope.py
+    ├── engine/routes.py
+    ├── jobs/  +  persistence/  +  storage/
+    ├── engine/passive.py
+    └── inventory/
 ```
 
 ### `backend/`
@@ -70,7 +72,8 @@ Discovers local host context through Linux-native sources:
 
 Environment discovery is separate from passive packet analysis. Passive
 capture accepts only an exactly discovered interface that passes loopback,
-allowlist, and link-state policy. Active scope validation remains Milestone 3.
+allowlist, and link-state policy. Active discovery additionally requires a
+server-validated authorized scope; see [SCANNING_MODEL.md](SCANNING_MODEL.md).
 
 ### `engine/passive.py`
 
@@ -124,17 +127,23 @@ Converts observations into explicitly qualified interpretations:
 
 The `/24` grouping is a hint and is not treated as a discovered subnet mask.
 
-### `jobs/`, `persistence/`, and `storage/`
+### `jobs/`, `persistence/`, `storage/`, and `inventory/`
 
 `JobService` is the only domain layer allowed to change audit/job state. It
 persists audits, jobs, progress, events, worker heartbeats, and resource locks
 through short SQLAlchemy sessions. `JobWorker` claims queued work atomically
 and dispatches it through `HandlerRegistry`; handlers never appear in an
-`if/elif` chain.
+`if/elif` chain. `passive_discovery` and `active_discovery` are registered
+handlers.
 
 `EvidenceStore` writes generated files under a controlled root using a
 temporary suffix, `fsync`, and atomic replacement. SQLite stores only metadata,
-hashes, schema versions, and relative paths.
+hashes, schema versions, and relative paths. Nmap XML is an artifact file, not
+a database BLOB.
+
+`InventoryService` owns confirmed scopes, assets, addresses, names, services,
+vendor lookup, and deterministic MAC/IP correlation. Job status never inlines
+the inventory; clients use the dedicated inventory endpoints.
 
 ### `frontend/`
 
@@ -153,6 +162,11 @@ backend contracts incrementally and must remain usable at 480×320.
 - `GET /api/audits`
 - `GET /api/audits/{audit_id}`
 - `POST /api/audits/{audit_id}/passive`
+- `POST /api/audits/{audit_id}/discovery`
+- `GET /api/audits/{audit_id}/assets`
+- `GET /api/audits/{audit_id}/assets/{asset_id}`
+- `GET /api/audits/{audit_id}/services`
+- `GET /api/audits/{audit_id}/inventory`
 - `GET /api/audits/{audit_id}/jobs`
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs`
@@ -366,7 +380,10 @@ controlled capture path
 
 The Python backend must not run as root and must not receive broad network
 capabilities. Capture arguments, interface names, durations, and output paths
-are validated before invocation.
+are validated before invocation. Active discovery uses Nmap only after scope
+and route validation. If `CAP_NET_RAW` is absent, the Nmap provider falls back
+to TCP connect scans and skips ARP, UDP, and OS detection instead of
+elevating the backend.
 
 The verified Debian development configuration is:
 
@@ -394,7 +411,10 @@ Current tables:
 - `artifacts` — relative path, content type, size, SHA-256, retention and
   result-schema metadata;
 - `resource_locks` — durable exclusive-resource ownership;
-- `workers` — process/thread heartbeat and readiness state.
+- `workers` — process/thread heartbeat and readiness state;
+- `confirmed_scopes` — immutable authorized active-scan snapshots;
+- `assets`, `asset_addresses`, `asset_names`, `services`,
+  `asset_observations` — inventory with provenance.
 
 SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
 `synchronous=FULL` by default for appliance power-loss durability. Scanner work

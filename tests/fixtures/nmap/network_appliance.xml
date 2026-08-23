@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="arp-response"/>
+<address addr="192.0.2.1" addrtype="ipv4"/>
+<address addr="00:00:0C:11:22:33" addrtype="mac" vendor="Cisco Systems, Inc"/>
+<hostnames><hostname name="core-sw.example.test" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="Cisco SSH" version="2.0" method="probed" conf="8"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="http" product="Cisco IOS HTTP" tunnel="ssl" method="probed" conf="8"/></port>
+<port protocol="udp" portid="161"><state state="open" reason="udp-response"/><service name="snmp" method="table" conf="3"/></port>
+</ports>
+<os>
+<osmatch name="Cisco IOS 15.X" accuracy="88">
+<osclass vendor="Cisco" osfamily="IOS" osgen="15.X" type="router"/>
+</osmatch>
+</os>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="1.50" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

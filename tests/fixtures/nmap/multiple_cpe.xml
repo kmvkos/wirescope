@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="syn-ack"/>
+<address addr="192.0.2.443" addrtype="ipv4"/>
+<ports>
+<port protocol="tcp" portid="443">
+<state state="open" reason="syn-ack"/>
+<service name="http" product="OpenSSL" version="3.0.13" tunnel="ssl" method="probed" conf="10">
+<cpe>cpe:/a:openssl:openssl:3.0.13</cpe>
+<cpe>cpe:/a:apache:http_server:2.4.58</cpe>
+</service>
+</port>
+</ports>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="0.90" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

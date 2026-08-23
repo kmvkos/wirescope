@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV -O" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="arp-response"/>
+<address addr="192.0.2.10" addrtype="ipv4"/>
+<address addr="00:11:22:33:44:55" addrtype="mac" vendor="CIMSYS Inc"/>
+<hostnames><hostname name="linux.example.test" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh" product="OpenSSH" version="8.9p1" extrainfo="Ubuntu" method="probed" conf="10"><cpe>cpe:/a:openbsd:openssh:8.9p1</cpe></service></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/><service name="http" product="nginx" version="1.22.1" method="probed" conf="10"><cpe>cpe:/a:igor_sysoev:nginx:1.22.1</cpe></service></port>
+</ports>
+<os>
+<osmatch name="Linux 5.15" accuracy="95">
+<osclass vendor="Linux" osfamily="Linux" osgen="5.X" type="general purpose"><cpe>cpe:/o:linux:linux_kernel:5</cpe></osclass>
+</osmatch>
+</os>
+<uptime seconds="86400"/>
+<distance value="1"/>
+</host>
+<runstats>
+<finished time="1700000001" elapsed="1.20" summary="Nmap done"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

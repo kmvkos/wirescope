@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV" start="1700000000" version="7.95" xmloutputversion="1.05">
+<host>
+<status state="up" reason="echo-reply"/>
+<address addr="192.0.2.10" addrtype="ipv4"/>
+</host>
+</nmaprun>

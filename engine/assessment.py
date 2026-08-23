@@ -105,7 +105,7 @@ def build_assessment(passive_result):
         {}
     )
 
-     ipv6_routers = ra_data.get(
+    ipv6_routers = ra_data.get(
         "routers",
         []
     )

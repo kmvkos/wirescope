@@ -1,20 +1,25 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from engine.passive import passive_discovery
-from engine.environment import get_environment
-from fastapi import HTTPException
 
-from engine.passive import passive_discovery
+from config.settings import get_settings
+from engine.environment import get_environment
 from engine.jobs import (
     create_job,
     get_job,
     list_jobs
 )
+from engine.passive import passive_discovery
+
+
+settings = get_settings()
 
 app = FastAPI(
-    title="WireScope",
-    version="0.1.0"
+    title=settings.app_name,
+    version=settings.app_version,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
 )
 
 
@@ -22,8 +27,8 @@ app = FastAPI(
 def api_status():
     return {
         "status": "ok",
-        "product": "WireScope",
-        "version": "0.1.0"
+        "product": settings.app_name,
+        "version": settings.app_version
     }
 
 
@@ -34,7 +39,7 @@ def api_environment():
 
 app.mount(
     "/static",
-    StaticFiles(directory="/opt/wirescope/frontend"),
+    StaticFiles(directory=str(settings.frontend_dir)),
     name="static"
 )
 
@@ -42,7 +47,7 @@ app.mount(
 @app.get("/")
 def root():
     return FileResponse(
-        "/opt/wirescope/frontend/index.html"
+        settings.frontend_dir / "index.html"
     )
 
 @app.get("/api/passive/{interface}")

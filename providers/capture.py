@@ -42,6 +42,13 @@ class CaptureProvider:
         self._validate_duration(duration_seconds)
         capture_directory = self._create_capture_directory()
         pcap_path = capture_directory / "capture.pcap"
+        self.logger.info(
+            "packet capture started",
+            extra={
+                "interface": interface.name,
+                "duration_seconds": duration_seconds,
+            },
+        )
 
         tool_result = self.runner.run(
             ToolCommand(
@@ -68,6 +75,13 @@ class CaptureProvider:
         errors: list[PipelineError] = []
         if tool_result.cancelled:
             status = CaptureStatus.CANCELLED
+            errors.append(
+                PipelineError(
+                    code=PipelineErrorCode.CANCELLED,
+                    component="capture",
+                    message="Packet capture was cancelled",
+                )
+            )
         elif not tool_result.success:
             status = CaptureStatus.FAILED
             errors.append(
@@ -124,6 +138,16 @@ class CaptureProvider:
 
         if status != CaptureStatus.COMPLETED:
             self.cleanup(result)
+        self.logger.log(
+            20 if status == CaptureStatus.COMPLETED else 40,
+            "packet capture finished",
+            extra={
+                "interface": interface.name,
+                "capture_status": status.value,
+                "frame_count": frame_count,
+                "duration_seconds": result.duration_seconds,
+            },
+        )
         return result
 
     def cleanup(self, capture_result: CaptureResult) -> list[PipelineError]:

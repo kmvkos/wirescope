@@ -14,6 +14,7 @@ class PipelineErrorCode(str, Enum):
     INVALID_INTERFACE = "invalid_interface"
     CAPTURE_FAILED = "capture_failed"
     DECODE_FAILED = "decode_failed"
+    CANCELLED = "cancelled"
     MALFORMED_INPUT = "malformed_input"
     SENSOR_FAILED = "sensor_failed"
     CLEANUP_FAILED = "cleanup_failed"

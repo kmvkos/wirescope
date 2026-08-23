@@ -1,249 +1,251 @@
+"""Passive capture, single-pass decode, sensors, and assessment orchestration."""
+
+from datetime import datetime, timezone
 import json
-import os
-import subprocess
-import tempfile
-from collections import Counter
-from sensors.passive import run_passive_sensors
+from pathlib import Path
+
+from config.settings import Settings, get_settings
 from engine.assessment import build_assessment
+from engine.interfaces import InterfaceService
+from engine.passive_models import (
+    CaptureResult,
+    CaptureStatus,
+    PacketDataset,
+    PassiveMetrics,
+    PassiveResult,
+    PipelineError,
+    PipelineErrorCode,
+    SensorResult,
+    SensorStatus,
+)
+from parsers.passive import PassivePacketParser
+from providers.capture import CaptureProvider
+from providers.tools import (
+    CancellationToken,
+    ToolCommand,
+    ToolResult,
+    ToolRunner,
+)
+from sensors.passive import PASSIVE_SENSORS, run_passive_sensors
 
-def run(command):
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False
+
+class PassivePipeline:
+    def __init__(
+        self,
+        *,
+        runner: ToolRunner | None = None,
+        settings: Settings | None = None,
+        interfaces: InterfaceService | None = None,
+        capture_provider: CaptureProvider | None = None,
+        parser: PassivePacketParser | None = None,
+    ) -> None:
+        self.runner = runner or ToolRunner()
+        self.settings = settings or get_settings()
+        self.interfaces = interfaces or InterfaceService(
+            runner=self.runner,
+            settings=self.settings,
+        )
+        self.capture_provider = capture_provider or CaptureProvider(
+            runner=self.runner,
+            settings=self.settings,
+        )
+        self.parser = parser or PassivePacketParser(
+            runner=self.runner,
+            settings=self.settings,
         )
 
-        return result.stdout.strip()
+    def run(
+        self,
+        interface_name: str,
+        duration_seconds: int | None = None,
+        *,
+        retain_capture: bool = False,
+        cancellation_token: CancellationToken | None = None,
+    ) -> PassiveResult:
+        duration = (
+            duration_seconds
+            if duration_seconds is not None
+            else self.settings.passive_duration_default
+        )
+        interface = self.interfaces.validate(interface_name)
+        before = self.runner.metrics_snapshot()
+        capture = self.capture_provider.capture(
+            interface,
+            duration,
+            retain=retain_capture,
+            cancellation_token=cancellation_token,
+        )
 
-    except Exception:
-        return ""
-
-
-def tshark_fields(pcap, display_filter, fields):
-    """
-    Читает pcap через tshark и возвращает список строк.
-
-    Например:
-        vlan.id
-        eth.src
-        arp.src.proto_ipv4
-    """
-
-    command = [
-        "tshark",
-        "-r", pcap,
-        "-Y", display_filter,
-        "-T", "fields",
-        "-E", "separator=\t",
-        "-E", "occurrence=a"
-    ]
-
-    for field in fields:
-        command += ["-e", field]
-
-    output = run(command)
-
-    if not output:
-        return []
-
-    rows = []
-
-    for line in output.splitlines():
-
-        columns = line.split("\t")
-
-        while len(columns) < len(fields):
-            columns.append("")
-
-        rows.append(columns)
-
-    return rows
-
-
-def count_frames(pcap, display_filter):
-    command = [
-        "tshark",
-        "-r", pcap,
-        "-Y", display_filter,
-        "-T", "fields",
-        "-e", "frame.number"
-    ]
-
-    output = run(command)
-
-    if not output:
-        return 0
-
-    return len(output.splitlines())
-
-
-def capture(interface, duration):
-
-    fd, path = tempfile.mkstemp(
-        prefix="wirescope_",
-        suffix=".pcap"
-    )
-
-    os.close(fd)
-
-    command = [
-        "tshark",
-        "-i", interface,
-        "-a", f"duration:{duration}",
-        "-w", path,
-        "-q"
-    ]
-
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False
-    )
-
-    if result.returncode != 0:
+        errors = list(capture.errors)
+        if capture.status != CaptureStatus.COMPLETED or not capture.pcap_path:
+            sensors = self._unavailable_sensors(errors)
+            assessment = build_assessment(capture, sensors)
+            return PassiveResult(
+                interface=interface.name,
+                requested_duration_seconds=duration,
+                capture=capture,
+                sensors=sensors,
+                assessment=assessment,
+                errors=errors,
+                metrics=self._metrics_since(before),
+            )
 
         try:
-            os.remove(path)
-        except OSError:
-            pass
+            try:
+                dataset = self.parser.decode(
+                    Path(capture.pcap_path),
+                    cancellation_token=cancellation_token,
+                )
+                capture.frame_count = len(dataset.packets)
+                errors.extend(dataset.errors)
+                sensors = run_passive_sensors(dataset)
+            except Exception as exc:
+                parser_error = PipelineError(
+                    code=PipelineErrorCode.DECODE_FAILED,
+                    component="passive_parser",
+                    message=f"Unexpected passive decode failure: {exc}",
+                )
+                errors.append(parser_error)
+                sensors = self._unavailable_sensors([parser_error])
+            assessment = build_assessment(capture, sensors)
+        finally:
+            if not retain_capture:
+                cleanup_errors = self.capture_provider.cleanup(capture)
+                errors.extend(cleanup_errors)
 
-        raise RuntimeError(
-            f"tshark capture failed: "
-            f"{result.stderr.strip()}"
+        return PassiveResult(
+            interface=interface.name,
+            requested_duration_seconds=duration,
+            capture=capture,
+            sensors=sensors,
+            assessment=assessment,
+            errors=errors,
+            metrics=self._metrics_since(before),
         )
 
-    return path
+    def analyze_pcap(
+        self,
+        pcap_path: Path,
+        *,
+        interface_name: str = "fixture",
+        cancellation_token: CancellationToken | None = None,
+    ) -> PassiveResult:
+        before = self.runner.metrics_snapshot()
+        dataset = self.parser.decode(
+            pcap_path,
+            cancellation_token=cancellation_token,
+        )
+        capture = self._fixture_capture(
+            pcap_path,
+            interface_name,
+            dataset,
+        )
+        sensors = run_passive_sensors(dataset)
+        assessment = build_assessment(capture, sensors)
+        return PassiveResult(
+            interface=interface_name,
+            requested_duration_seconds=0,
+            capture=capture,
+            sensors=sensors,
+            assessment=assessment,
+            errors=list(dataset.errors),
+            metrics=self._metrics_since(before),
+        )
 
-def parse_mac_addresses(pcap):
+    def _metrics_since(self, before: dict[str, int]) -> PassiveMetrics:
+        after = self.runner.metrics_snapshot()
+        capture_count = (
+            after.get(self.settings.dumpcap_binary, 0)
+            - before.get(self.settings.dumpcap_binary, 0)
+        )
+        decode_count = (
+            after.get(self.settings.tshark_binary, 0)
+            - before.get(self.settings.tshark_binary, 0)
+        )
+        return PassiveMetrics(
+            capture_subprocesses=max(0, capture_count),
+            decode_subprocesses=max(0, decode_count),
+        )
 
-    rows = tshark_fields(
-        pcap,
-        "eth",
-        ["eth.src"]
-    )
-
-    macs = Counter()
-
-    for row in rows:
-
-        mac = row[0].lower().strip()
-
-        if mac:
-            macs[mac] += 1
-
-    return [
-        {
-            "mac": mac,
-            "frames": count
+    @staticmethod
+    def _unavailable_sensors(
+        errors: list[PipelineError],
+    ) -> dict[str, SensorResult]:
+        fallback = errors or [
+            PipelineError(
+                code=PipelineErrorCode.CAPTURE_FAILED,
+                component="capture",
+                message="Packet capture is unavailable",
+            )
+        ]
+        return {
+            name: SensorResult(
+                name=name,
+                status=SensorStatus.ERROR,
+                errors=[item.model_copy() for item in fallback],
+            )
+            for name in PASSIVE_SENSORS
         }
-        for mac, count in macs.most_common()
-    ]
+
+    @staticmethod
+    def _fixture_capture(
+        pcap_path: Path,
+        interface_name: str,
+        dataset: PacketDataset,
+    ) -> CaptureResult:
+        decode_result = dataset.decode_result
+        status = (
+            CaptureStatus.COMPLETED
+            if decode_result.success
+            else CaptureStatus.FAILED
+        )
+        return CaptureResult(
+            interface=interface_name,
+            status=status,
+            started_at=decode_result.started_at,
+            finished_at=decode_result.finished_at,
+            duration_seconds=decode_result.duration_seconds,
+            frame_count=len(dataset.packets),
+            pcap_path=str(pcap_path),
+            pcap_reference=f"fixture:{pcap_path.name}",
+            retained=True,
+            errors=list(dataset.errors),
+            tool_result=decode_result,
+        )
 
 
-def analyze_pcap(pcap):
-
-    total_frames = count_frames(
-        pcap,
-        "frame"
-    )
-
-    sensors = run_passive_sensors(
-        tshark_fields,
-        count_frames,
-        pcap
-    )
-
-    macs = parse_mac_addresses(pcap)
-
-    detected_sensors = [
-        name
-        for name, result
-        in sensors.items()
-        if result["detected"]
-    ]
-
-    return {
-
-        "capture": {
-            "status": "completed",
-            "frames": total_frames
-        },
-
-        "devices": {
-            "mac_addresses": macs
-        },
-
-        "sensors": sensors,
-
-        "summary": {
-            "frames": total_frames,
-            "mac_addresses": len(macs),
-            "sensors_triggered": len(
-                detected_sensors
-            ),
-            "detected": detected_sensors
-        }
-    }
-
-def passive_discovery(interface, duration=20):
-
-    pcap = capture(
+def passive_discovery(
+    interface: str,
+    duration: int = 30,
+) -> dict:
+    return PassivePipeline().run(
         interface,
-        duration
-    )
+        duration,
+    ).model_dump(mode="json")
 
-    try:
 
-        result = analyze_pcap(
-            pcap
-        )
+def analyze_pcap(pcap: str | Path) -> dict:
+    return PassivePipeline().analyze_pcap(
+        Path(pcap),
+    ).model_dump(mode="json")
 
-        result["interface"] = interface
-        result["duration_seconds"] = duration
-
-        result["assessment"] = build_assessment(
-            result
-        )
-
-        return result
-
-    finally:
-
-        try:
-            os.remove(pcap)
-
-        except OSError:
-            pass
 
 if __name__ == "__main__":
-
     import sys
 
     if len(sys.argv) < 2:
+        print("Usage: python -m engine.passive <interface> [seconds]")
+        raise SystemExit(1)
 
-        print(
-            "Usage: python passive.py <interface> [seconds]"
-        )
-
-        sys.exit(1)
-
-    interface = sys.argv[1]
-
-    duration = (
+    interface_name = sys.argv[1]
+    capture_duration = (
         int(sys.argv[2])
         if len(sys.argv) >= 3
-        else 20
+        else get_settings().passive_duration_default
     )
-
     print(
         json.dumps(
-            passive_discovery(
-                interface,
-                duration
-            ),
-            indent=2
+            passive_discovery(interface_name, capture_duration),
+            indent=2,
         )
     )

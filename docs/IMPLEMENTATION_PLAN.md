@@ -1,0 +1,565 @@
+# WireScope implementation plan
+
+## Planning rules
+
+This plan converts the prototype into a portable appliance through reviewable
+milestones. A milestone is complete only when its acceptance criteria pass.
+Later milestones may refine earlier contracts through migrations, but they
+must not bypass the boundaries in `ARCHITECTURE.md`.
+
+Cross-cutting rules:
+
+- support Python 3.11+ on Debian AMD64 and Raspberry Pi OS ARM64;
+- do not run the backend as root;
+- do not use `shell=True`;
+- validate interfaces, scope, addresses, ports, paths, and profiles;
+- persist raw evidence separately from normalized data;
+- preserve tool errors explicitly;
+- keep live-network tests opt-in;
+- add a fixture and unit test for every parser/provider;
+- update architecture and operational documentation with each milestone.
+
+## Dependency graph
+
+```text
+M0 Stabilize
+    ↓
+M1 Passive foundation
+    ↓
+M2 Persistence + jobs + auth foundation
+    ↓
+M3 Active discovery
+    ↓
+M4 Service-aware protocol audits
+    ↓
+M5 Findings
+    ↓
+M6 Reporting
+    ↓
+M7 Full GUI
+    ↓
+M8 Raspberry Pi appliance
+```
+
+M5 rule development can begin against fixtures after M3 contracts stabilize.
+M6 JSON report schemas can begin with M5. Full GUI work depends on stable API
+contracts but minimal UI integration is required throughout.
+
+---
+
+## Milestone 0 — Stabilize
+
+### Objectives
+
+Create a reproducible, importable, documented baseline without redesigning the
+passive pipeline prematurely.
+
+### Tasks
+
+- initialize Git and record the original prototype;
+- ignore virtual environments, pcaps, databases, logs, secrets, and generated
+  reports;
+- fix syntax and import failures;
+- remove confirmed dead duplicate parser functions;
+- remove duplicate imports;
+- centralize project, frontend, and data paths;
+- make development documentation routes configurable;
+- add `pyproject.toml` with runtime and development dependencies;
+- add tests for API smoke behavior, settings, environment normalization,
+  sensors, and assessment;
+- document current and target architecture;
+- record the complete milestone roadmap.
+
+### Acceptance criteria
+
+- `import backend.app` succeeds;
+- tests run without live packet capture;
+- all tests pass on the development host;
+- no application path is hardcoded to `/opt/wirescope`;
+- baseline and stabilization changes exist as separate commits;
+- known transitional debt is documented.
+
+---
+
+## Milestone 1 — Passive foundation
+
+### 1. External tool runner
+
+Create a shared `providers/tools` layer before changing sensors.
+
+Tasks:
+
+- define Pydantic models for command specification and tool result;
+- execute argument arrays only, never shell strings;
+- capture exit code, duration, stdout, stderr, timeout, cancellation, and tool
+  version;
+- classify missing binary, permission denied, timeout, non-zero exit, invalid
+  output, and cancellation;
+- support bounded output and evidence-file streaming;
+- redact sensitive arguments in logs;
+- terminate subprocess groups during cancellation;
+- add fake-runner unit tests for every failure category.
+
+Dependencies: none beyond M0.
+
+### 2. Environment and interface policy
+
+- normalize interface models with Pydantic;
+- discover interfaces from `iproute2` and `/sys`;
+- add optional `ethtool` data;
+- resolve DNS through `resolv.conf` and systemd-resolved when available;
+- implement interface allowlist settings;
+- reject nonexistent, loopback, virtual, or policy-denied interfaces unless
+  explicitly permitted;
+- expose an API that returns usable interfaces and denial reasons;
+- add sanitized iproute2 fixtures and validation tests.
+
+Dependencies: tool runner.
+
+### 3. Capture provider and privilege boundary
+
+- use `dumpcap` for capture and `tshark` for decoding;
+- validate interface and duration before execution;
+- define maximum capture size and duration;
+- write captures to a controlled per-audit directory with restrictive modes;
+- record capture metadata and errors;
+- document Wireshark group/capability setup;
+- verify the API runs unprivileged;
+- add an opt-in integration test for real capture permissions.
+
+Dependencies: tool runner, interface policy.
+
+### 4. Efficient pcap decoding
+
+Adopt a streaming structured-output decoder:
+
+```text
+pcap
+  → one tshark EK/JSON stream for selected protocol layers
+  → normalized packet events
+  → sensor consumers
+```
+
+Tasks:
+
+- create pcap parser and normalized packet/event types;
+- parse one structured tshark stream incrementally;
+- allow at most a small documented number of supplemental passes for fields
+  unavailable from the main stream;
+- benchmark CPU, memory, elapsed time, and subprocess count on Raspberry Pi
+  representative fixtures;
+- reject corrupt pcaps and unknown fields as explicit parser errors;
+- preserve raw decode evidence separately;
+- add DHCP, LLDP, VLAN, IPv6 RA, and mixed-traffic pcap fixtures.
+
+Decision gate: retain tshark structured output unless benchmarks demonstrate
+that a Python packet library materially reduces complexity and resource use.
+
+Dependencies: tool runner, capture metadata model.
+
+### 5. Sensor contracts and registry
+
+Create stable models:
+
+- sensor name and schema version;
+- `detected`;
+- hit count;
+- typed normalized data;
+- evidence references;
+- warnings;
+- errors;
+- provider/tool metadata.
+
+Add a registry so sensors can be enabled by profile without modifying the core
+orchestrator.
+
+Implement or expand:
+
+- Ethernet/MAC;
+- VLAN 802.1Q and QinQ observations;
+- ARP;
+- DHCPv4;
+- LLDP;
+- CDP;
+- STP/RSTP;
+- IPv6 RA;
+- IPv6 NS/NA;
+- DHCPv6;
+- mDNS;
+- LLMNR;
+- NBNS;
+- SSDP.
+
+Tool/parser errors must result in an errored sensor result, not
+`detected=false`.
+
+Dependencies: normalized packet events.
+
+### 6. Assessment v2
+
+- introduce confidence enum: `confirmed`, `high`, `medium`, `low`, `hint`,
+  `unknown`;
+- require supporting observation references and rationale;
+- distinguish untagged traffic, tagged VLANs, multiple VLANs, possible native
+  VLAN, access-like, and trunk-like observations;
+- prohibit claims that an unseen VLAN does not exist;
+- preserve subnet-mask uncertainty for ARP-derived IPv4 groups;
+- assess DHCP, neighbors, STP root, IPv6 routers, naming protocols, and traffic
+  visibility without duplicating sensor parsing;
+- add table-driven tests for confidence and non-overclaiming.
+
+Dependencies: sensor contracts.
+
+### 7. Passive API and minimal UI
+
+- replace the synchronous scan endpoint with a job-oriented contract;
+- add request/response Pydantic models;
+- expose capture stage, sensor progress, warnings, and errors;
+- add interface selection, start/stop, progress, and summary to the minimal UI;
+- keep the UI usable at 480×320.
+
+Dependencies: M1 contracts; temporary job adapter may be used until M2.
+
+### Milestone 1 acceptance criteria
+
+- one capture produces all passive sensor results;
+- normal analysis uses one structured decode stream and no undocumented
+  repeated tshark loops;
+- every sensor has errors and evidence in its contract;
+- invalid interfaces are rejected before capture;
+- backend runs unprivileged with documented dumpcap permissions;
+- fixture-based tests cover all required passive protocols;
+- the UI can run and observe a passive scan.
+
+---
+
+## Milestone 2 — Jobs, persistence, and audit sessions
+
+### Persistence
+
+Use SQLite with SQLAlchemy 2 and Alembic. This adds modest local dependencies
+but provides explicit transactions, relationships, and durable migrations for
+the growing schema.
+
+Create entities and migrations for:
+
+- users and roles;
+- audits and audit scope;
+- interfaces and observed networks;
+- jobs and job events;
+- assets and services;
+- observations and assessments;
+- evidence metadata;
+- findings;
+- reports;
+- application settings and audit log.
+
+Operational requirements:
+
+- enable foreign keys;
+- use WAL mode where appropriate;
+- define backup/export and corruption recovery;
+- avoid storing large raw evidence blobs in frequently queried tables;
+- test forward migration from every released schema.
+
+### Durable local worker
+
+- implement a controlled worker that claims jobs transactionally from SQLite;
+- states: queued, running, completed, failed, cancelled;
+- stages and monotonic progress;
+- cooperative cancellation plus subprocess termination;
+- startup recovery for interrupted jobs;
+- retention and cleanup policy;
+- per-interface capture lock;
+- configurable global and per-provider concurrency;
+- result and evidence references instead of large list payloads;
+- separate worker lifecycle from kiosk lifecycle.
+
+No Redis or Celery.
+
+### Audit/session workflow
+
+- create audit;
+- snapshot environment and selected interface;
+- store user-confirmed scope, VLAN, and profile;
+- enqueue passive and later active stages;
+- expose audit history and job event polling.
+
+### Authentication foundation
+
+Authentication must exist before active scanning is remotely accessible:
+
+- local users with Argon2id password hashes;
+- roles: admin, auditor, viewer;
+- secure session or short-lived token design suitable for a local appliance;
+- initial-admin bootstrap flow;
+- login throttling and audit log;
+- CSRF protection if cookie sessions are used;
+- configurable bind address and trusted proxy behavior;
+- authorization tests for every state-changing endpoint.
+
+### Acceptance criteria
+
+- jobs and audits survive backend restart;
+- cancellation stops child processes;
+- two workers cannot claim the same job;
+- concurrent capture on one interface is prevented;
+- migrations build a new database and upgrade the previous schema;
+- protected API endpoints require the correct role.
+
+---
+
+## Milestone 3 — Active discovery
+
+### Scope model
+
+- represent IPv4/IPv6 hosts and CIDRs with `ipaddress`;
+- derive suggested scope from confirmed interface configuration only;
+- require user confirmation;
+- enforce maximum scope size per profile;
+- prevent scans outside the stored scope;
+- store who approved scope and when;
+- require explicit confirmation before creating VLAN subinterfaces.
+
+### Nmap provider
+
+- detect version and capabilities;
+- generate argument arrays from approved profiles;
+- prefer XML output for stable parsing;
+- store raw XML as evidence;
+- normalize hosts, addresses, MAC/vendor, ports, protocols, states, services,
+  versions, and OS hints;
+- distinguish provider failure from zero discovered hosts;
+- support cancellation and timeouts.
+
+Profiles:
+
+- Discovery: ARP/host discovery and minimal probes;
+- Standard: selected TCP ports, limited UDP, versions;
+- Deep: full TCP and extended diagnostics;
+- Intrusive/Lab: reserved, separately gated, never default.
+
+### Asset and service inventory
+
+- correlate passive MAC/IP observations with active hosts;
+- maintain confidence and provenance for identity merges;
+- track services by asset, transport, port, and observation time;
+- preserve conflicting evidence rather than silently overwriting it.
+
+### Minimal UI
+
+- scope confirmation;
+- profile selection;
+- active-stage progress;
+- asset and service summary.
+
+### Acceptance criteria
+
+- Nmap XML fixtures parse without Nmap installed;
+- live integration tests are opt-in;
+- generated commands cannot escape confirmed scope;
+- provider selection is profile- and service-aware;
+- assets and services persist with evidence provenance.
+
+---
+
+## Milestone 4 — Service-aware protocol audits
+
+Create a provider/plugin interface with:
+
+- supported service predicates;
+- required tool and minimum version;
+- safety classification;
+- command builder;
+- parser;
+- normalized observations;
+- timeout and resource budget;
+- fixture tests.
+
+Initial modules:
+
+1. SSH: `ssh-audit`, selected Nmap NSE.
+2. TLS: OpenSSL first, optional testssl.sh, selected NSE.
+3. HTTP: curl metadata and safe checks; optional Nikto/Nuclei profiles.
+4. SMB: smbclient/rpcclient/enum4linux-ng and selected NSE.
+5. DNS: dig and selected NSE.
+6. SNMP: explicitly scoped read-only queries.
+7. LDAP/AD: ldapsearch and TLS configuration.
+
+The orchestrator dispatches a module only when normalized service evidence
+matches it. Each optional tool reports availability without preventing the
+rest of the audit.
+
+Later providers can cover FTP, SMTP, RDP, Redis, PostgreSQL, MySQL/MariaDB,
+MSSQL, MongoDB, Elasticsearch, MQTT, UPnP, IPMI, NTP, TFTP, Telnet, VNC,
+Docker API, and Kubernetes API.
+
+Acceptance criteria:
+
+- adding a provider does not modify core orchestration;
+- every provider has fixtures for success, absence, timeout, and malformed
+  output;
+- destructive/brute-force/fuzzing actions are not present in default profiles.
+
+---
+
+## Milestone 5 — Findings engine
+
+- define versioned finding and severity models;
+- create declarative rules independent of scanners;
+- correlate multiple observations and evidence sources;
+- deduplicate findings across providers;
+- record rule version, rationale, evidence, asset, service, recommendation,
+  and confidence;
+- support suppressed/accepted-risk state with audit trail;
+- add tests for severity, correlation, deduplication, and false-positive
+  boundaries.
+
+Initial rule families:
+
+- exposed insecure management protocols;
+- weak SSH algorithms;
+- TLS protocol/cipher/certificate issues;
+- SMB signing and legacy dialect findings;
+- DNS recursion/configuration observations;
+- SNMP exposure;
+- HTTP security configuration;
+- infrastructure anomalies from passive assessment.
+
+Acceptance criteria:
+
+- findings never depend on parsing raw stdout directly;
+- every finding links to normalized observations and raw evidence;
+- rules produce deterministic results from fixtures.
+
+---
+
+## Milestone 6 — Reporting
+
+- define a versioned report view model;
+- generate self-contained HTML;
+- generate normalized JSON export;
+- retain report history and generation metadata;
+- organize executive summary, environment, scope, assets, services, findings,
+  recommendations, evidence references, and audit metadata;
+- keep raw provider output outside the primary human report;
+- sanitize rendered evidence against HTML injection;
+- add snapshot and schema tests;
+- evaluate PDF only after HTML stabilizes.
+
+Acceptance criteria:
+
+- reports reproduce from persisted audit data;
+- HTML is readable on laptop and local display;
+- JSON validates against the published schema;
+- exports cannot read or write outside controlled paths.
+
+---
+
+## Milestone 7 — Full GUI
+
+Implement the workflow:
+
+```text
+login
+→ new audit
+→ environment
+→ interface
+→ network/VLAN/scope
+→ profile
+→ confirmation
+→ progress
+→ summary
+→ assets/findings
+→ report
+```
+
+Tasks:
+
+- role-aware login and session handling;
+- touch targets and layouts tested at 480×320;
+- resilient polling or server events for progress;
+- explicit stop/cancel behavior;
+- clear separation of observations, assessments, and findings;
+- detailed laptop layout without making the kiosk unusable;
+- accessible status, errors, and confirmation dialogs;
+- browser tests for the complete audit workflow.
+
+Acceptance criteria:
+
+- an auditor completes an audit without shell access;
+- viewer cannot start or cancel audits;
+- kiosk recovery does not affect a running backend job.
+
+---
+
+## Milestone 8 — Raspberry Pi appliance
+
+### Installer
+
+- detect Debian-family OS and `amd64` versus `arm64`;
+- install required base packages and selected optional providers;
+- create unprivileged service account and controlled directories;
+- configure dumpcap permissions without broad backend capabilities;
+- install pinned Python dependencies;
+- initialize and migrate SQLite;
+- create initial admin securely;
+- support idempotent upgrade and rollback guidance.
+
+### systemd
+
+- application/API unit;
+- worker unit if separated;
+- kiosk unit;
+- dependency ordering and health checks;
+- controlled restart limits;
+- log retention;
+- no secrets embedded in unit files.
+
+### Kiosk
+
+- Raspberry Pi OS Lite;
+- minimal graphical stack;
+- Chromium kiosk;
+- touch and 480×320 validation;
+- automatic local recovery without terminating audits.
+
+### Security and release
+
+- production docs disabled or access-controlled;
+- conservative bind address and firewall guidance;
+- dependency and OS-package inventory;
+- backup/restore procedure;
+- signed release artifacts or checksums;
+- ARM64 smoke tests and appliance recovery tests;
+- complete `INSTALLATION.md`, `SECURITY_MODEL.md`, and operational runbook.
+
+Acceptance criteria:
+
+- clean Raspberry Pi OS Lite installation reaches the WireScope login screen;
+- backend and capture run with documented least privilege;
+- reboot during a queued/running audit has defined recovery behavior;
+- the same application tests pass on AMD64 and ARM64.
+
+---
+
+## Deferred decisions and evaluation gates
+
+- **Tshark structured format:** choose EK versus JSON after fixture benchmarks.
+- **Frontend framework:** retain vanilla UI until workflow complexity justifies
+  a framework; select based on bundle size, maintenance, and kiosk performance.
+- **PDF engine:** defer until HTML report requirements stabilize.
+- **Optional scanners:** package and enable independently; absence must degrade
+  capability, not application health.
+- **Remote transport security:** determine direct TLS versus a local reverse
+  proxy during appliance deployment design.
+
+## Definition of done for every task
+
+- implementation and migration, where applicable;
+- unit/fixture/API tests;
+- explicit failure behavior;
+- structured logging without secrets;
+- architecture or operator documentation update;
+- no unexplained test warnings or skipped failures;
+- reviewable commit with no runtime artifacts.

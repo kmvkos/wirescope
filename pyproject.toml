@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wirescope"
+version = "0.1.0"
+description = "Portable network discovery, diagnostics, and security audit appliance"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.52.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx==0.28.1",
+    "pytest==9.1.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*", "config*", "engine*", "sensors*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-ra"]

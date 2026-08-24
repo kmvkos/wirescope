@@ -35,16 +35,18 @@ The installer **runs from the checkout**. It does not copy the project tree into
 
 ### SSH
 
-If the SSH key belongs to your regular account, clone without `sudo`:
+If the SSH key belongs to your regular account, clone and select the branch without `sudo`, then move the checkout into `/opt`:
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance
 ```
 
-Using `sudo git clone` would use root's SSH configuration and keys.
+This keeps Git on the current user's credentials and avoids unnecessary ownership/`safe.directory` problems.
 
 If root already has GitHub access, cloning directly to `/opt` is fine:
 
@@ -58,9 +60,11 @@ sudo git checkout milestone-8-appliance
 
 ```bash
 git clone https://github.com/kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance
 ```
 
 For the private repository, use a GitHub token or credential helper rather than an account password.
@@ -275,7 +279,7 @@ The installer does **not** start Caddy/nginx and does not rewrite the firewall. 
 ### Lab self-signed certificate
 
 ```bash
-sudo python3 -m appliance tls-selfsigned \
+sudo /opt/wirescope/.venv/bin/python -m appliance tls-selfsigned \
   --output-dir /etc/wirescope/tls \
   --common-name wirescope.example
 ```
@@ -432,7 +436,8 @@ sudo ./packaging/install.sh \
 sudo systemctl status wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
-sudo python3 -m appliance verify --project-root /opt/wirescope
+sudo /opt/wirescope/.venv/bin/python -m appliance verify \
+  --project-root /opt/wirescope
 ```
 
 `/api/health` confirms that the API process is alive.
@@ -609,7 +614,7 @@ Restarting the browser or kiosk does not affect job lifetime.
 ## Release checksums
 
 ```bash
-python3 -m appliance checksums \
+/opt/wirescope/.venv/bin/python -m appliance checksums \
   --project-root /opt/wirescope \
   --output /opt/wirescope/packaging/SHA256SUMS
 

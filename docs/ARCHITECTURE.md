@@ -2,77 +2,57 @@
 
 [English](en/ARCHITECTURE.md)
 
-WireScope — локальный modular monolith для сетевой инвентаризации, диагностики и аудита. Он рассчитан на один Linux-хост или ВМ: API, worker, SQLite, evidence store и браузерный интерфейс работают как части одного appliance, без Redis, Celery и сетевых микросервисов между внутренними компонентами.
+WireScope — локальный modular monolith для сетевой инвентаризации, диагностики и аудита. Он рассчитан на один Linux-хост, ВМ или ARM64-appliance: API, worker, SQLite, evidence store и браузерный интерфейс работают как части одного устройства без Redis, Celery и внутренних сетевых микросервисов.
 
-Главный принцип проекта: **сначала собирается факт, затем делается вывод**. Пакетный сенсор, Nmap или протокольный provider создаёт observation/evidence. Assessment и findings engine уже интерпретируют эти данные.
+Главный принцип: **сначала собирается факт, затем делается вывод**. Packet sensors, Nmap и protocol providers создают observations/evidence. Assessment, classification и findings уже интерпретируют сохранённые данные.
 
 ## Общая схема
 
 ```text
 browser / kiosk
-      │ HTTP + session cookie
-      ▼
-FastAPI
       │
-      ├── backend/routers/
-      │      ├── auth
-      │      ├── system / network / scope
-      │      ├── audits
-      │      ├── captures
-      │      ├── inventory
-      │      ├── protocol audits
-      │      ├── findings
-      │      ├── reports
-      │      └── jobs
+      ▼
+FastAPI /api/v1
+      │
+      ├── routers
+      │    ├── auth / system / network / scope
+      │    ├── audits / jobs / captures
+      │    ├── inventory / protocol / findings / reports
+      │    └── insights
       │
       ├── domain services
-      │      ├── JobService
-      │      ├── InventoryService
-      │      ├── AuthService
-      │      ├── NetworkService
-      │      └── stores
       │
-      ├──────────── SQLite WAL
+      ├──────── SQLite WAL
       │
-      └──────────── evidence store
-                        ▲
-                        │
-                     worker
-                        │
-                        ├── passive discovery
-                        ├── packet capture
-                        ├── active discovery
-                        ├── protocol audits
-                        ├── findings evaluation
-                        └── report generation
+      └──────── evidence store
+                    ▲
+                    │
+                  worker
+                    ├── passive discovery
+                    ├── packet capture
+                    ├── active discovery
+                    ├── protocol audits
+                    ├── findings evaluation
+                    └── report generation
 ```
 
-API и worker — отдельные процессы. Browser/kiosk — отдельный клиент. Перезапуск Chromium не влияет на job, а рестарт API не уничтожает уже записанное состояние заданий.
+API и worker — отдельные процессы. Browser/kiosk — клиент durable API. Reload или restart Chromium не меняет job lifecycle.
 
-## Backend
+## Backend composition
 
-### `backend/app.py`
+`backend/app.py` — composition root: создаёт application services, собирает их в `AppServices`, подключает routers и static frontend.
 
-`backend/app.py` — composition root. В нём больше нет большого набора route handlers.
+`backend/dependencies.py` хранит runtime dependency container. Router получает готовые сервисы через `Depends(get_services)` и не создаёт собственный второй domain layer.
 
-Он отвечает за четыре вещи:
+Канонический HTTP API публикуется под:
 
-1. создать или получить application services;
-2. собрать их в `AppServices`;
-3. подключить API routers;
-4. подключить static frontend и `/`.
+```text
+/api/v1/...
+```
 
-Зависимости сохраняются в `application.state.services`. Старые `application.state.jobs`, `.inventory`, `.evidence` и другие атрибуты пока также остаются для совместимости с тестами и in-process integrations.
+`/api/...` временно остаётся compatibility alias и использует те же handlers, models, auth и scope checks. Legacy alias скрыт из OpenAPI.
 
-### `backend/dependencies.py`
-
-`AppServices` — контейнер runtime-зависимостей FastAPI. Router получает его через `Depends(get_services)` вместо того, чтобы заново собирать сервисы или импортировать глобальные singleton-объекты.
-
-Это не dependency-injection framework. Контейнер нужен только для явной передачи уже созданных сервисов в HTTP слой.
-
-### `backend/routers/`
-
-HTTP surface разделён по предметным областям:
+## Router layout
 
 ```text
 backend/routers/
@@ -84,106 +64,60 @@ backend/routers/
 ├── protocol.py
 ├── findings.py
 ├── reports.py
-└── jobs.py
+├── jobs.py
+└── insights.py
 ```
 
-Router не должен становиться вторым domain layer. Его задача — разобрать HTTP request, вызвать существующий сервис и вернуть API model/error.
+`insights.py` не хранит отдельное состояние. Он предоставляет read-only представления над существующими stores:
 
-Общие преобразования HTTP ошибок и response models вынесены в `backend/http.py`; общий authorization guard находится в `backend/security.py`.
+- `/capabilities`;
+- `/scan-profiles`;
+- audit dashboard/pipeline;
+- passive/active correlations;
+- audit-to-audit diff;
+- audit-scoped evidence access.
 
-## Версионирование API
+## Environment, interface и scope
 
-Канонический API публикуется как:
+`engine/environment.py` собирает состояние Linux-хоста. `engine/interfaces.py` обнаруживает и валидирует интерфейсы. `engine/routes.py` проверяет реальный route/source для active target. `engine/network.py` и `netctl` отвечают за управляемые изменения сетевой конфигурации.
 
-```text
-/api/v1/...
-```
-
-Например:
-
-```text
-GET  /api/v1/health
-POST /api/v1/audits
-GET  /api/v1/jobs/{job_id}
-```
-
-Для плавного перехода тот же `api_router` дополнительно подключён под `/api`. Legacy prefix остаётся рабочим для текущего frontend и существующих клиентов, но не включается в OpenAPI schema.
-
-Таким образом нет двух реализаций API:
+Observed network data и authorized scope разделены. Пассивно увиденный ARP host, DHCP server, LLDP/CDP neighbour или VLAN tag не становится автоматически разрешённой active target.
 
 ```text
-/api/v1 ─┐
-         ├── same routers / same handlers / same services
-/api    ─┘
-```
-
-Authorization guard нормализует оба prefix и применяет одинаковую public/auditor policy. Подробнее: [API.md](API.md).
-
-## Environment, interfaces и network
-
-`engine/environment.py` собирает состояние Linux-хоста из обычных системных источников: `ip -j addr`, `ip -j route`, `/sys/class/net`, resolver configuration и hostname.
-
-`engine/interfaces.py` отвечает за обнаружение и validation интерфейсов. Неизвестный, запрещённый policy или down-интерфейс отбрасывается до запуска capture/scanner.
-
-`engine/network.py` и appliance `netctl` отвечают за управляемое изменение сетевой конфигурации. API не выполняет произвольные shell-команды пользователя.
-
-`engine/routes.py` проверяет, через какой interface/source реально маршрутизируется подтверждённая цель.
-
-## Scope
-
-Observed network data и authorized scope — разные сущности.
-
-Пассивный анализ может увидеть ARP-адрес, DHCP server, LLDP/CDP neighbour или VLAN tag. Это наблюдение не является разрешением сканировать найденную сеть.
-
-Active discovery проходит цепочку:
-
-```text
-operator request
-      ↓
-ScopeValidator
-      ↓
-address-count / prohibited-range checks
-      ↓
-route + interface validation
-      ↓
+passive/environment evidence
+        ↓
+scope proposal
+        ↓
+operator confirmation
+        ↓
 immutable confirmed scope
-      ↓
-worker
-      ↓
+        ↓
+worker revalidation
+        ↓
 Nmap provider
 ```
 
-`0.0.0.0/0`, `::/0`, multicast и бесконтрольное расширение IPv6 запрещены. Лимиты зависят от профиля.
-
 ## Passive pipeline
-
-Обычный passive audit использует фиксированный pipeline:
 
 ```text
 validated interface
       ↓
 dumpcap → bounded PCAP
       ↓
-tshark -T ek → line-oriented decode
+tshark -T ek
       ↓
 normalized PacketRecord
       ↓
 in-process sensors
       ↓
-assessment
+assessment + inventory observations
 ```
 
-`dumpcap` только захватывает пакеты. `tshark` только декодирует уже созданный PCAP. Сенсоры не запускают внешние команды.
+Один PCAP декодируется один раз. Сенсоры не запускают отдельный tshark на каждый протокол.
 
-Один PCAP не декодируется отдельным tshark-процессом для каждого протокола. Это важно для небольших appliance и ARM64.
+## Jobs и persistence
 
-Sensor result различает `absent`, `detected`, `partial` и `error`. Ошибка parser/tool не превращается в «протокол отсутствует».
-
-## Jobs и worker
-
-Долгие операции выполняются не внутри HTTP request, а как durable jobs.
-
-Основные состояния:
+Долгие операции — durable jobs:
 
 ```text
 queued → running → completed
@@ -193,94 +127,105 @@ queued → running → completed
    └─────────────→ cancelled
 ```
 
-`JobService` владеет state transitions. Worker атомарно claim'ит queued job и передаёт его handler из registry.
+`JobService` владеет transitions. Worker атомарно claim'ит job. Locks и worker leases находятся в SQLite.
 
-Resource locks находятся в SQLite. Например, passive capture и active discovery не могут одновременно захватить один и тот же `interface:<name>`.
-
-При рестарте worker ранее running jobs становятся `interrupted` с `application_restart`; queued jobs остаются в очереди. Автоматического resume/retry произвольного scanner process нет.
-
-## Persistence
-
-SQLite — локальный system of record. Используются SQLAlchemy 2 и Alembic.
-
-Рабочие connection settings включают:
-
-- foreign keys;
-- WAL;
-- busy timeout;
-- короткие транзакции;
-- `synchronous=FULL` по умолчанию для appliance deployment.
-
-Scanner/capture не выполняется внутри открытой SQL transaction.
-
-В SQLite лежат audits, jobs/events, locks/workers, confirmed scopes, inventory, protocol observations, findings, users/sessions, reports и metadata evidence artifacts.
+SQLite — system of record для audits, jobs/events, scopes, inventory, observations, findings, users/sessions, reports и artifact metadata. Используются WAL, foreign keys, busy timeout и короткие транзакции; scanner process не держит открытую SQL transaction.
 
 ## Evidence store
 
-Большие и сырые данные не кладутся BLOB'ами в основные таблицы:
+PCAP, Nmap XML, raw provider stdout/stderr, passive-result JSON и generated reports находятся в filesystem evidence store, а не BLOB в основных таблицах.
 
-- PCAP;
-- Nmap XML;
-- raw stdout/stderr provider'ов;
-- passive result JSON;
-- HTML/JSON reports.
+Artifact записывается атомарно, получает UUID, size и SHA-256. API-клиент не выбирает filesystem path.
 
-Файл создаётся под контролируемым evidence root, записывается через temporary path, flush/fsync и atomic rename, затем получает SHA-256 и metadata row в SQLite.
+Каноническая выдача evidence audit-scoped:
 
-Клиент API не выбирает filesystem path.
+```text
+GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
+```
 
-## Inventory и correlation
+## Inventory, correlation и classification
 
-`InventoryService` хранит assets, addresses, names, services и evidence provenance.
+Identity correlation остаётся консервативной:
 
-Корреляция identity идёт консервативно: точный MAC имеет приоритет, затем точный IP. Если MAC identity и IP identity конфликтуют, данные не склеиваются молча.
+1. exact MAC;
+2. exact IP;
+3. конфликт сохраняется как observation, а не скрытый merge.
 
-Hostnames из DHCP, PTR, mDNS, LLMNR, NBNS и Nmap могут сосуществовать. Более поздний источник не стирает предыдущий.
+Hostname используется как дополнительный signal/provenance, но не как достаточное основание агрессивно склеивать assets.
 
-Device/OS classification остаётся hint с confidence, а не подтверждённым фактом.
+Device classification использует OS hints, vendor, services/ports и naming sources. Результат хранится как `device_class_hint` + confidence + explainable signal sources, а не как security finding.
 
-## Protocol audits
+## Active scan profiles
 
-`protocol_audits/` — registry-driven слой проверок найденных сервисов.
+Активные профили описаны декларативно в `config/active_profiles.json` и загружаются через `engine/active_profiles.py`.
 
-Модуль определяет:
+API отдаёт фактически загруженный каталог:
 
-- service predicate;
-- required tool;
-- safety class;
-- argv-only command builder;
-- parser;
-- timeout/resource budget.
+```text
+GET /api/v1/scan-profiles
+```
 
-Сейчас используются SSH, TLS, HTTP, DNS, SMB, SNMP и LDAP providers. Они запускаются только для inventory addresses внутри confirmed scope.
+Профиль определяет timing, TCP/UDP coverage, service/version detection, OS detection и timeout. Пользователь не передаёт произвольный Nmap argv.
 
-NSE, brute-force и credential guessing не являются частью default path.
+## Capabilities и readiness
 
-## Findings
+`backend/capabilities.py` строит runtime inventory внешних инструментов: capture/decode, Nmap и protocol providers.
 
-Findings engine не запускает сканеры и не парсит raw stdout.
+Core readiness требует базовые компоненты, необходимые для работоспособности appliance. Optional provider может быть недоступен без перевода всего WireScope в `not_ready`.
 
-Он читает normalized observations, inventory и passive-result artifacts и применяет versioned rules. Finding содержит severity, confidence, rationale, recommendation и evidence links.
+GUI получает capabilities через:
 
-`suppressed` и `accepted_risk` сохраняются при re-evaluation; изменения состояния пишутся в отдельную историю.
+```text
+GET /api/v1/capabilities
+```
 
-## Reporting
+Там же виден effective web listener: bind host/port, TLS и trust-proxy state.
 
-Report generation также не обращается к сети. Он собирает persisted state в versioned `audit-report` model и создаёт self-contained HTML и JSON artifacts.
+## Dashboard и pipeline
 
-Raw provider output не встраивается целиком в основной отчёт: используются evidence references и hashes.
+Dashboard не имеет собственной таблицы. Он агрегирует существующие jobs, inventory и findings.
 
-## Auth
+```text
+GET /api/v1/audits/{audit_id}/dashboard
+```
 
-Локальные роли — `auditor` и `viewer`.
+Pipeline:
 
-Session cookie содержит случайный token; SQLite хранит его SHA-256 digest. Mutating operational routes требуют `auditor`. Viewer может читать результаты, но не запускать/отменять работу.
+```text
+passive → discovery → protocol → findings → report
+```
 
-Health/readiness и login остаются публичными, чтобы appliance мог показать состояние до входа.
+Каждая стадия выводится из durable jobs.
+
+## Audit diff
+
+Сравнение двух audits вычисляется на чтении из persisted state:
+
+```text
+GET /api/v1/audits/{new_id}/diff?against={old_id}
+```
+
+Сравниваются assets, открытые services и findings. Для identity между аудитами используется стабильный доступный signal — прежде всего MAC, затем IP/name fallback.
+
+## Findings и reports
+
+Findings engine читает normalized observations и inventory, применяет versioned rules и создаёт finding с severity, confidence, rationale, recommendation и evidence links.
+
+Report generation не обращается к сети. Канонический документ — `audit-report v1` JSON. Из него строятся self-contained HTML и Markdown. PDF пока не реализован.
+
+## Frontend
+
+Основной wizard остаётся в `frontend/app.js`. Новая operator-insights панель вынесена в `frontend/enhancements.js` и `enhancements.css`, чтобы не раздувать основной workflow.
+
+Она показывает:
+
+- dashboard/pipeline;
+- capabilities и listener;
+- scan profiles;
+- audit diff;
+- evidence viewer.
 
 ## Privilege boundary
-
-Production process model:
 
 ```text
 unprivileged wirescope-api
@@ -292,32 +237,34 @@ root:wireshark 0750
 cap_net_admin,cap_net_raw=eip
 ```
 
-Python backend не получает `CAP_NET_RAW`/`CAP_NET_ADMIN`.
-
-Nmap не повышается автоматически. При отсутствии raw-socket privileges provider использует допустимый fallback и фиксирует пропущенные возможности.
-
-Внешние инструменты запускаются argv-массивами; `shell=True` не используется.
+Python backend не получает packet-capture capabilities. Nmap не повышается самим WireScope.
 
 ## Deployment
 
-По умолчанию application и appliance installer слушают `127.0.0.1:8000`.
-
-Для локального kiosk этого достаточно. Для LAN предпочтительная схема:
+Нормальный appliance должен быть доступен оператору через любой настроенный интерфейс, поэтому application settings, installer и upgrade path по умолчанию используют:
 
 ```text
-browser → HTTPS 443 → Caddy/nginx → 127.0.0.1:8000
+0.0.0.0:8000
 ```
 
-Прямой `0.0.0.0` требует явного `--bind-host 0.0.0.0` и должен сопровождаться TLS или осознанной firewall policy.
+Локальный kiosk при этом открывает `http://127.0.0.1:8000/`.
 
-## Что пока остаётся
+Loopback-only deployment остаётся явной опцией:
 
-К заметному техническому долгу относятся:
+```bash
+sudo ./packaging/install.sh --bind-host 127.0.0.1
+```
 
-- frontend всё ещё использует compatibility `/api/*` и будет переведён на `/api/v1` отдельно;
-- response-generated URLs пока также могут возвращать `/api/*`;
-- PDF export не реализован;
-- нет отдельной security audit-log таблицы;
-- нет policy-driven удаления завершённых audits/evidence;
-- terminal jobs не имеют автоматического retry;
-- tshark compatibility нужно проверять на пакетных версиях поддерживаемых дистрибутивов.
+Firewall, direct TLS и reverse proxy могут применяться по требованиям конкретной сети; они не меняют внутреннюю архитектуру WireScope.
+
+## CI и тестирование
+
+GitHub Actions на Python 3.11 устанавливает проект, компилирует Python sources и запускает default `pytest` suite. Live-network и browser-specific проверки остаются opt-in там, где это требуется.
+
+## Оставшийся technical debt
+
+- PDF export;
+- отдельная security audit-log таблица;
+- policy-driven retention/deletion завершённых audits/evidence;
+- автоматический retry terminal/interrupted jobs;
+- release-проверка tshark/provider compatibility на пакетных версиях поддерживаемых дистрибутивов.

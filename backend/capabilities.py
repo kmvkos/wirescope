@@ -47,6 +47,13 @@ def capability_inventory(settings: Settings) -> dict[str, Any]:
     optional_total = sum(1 for item in tools if not item["required_for_core"])
     return {
         "core_ready": required_ok,
+        "web": {
+            "bind_host": settings.bind_host,
+            "bind_port": settings.bind_port,
+            "all_interfaces": settings.bind_host in {"0.0.0.0", "::"},
+            "tls": settings.tls_enabled,
+            "trust_proxy": settings.trust_proxy,
+        },
         "tools": tools,
         "summary": {
             "required_ready": required_ok,

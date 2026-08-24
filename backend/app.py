@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import Depends, FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from auth.service import AuthService
@@ -98,8 +98,6 @@ def create_app(
     )
 
     application.state.services = services
-    # Keep existing state attributes for tests and integrations that use the
-    # in-process application object directly.
     application.state.settings = active_settings
     application.state.database = active_database
     application.state.jobs = active_jobs
@@ -128,9 +126,19 @@ def create_app(
         name="static",
     )
 
-    @application.get("/")
-    def root() -> FileResponse:
-        return FileResponse(active_settings.frontend_dir / "index.html")
+    @application.get("/", response_class=HTMLResponse)
+    def root() -> HTMLResponse:
+        index = active_settings.frontend_dir / "index.html"
+        html = index.read_text(encoding="utf-8")
+        html = html.replace(
+            "</head>",
+            '<link rel="stylesheet" href="/static/enhancements.css">\n</head>',
+        )
+        html = html.replace(
+            "</body>",
+            '<script src="/static/enhancements.js" defer></script>\n</body>',
+        )
+        return HTMLResponse(html)
 
     return application
 

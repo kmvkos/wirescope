@@ -1,189 +1,493 @@
-# WireScope operational runbook
+# Runbook WireScope
 
-Day-2 operations for the generic Linux appliance (Debian/Ubuntu, Fedora/RHEL,
-openSUSE). Commands are the same on each family; package names differ only
-during install. Raspberry Pi hardware is optional; Raspberry Pi OS is not
-required.
+**Русский** · [English](en/RUNBOOK.md)
 
-## Service health
+Это рабочая памятка для эксплуатации уже установленного appliance. Установка и first-time setup описаны в [INSTALLATION.md](INSTALLATION.md).
+
+Команды ниже ориентированы на system install в `/opt/wirescope`. Для `--user-install` используйте `systemctl --user` / `journalctl --user` и пользовательские пути.
+
+## Быстрая проверка состояния
 
 ```bash
 systemctl is-active wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
-# LAN via reverse proxy:
-# curl -sS https://wirescope.example/api/health
 curl -sS http://127.0.0.1:8000/api/ready
 python3 -m appliance verify --project-root /opt/wirescope
 python3 -m appliance detect
 ```
 
-`/api/health` is public and does not require the worker. `/api/ready` is
-false until migrations match and a worker heartbeat is current. The login
-page still loads from the API process alone.
+Что означают endpoints:
 
-Logs:
+- `/api/health` — API process жив;
+- `/api/ready` — дополнительно готовы DB migrations, worker heartbeat и обязательные binaries.
+
+`/api/health` может быть `ok`, даже если worker не работает. Это нормальное различие между liveness и readiness.
+
+## Логи
+
+Последний час:
 
 ```bash
-journalctl -u wirescope-api -u wirescope-worker --since -1h
+journalctl \
+  -u wirescope-api \
+  -u wirescope-worker \
+  --since -1h
 ```
 
-Journal retention is capped by `packaging/systemd/40-wirescope.journald.conf`
-(`SystemMaxUse=256M`, 14 days) when the installer installed that drop-in.
-
-Restart limits are five failures per 60 seconds (`StartLimitBurst`).
-
-On `--user-install`, use `systemctl --user` and `journalctl --user`.
-
-## Sign in
-
-1. On this computer: `http://127.0.0.1:8000/` (kiosk or local browser).
-   Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
-   From another PC: `https://<host>/` through Caddy or nginx (see
-   `packaging/proxy/README.md`).
-2. Use the auditor username (`auditor` unless overridden).
-3. Use the password from `/etc/wirescope/initial-admin.txt` or the operator
-   password file supplied to the installer.
-4. Delete `/etc/wirescope/initial-admin.txt` after copying it to a password
-   manager.
-
-Сменить пароль GUI `auditor`: после входа нажмите **Сменить пароль**
-(рядом с **Сеть**). Текущий сеанс остаётся; другие сеансы этого пользователя
-завершаются. CLI `set-password` — только если вход в GUI уже невозможен.
-
-The GUI is Russian. Viewers can inspect results but cannot start or cancel
-work. If login does not stick, the page is probably HTTP while cookies are
-`Secure` — open the GUI over HTTPS.
-
-## From another PC
-
-Preferred: API stays on `127.0.0.1:8000`, Caddy or nginx on 443,
-`--trust-proxy`. Open `https://<host>/`.
-
-| Family | Enable proxy | Open 443 | URL |
-| --- | --- | --- | --- |
-| This Debian VM | `apt install caddy` or `nginx`; copy `/etc/wirescope/proxy/` | `nftables.nft` or `ufw.example` | `https://<debian-host>/` |
-| Ubuntu | same packages (`apt`); `ufw.example` | ufw | `https://<ubuntu-host>/` |
-| Fedora / RHEL | `dnf install caddy` or `nginx`; `firewalld.example` | firewalld | `https://<fedora-host>/` |
-
-Lab: `python3 -m appliance tls-selfsigned`. Real hostname: Let's Encrypt
-(Caddy automatic HTTPS, or `certbot` with nginx). Optional direct TLS:
-`https://<host>:8443/`. The installer does not start a proxy or change
-nft/ufw/firewalld.
-
-## Reboot during an audit
-
-| Job state at reboot | After worker start |
-| --- | --- |
-| `running` | `interrupted`, error `application_restart`, not retried |
-| `queued` | still `queued`, eligible to be claimed |
-| `cancelled` | remains cancelled |
-
-The GUI polls durable jobs. Reloading the browser, restarting the local
-kiosk, or bouncing `wirescope-api` does not cancel worker jobs. Only an
-auditor Stop action or process-level worker restart of a *running* job
-changes execution.
-
-After reboot: wait until `/api/ready` shows `worker: true`, then open the
-audit from the home list. Interrupted jobs stay interrupted.
-
-## Capture permission check
+Следить в реальном времени:
 
 ```bash
-getent group wireshark
-/usr/sbin/getcap /usr/bin/dumpcap
-stat -c '%U:%G %a' /usr/bin/dumpcap
-sudo -u wirescope /usr/bin/dumpcap -D
-/usr/sbin/getcap /opt/wirescope/.venv/bin/python || true
+journalctl -f -u wirescope-api -u wirescope-worker
 ```
 
-Expected: dumpcap `root:wireshark` `750` with `cap_net_admin,cap_net_raw=eip`;
-Python has no those capabilities; `dumpcap -D` works as `wirescope`.
-`getcap` may be `/usr/sbin/getcap` or `/sbin/getcap` depending on the distro.
-
-On a `--user-install`, also check the worker process groups include
-`wireshark`. If not, the units should exec via `sg wireshark`; then
-`systemctl --user restart wirescope-api wirescope-worker` is enough without
-a logout. System units use `SupplementaryGroups=wireshark`.
-
-## Backup
+Kiosk:
 
 ```bash
-systemctl stop wirescope-api wirescope-worker   # optional, quieter SQLite
-sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
-  /opt/wirescope/.venv/bin/python -m appliance backup
-systemctl start wirescope-worker wirescope-api
+journalctl -u wirescope-kiosk -e
 ```
 
-Copies land under `/var/lib/wirescope/backups/<UTC-stamp>/` (`wirescope.db`
-plus `evidence/` when present). Files are mode `0600`.
+Если installer установил journald drop-in WireScope, журнал ограничивается по размеру/времени, чтобы appliance не забил диск логами.
 
-## Restore
+## Проверка login
 
-```bash
-systemctl stop wirescope-api wirescope-worker
-sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
-  /opt/wirescope/.venv/bin/python -m appliance restore \
-  /var/lib/wirescope/backups/TIMESTAMP
-systemctl start wirescope-worker wirescope-api
+Локально:
+
+```text
+http://127.0.0.1:8000/
 ```
 
-Stop the services first. Restore replaces the live database (and evidence
-tree when the archive contains one).
+Через reverse proxy:
 
-## Upgrade
+```text
+https://<host>/
+```
+
+Default GUI username обычно:
+
+```text
+auditor
+```
+
+Первичный сгенерированный пароль после install лежит в:
+
+```text
+/etc/wirescope/initial-admin.txt
+```
+
+После переноса в password manager файл следует удалить.
+
+Если login проходит, но browser тут же снова показывает login screen, проверьте схему HTTP/HTTPS. При `Secure` session cookie страницу нужно открывать по HTTPS.
+
+## Смена/сброс пароля
+
+Обычная смена: в GUI → **«Сменить пароль»**.
+
+При lock-out:
 
 ```bash
-sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
-  /opt/wirescope/.venv/bin/python -m appliance backup
-sudo /opt/wirescope/packaging/upgrade.sh --project-root /opt/wirescope
+/opt/wirescope/.venv/bin/python \
+  -m appliance set-password auditor
+```
+
+Команда обновляет пароль в рабочей SQLite, отзывает sessions пользователя и пишет новый пароль в `0600` file.
+
+## API не отвечает
+
+Проверить:
+
+```bash
+systemctl status wirescope-api
+journalctl -u wirescope-api -e
+ss -lntp | grep ':8000\|:8443' || true
+```
+
+Проверить environment:
+
+```bash
+sudo cat /etc/wirescope/wirescope.env
+```
+
+Не публикуйте содержимое environment file целиком в issue/chat, если позже там появятся чувствительные пути/параметры.
+
+Если используется reverse proxy:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/health
+```
+
+сначала должен работать локально. Только потом диагностировать Caddy/nginx/TLS/firewall.
+
+## `/api/ready` возвращает 503
+
+Проверить body ответа:
+
+```bash
 curl -sS http://127.0.0.1:8000/api/ready
 ```
 
-The upgrade path does not install Nuclei or Nikto. Optional protocol tools
-that are missing from the distro are skipped with a warning. Re-running
-install/upgrade is idempotent.
+Readiness зависит от:
+
+- database accessible;
+- migrations current;
+- worker heartbeat current;
+- `dumpcap`;
+- `tshark`;
+- `nmap`.
+
+### Migrations не current
+
+```bash
+sudo -u wirescope \
+  env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/alembic \
+  -c /opt/wirescope/alembic.ini upgrade head
+```
+
+После этого:
+
+```bash
+sudo systemctl restart wirescope-worker wirescope-api
+```
+
+### Worker не ready
+
+```bash
+systemctl status wirescope-worker
+journalctl -u wirescope-worker -e
+```
+
+Если worker был остановлен надолго, старые running jobs при startup станут `interrupted`. Это ожидаемое recovery behavior.
+
+## Packet capture не работает
+
+Проверить `dumpcap`:
+
+```bash
+getent group wireshark
+getcap /usr/bin/dumpcap
+stat -c '%U:%G %a' /usr/bin/dumpcap
+sudo -u wirescope /usr/bin/dumpcap -D
+getcap /opt/wirescope/.venv/bin/python || true
+```
+
+Ожидаемо:
+
+```text
+/usr/bin/dumpcap
+root:wireshark
+0750
+cap_net_admin,cap_net_raw=eip
+```
+
+Python capabilities быть не должно.
+
+Если `dumpcap -D` не работает от `wirescope`, повторно выполнить installer verification/setup:
+
+```bash
+sudo python3 -m appliance verify --project-root /opt/wirescope
+```
+
+и проверить package-specific Wireshark configuration.
+
+### User install
+
+Для `--user-install` процесс должен получить группу `wireshark` через `sg wireshark`.
+
+После изменения group membership:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart wirescope-api wirescope-worker
+```
+
+Logout обычно не требуется именно потому, что units используют `sg wireshark`.
+
+## Capture видит мало трафика
+
+Это не обязательно ошибка.
+
+Без SPAN/mirror switch не отправляет на порт весь traffic VLAN. Даже promiscuous capture видит только кадры, реально дошедшие до NIC.
+
+Обычно это:
+
+- broadcasts;
+- flooded traffic;
+- multicast, доставленный на port;
+- unicast на MAC WireScope;
+- control protocols вроде LLDP/CDP/STP, если они приходят на port.
+
+Для полного наблюдения чужого unicast traffic нужен SPAN/mirror/TAP.
+
+## VLAN ID не определяется
+
+Access port часто отправляет untagged frames. В таком случае WireScope корректно оставляет VLAN ID неизвестным.
+
+Проверяйте отдельно:
+
+- были ли 802.1Q tagged frames;
+- LLDP/CDP advertised VLAN metadata;
+- существующие VLAN subinterfaces;
+- конфигурацию switch port.
+
+LLDP PVID/native VLAN и 802.1Q tag — не одно и то же.
+
+## Active discovery не запускается
+
+Проверить:
+
+1. подтверждён ли scope;
+2. есть ли L3 address нужного family;
+3. `ip route get <target>` использует выбранный interface;
+4. target не запрещён scope policy;
+5. address count не превышает profile cap;
+6. Nmap присутствует;
+7. нет другого job, удерживающего `interface:<name>`.
+
+Команды:
+
+```bash
+ip -j addr
+ip -j route
+ip route get <target>
+nmap --version
+curl -sS http://127.0.0.1:8000/api/ready
+```
+
+Passive capture может работать без IP, active discovery — нет: Nmap нужен реальный L3 path.
+
+## Protocol module не запустился
+
+Это может быть нормальным behavior.
+
+Проверить:
+
+- найден ли подходящий service в inventory;
+- address внутри confirmed scope;
+- module safety class;
+- binary установлен;
+- module не `never-default`.
+
+Availability tools:
+
+```bash
+command -v ssh-audit
+command -v openssl
+command -v curl
+command -v dig
+command -v smbclient
+command -v snmpget
+command -v ldapsearch
+```
+
+Missing optional tool не делает весь audit failed: observation получает `tool_unavailable`.
+
+## Reboot во время audit
+
+После старта worker:
+
+| Состояние до reboot | После recovery |
+| --- | --- |
+| `queued` | остаётся `queued` |
+| `running` | `interrupted`, `application_restart` |
+| `cancelled` | остаётся `cancelled` |
+| terminal | не меняется |
+
+Автоматического retry/resume нет.
+
+После reboot:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/ready
+```
+
+когда worker снова ready, открыть audit из history в GUI.
+
+Reload browser или restart kiosk сами по себе running job не останавливают.
+
+## Cancellation зависла
+
+Проверить worker log:
+
+```bash
+journalctl -u wirescope-worker -e
+```
+
+Cancellation должна дойти до cooperative token и завершить subprocess group.
+
+Если worker process был убит жёстко, job будет обработан startup recovery как `interrupted`.
+
+## Kiosk не запустился
+
+Проверить:
+
+```bash
+systemctl status wirescope-kiosk
+journalctl -u wirescope-kiosk -e
+```
+
+Вернуть login prompt на tty1:
+
+```bash
+sudo systemctl start getty@tty1
+```
+
+Проверить Chromium:
+
+```bash
+command -v chromium || command -v chromium-browser
+```
+
+На VMware также проверить Xorg/video stack.
+
+Kiosk restart не требует restart API/worker:
+
+```bash
+sudo systemctl restart wirescope-kiosk
+```
+
+## Reverse proxy не работает
+
+Сначала локальный API:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/health
+```
+
+Затем proxy:
+
+```bash
+systemctl status caddy || systemctl status nginx
+```
+
+Проверить listener:
+
+```bash
+ss -lntp | grep ':443'
+```
+
+И firewall.
+
+Примеры конфигурации: `packaging/proxy/`.
+
+Если WireScope установлен с `--trust-proxy`, с другого ПК нужно открывать HTTPS URL, иначе `Secure` session cookie не будет работать по обычному HTTP.
+
+## Backup
+
+Online backup поддерживается, но перед большим maintenance можно остановить службы для более простой операционной процедуры:
+
+```bash
+sudo systemctl stop wirescope-api wirescope-worker
+
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance backup
+
+sudo systemctl start wirescope-worker wirescope-api
+```
+
+Backup по умолчанию:
+
+```text
+/var/lib/wirescope/backups/<UTC timestamp>/
+```
+
+Он содержит SQLite и, если не отключено, evidence tree.
+
+Backup хранить как чувствительные audit data.
+
+## Restore
+
+Службы должны быть остановлены:
+
+```bash
+sudo systemctl stop wirescope-api wirescope-worker
+
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance restore \
+  /var/lib/wirescope/backups/TIMESTAMP
+
+sudo systemctl start wirescope-worker wirescope-api
+```
+
+После restore:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/ready
+```
+
+## Upgrade
+
+Перед upgrade:
+
+```bash
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance backup
+```
+
+Обновление:
+
+```bash
+cd /opt/wirescope
+git pull
+sudo ./packaging/upgrade.sh --project-root /opt/wirescope
+```
+
+Проверка:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/ready
+systemctl status wirescope-api wirescope-worker
+```
+
+Optional protocol tools, которых нет в distro repositories, могут быть пропущены с warning. Nikto/Nuclei installer по умолчанию не ставит.
 
 ## Rollback
 
-1. Stop API and worker.
-2. Restore the pre-upgrade backup.
-3. Check out the last known-good revision of `/opt/wirescope`.
-4. `/opt/wirescope/.venv/bin/pip install -e /opt/wirescope`
-5. Start worker, then API.
-6. Confirm `/api/ready` and a login.
+1. Stop API/worker.
+2. Restore pre-upgrade backup.
+3. Checkout previous known-good revision.
+4. Reinstall checkout в `.venv`.
+5. Start worker, затем API.
+6. Проверить readiness/login.
 
-Do not assume `alembic downgrade` is safe.
+Не использовать `alembic downgrade` как универсальный rollback без тестирования конкретной migration.
 
-## Local operator kiosk
+## Disk usage
 
-Autonomous mode: Chromium on tty1 after boot, loopback only. No desktop.
-Capture NIC addressing is independent. Restarting the kiosk does not stop
-API or worker.
+Проверить:
 
 ```bash
-# Stay logged in as Linux user wirescope. sudo asks the wirescope password.
-# Chromium takes 5–15 min; watch apt output, do not Ctrl+C.
-sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk
-sudo systemctl status wirescope-kiosk
-# packages already present; enable kiosk only:
-sudo /opt/wirescope/packaging/install.sh --skip-packages --enable-kiosk
-# or:
-sudo systemctl enable --now wirescope-kiosk
-# optional: user unit after a graphical login
-systemctl --user enable --now wirescope-kiosk
+du -sh /var/lib/wirescope
+find /var/lib/wirescope/evidence -type f | wc -l
+df -h /var/lib/wirescope
 ```
 
-`--with-kiosk` installs cage or xinit plus Chromium if missing, not a full
-desktop. VMware uses Xorg (`xserver-xorg-video-vmware`) instead of Cage.
-Already-installed packages are skipped. `--enable-kiosk`
-enables the system unit on `multi-user.target` even without a current
-`DISPLAY`. Missing Chromium leaves the unit disabled. Reboot with the VM
-console attached so tty1 shows the kiosk; SSH from the host still works.
-If the VMware console is black, SSH in and `sudo systemctl start getty@tty1`.
-Live Raspberry Pi OS Lite tests stay unused (`pytest -m live_pi` with
-`WIRESCOPE_LIVE_PI=1`).
+Listen/record PCAP может быстро расходовать место, особенно если operator регулярно сохраняет captures.
+
+Автоматической полной retention policy для зарегистрированных audits/evidence пока нет, поэтому cleanup нужно планировать отдельно и не удалять файлы из evidence tree вручную без понимания DB references.
 
 ## Dependency inventory
 
-See [packaging/inventory/DEPENDENCIES.md](../packaging/inventory/DEPENDENCIES.md)
-or `python3 -m appliance inventory`.
+```bash
+python3 -m appliance inventory
+```
+
+или документ:
+
+```text
+packaging/inventory/DEPENDENCIES.md
+```
+
+## Перед обращением за диагностикой
+
+Полезно собрать:
+
+```bash
+python3 -m appliance detect
+python3 -m appliance verify --project-root /opt/wirescope
+curl -sS http://127.0.0.1:8000/api/health
+curl -sS http://127.0.0.1:8000/api/ready
+systemctl status wirescope-api wirescope-worker --no-pager
+journalctl -u wirescope-api -u wirescope-worker --since -10m --no-pager
+```
+
+Не прикладывайте raw PCAP, database, password files или полный evidence tree без явной необходимости: там могут быть чувствительные данные сети.

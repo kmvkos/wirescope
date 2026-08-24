@@ -69,6 +69,7 @@ class Settings:
     protocol_audit_concurrency: int
     protocol_audit_timeout_seconds: int
     max_findings_jobs: int
+    max_report_jobs: int
     active_discovery_max_targets: int
     active_standard_max_targets: int
     active_deep_max_targets: int
@@ -122,6 +123,8 @@ class Settings:
             raise ValueError("protocol_audit_timeout_seconds must be positive")
         if self.max_findings_jobs < 1:
             raise ValueError("max_findings_jobs must be at least one")
+        if self.max_report_jobs < 1:
+            raise ValueError("max_report_jobs must be at least one")
         if min(
             self.active_discovery_max_targets,
             self.active_standard_max_targets,
@@ -236,6 +239,10 @@ def get_settings() -> Settings:
         ),
         max_findings_jobs=_env_int(
             "WIRESCOPE_MAX_FINDINGS_JOBS",
+            1,
+        ),
+        max_report_jobs=_env_int(
+            "WIRESCOPE_MAX_REPORT_JOBS",
             1,
         ),
         active_discovery_max_targets=_env_int(

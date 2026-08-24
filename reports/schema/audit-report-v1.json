@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirescope.local/schema/audit-report-v1.json",
+  "title": "WireScope audit report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "report_id",
+    "generated_at",
+    "source_hash",
+    "audit",
+    "executive_summary",
+    "environment",
+    "scope",
+    "assets",
+    "services",
+    "findings",
+    "recommendations",
+    "evidence_references",
+    "metadata"
+  ],
+  "properties": {
+    "schema": { "type": "string", "const": "audit-report" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "report_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "source_hash": { "type": "string", "minLength": 64 },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "profile",
+        "interface",
+        "actor",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "summary"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "profile": { "type": "string", "minLength": 1 },
+        "interface": { "type": ["string", "null"] },
+        "actor": { "type": ["string", "null"] },
+        "created_at": { "type": "string", "minLength": 1 },
+        "started_at": { "type": ["string", "null"] },
+        "finished_at": { "type": ["string", "null"] },
+        "summary": { "type": "object" }
+      }
+    },
+    "executive_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "headline",
+        "asset_count",
+        "service_count",
+        "finding_count",
+        "open_finding_count",
+        "by_severity",
+        "by_status",
+        "highest_open_severity",
+        "confirmed_scope",
+        "detected_sensors"
+      ],
+      "properties": {
+        "headline": { "type": "string", "minLength": 1 },
+        "asset_count": { "type": "integer", "minimum": 0 },
+        "service_count": { "type": "integer", "minimum": 0 },
+        "finding_count": { "type": "integer", "minimum": 0 },
+        "open_finding_count": { "type": "integer", "minimum": 0 },
+        "by_severity": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "by_status": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "highest_open_severity": {
+          "type": ["string", "null"],
+          "enum": ["critical", "high", "medium", "low", "info", null]
+        },
+        "confirmed_scope": { "type": "boolean" },
+        "detected_sensors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostname", "interfaces", "default_route", "dns"],
+      "properties": {
+        "hostname": { "type": ["string", "null"] },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "state", "mac", "ipv4", "ipv6"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "state": { "type": ["string", "null"] },
+              "mac": { "type": ["string", "null"] },
+              "ipv4": { "type": "array", "items": { "type": "string" } },
+              "ipv6": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "default_route": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["gateway", "interface"],
+              "properties": {
+                "gateway": { "type": ["string", "null"] },
+                "interface": { "type": ["string", "null"] }
+              }
+            }
+          ]
+        },
+        "dns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confirmed",
+        "audit_scope",
+        "profile",
+        "interface",
+        "targets",
+        "address_count",
+        "address_families",
+        "timing_policy",
+        "snapshot_hash"
+      ],
+      "properties": {
+        "confirmed": { "type": "boolean" },
+        "audit_scope": { "type": "object" },
+        "profile": { "type": ["string", "null"] },
+        "interface": { "type": ["string", "null"] },
+        "targets": { "type": "array", "items": { "type": "string" } },
+        "address_count": { "type": ["integer", "null"] },
+        "address_families": {
+          "type": "array",
+          "items": { "type": "integer" }
+        },
+        "timing_policy": { "type": ["string", "null"] },
+        "snapshot_hash": { "type": ["string", "null"] }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state",
+          "mac",
+          "vendor",
+          "device_class_hint",
+          "os_name",
+          "addresses",
+          "names"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "state": { "type": "string" },
+          "mac": { "type": ["string", "null"] },
+          "vendor": { "type": ["string", "null"] },
+          "device_class_hint": { "type": "string" },
+          "os_name": { "type": ["string", "null"] },
+          "addresses": { "type": "array", "items": { "type": "string" } },
+          "names": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "asset_id",
+          "protocol",
+          "port",
+          "state",
+          "service_name",
+          "product",
+          "version",
+          "tunnel"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "asset_id": { "type": "string", "minLength": 1 },
+          "protocol": { "type": "string" },
+          "port": { "type": "integer", "minimum": 0 },
+          "state": { "type": "string" },
+          "service_name": { "type": ["string", "null"] },
+          "product": { "type": ["string", "null"] },
+          "version": { "type": ["string", "null"] },
+          "tunnel": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "rule_id",
+          "rule_version",
+          "family",
+          "title",
+          "severity",
+          "confidence",
+          "status",
+          "asset_id",
+          "service_id",
+          "description",
+          "rationale",
+          "recommendation",
+          "observation_ids",
+          "evidence_artifact_ids",
+          "data"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "rule_id": { "type": "string", "minLength": 1 },
+          "rule_version": { "type": "string", "minLength": 1 },
+          "family": { "type": "string" },
+          "title": { "type": "string", "minLength": 1 },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low", "info"]
+          },
+          "confidence": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["open", "suppressed", "accepted_risk"]
+          },
+          "asset_id": { "type": ["string", "null"] },
+          "service_id": { "type": ["string", "null"] },
+          "description": { "type": "string" },
+          "rationale": { "type": "string" },
+          "recommendation": { "type": "string" },
+          "observation_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evidence_artifact_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "data": { "type": "object" }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rule_id",
+          "title",
+          "severity",
+          "recommendation",
+          "finding_ids",
+          "affected_asset_ids"
+        ],
+        "properties": {
+          "rule_id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low", "info"]
+          },
+          "recommendation": { "type": "string" },
+          "finding_ids": { "type": "array", "items": { "type": "string" } },
+          "affected_asset_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "evidence_references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "artifact_type",
+          "content_type",
+          "size",
+          "sha256",
+          "schema_name",
+          "schema_version",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "artifact_type": { "type": "string", "minLength": 1 },
+          "content_type": { "type": "string", "minLength": 1 },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "minLength": 64 },
+          "schema_name": { "type": ["string", "null"] },
+          "schema_version": { "type": ["integer", "null"] },
+          "created_at": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product",
+        "version",
+        "job_id",
+        "actor",
+        "raw_provider_output_excluded",
+        "truncated",
+        "input_limits",
+        "warnings"
+      ],
+      "properties": {
+        "product": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "job_id": { "type": ["string", "null"] },
+        "actor": { "type": ["string", "null"] },
+        "raw_provider_output_excluded": { "type": "boolean", "const": true },
+        "truncated": { "type": "boolean" },
+        "input_limits": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

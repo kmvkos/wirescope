@@ -91,6 +91,10 @@ class AuditModel(Base):
         back_populates="audit",
         cascade="all, delete-orphan",
     )
+    reports: Mapped[list["ReportModel"]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+    )
 
 
 class JobModel(Base):
@@ -806,3 +810,43 @@ class FindingStateEventModel(Base):
     )
 
     finding: Mapped[FindingModel] = relationship(back_populates="state_events")
+
+
+class ReportModel(Base):
+    __tablename__ = "reports"
+    __table_args__ = (
+        Index("ix_reports_audit_generated", "audit_id", "generated_at"),
+        Index("ix_reports_job", "job_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL")
+    )
+    schema_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    actor: Mapped[str | None] = mapped_column(String(128))
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    json_artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    html_artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    audit: Mapped["AuditModel"] = relationship(back_populates="reports")

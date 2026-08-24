@@ -4,7 +4,7 @@
 
 WireScope — локальный modular monolith для сетевой инвентаризации, диагностики и аудита. Он рассчитан на один Linux-хост, ВМ или ARM64-appliance: API, worker, SQLite, evidence store и браузерный интерфейс работают как части одного устройства без Redis, Celery и внутренних сетевых микросервисов.
 
-Главный принцип: **сначала собирается факт, затем делается вывод**. Packet sensors, Nmap и protocol providers создают observations/evidence. Assessment, classification и findings уже интерпретируют сохранённые данные.
+Главный принцип: **сначала сохраняется факт, затем делается вывод**. Packet sensors, Nmap и protocol providers создают observations/evidence. Assessment, classification и findings интерпретируют уже собранные данные.
 
 ## Общая схема
 
@@ -18,9 +18,10 @@ FastAPI /api/v1
       │    ├── auth / system / network / scope
       │    ├── audits / jobs / captures
       │    ├── inventory / protocol / findings / reports
-      │    └── insights
+      │    ├── insights
+      │    └── operations
       │
-      ├── domain services
+      ├── domain / lifecycle services
       │
       ├──────── SQLite WAL
       │
@@ -40,17 +41,17 @@ API и worker — отдельные процессы. Browser/kiosk — кли�
 
 ## Backend composition
 
-`backend/app.py` — composition root: создаёт application services, собирает их в `AppServices`, подключает routers и static frontend.
+`backend/app.py` — composition root: создаёт application services, собирает их в `AppServices`, подключает routers, operational middleware и static frontend.
 
-`backend/dependencies.py` хранит runtime dependency container. Router получает готовые сервисы через `Depends(get_services)` и не создаёт собственный второй domain layer.
+`backend/dependencies.py` хранит runtime dependency container. Routers получают готовые сервисы через `Depends(get_services)`.
 
-Канонический HTTP API публикуется под:
+Канонический HTTP API:
 
 ```text
 /api/v1/...
 ```
 
-`/api/...` временно остаётся compatibility alias и использует те же handlers, models, auth и scope checks. Legacy alias скрыт из OpenAPI.
+`/api/...` пока остаётся скрытым compatibility alias и использует те же handlers, models, auth и scope checks.
 
 ## Router layout
 
@@ -58,28 +59,24 @@ API и worker — отдельные процессы. Browser/kiosk — кли�
 backend/routers/
 ├── auth.py
 ├── system.py
+├── insights.py
+├── operations.py
 ├── audits.py
 ├── captures.py
 ├── inventory.py
 ├── protocol.py
 ├── findings.py
 ├── reports.py
-├── jobs.py
-└── insights.py
+└── jobs.py
 ```
 
-`insights.py` не хранит отдельное состояние. Он предоставляет read-only представления над существующими stores:
+`insights.py` создаёт read-only представления над существующими stores: capabilities, profiles, dashboard, correlations, diff и evidence access.
 
-- `/capabilities`;
-- `/scan-profiles`;
-- audit dashboard/pipeline;
-- passive/active correlations;
-- audit-to-audit diff;
-- audit-scoped evidence access.
+`operations.py` отвечает за эксплуатационный контур: diagnostics, operational audit log, retention/cleanup и durable job retry.
 
 ## Environment, interface и scope
 
-`engine/environment.py` собирает состояние Linux-хоста. `engine/interfaces.py` обнаруживает и валидирует интерфейсы. `engine/routes.py` проверяет реальный route/source для active target. `engine/network.py` и `netctl` отвечают за управляемые изменения сетевой конфигурации.
+`engine/environment.py` собирает состояние Linux-хоста. `engine/interfaces.py` обнаруживает и валидирует интерфейсы. `engine/routes.py` проверяет route/source для active target. `engine/network.py` и `netctl` отвечают за управляемые изменения сетевой конфигурации.
 
 Observed network data и authorized scope разделены. Пассивно увиденный ARP host, DHCP server, LLDP/CDP neighbour или VLAN tag не становится автоматически разрешённой active target.
 
@@ -115,7 +112,7 @@ assessment + inventory observations
 
 Один PCAP декодируется один раз. Сенсоры не запускают отдельный tshark на каждый протокол.
 
-## Jobs и persistence
+## Jobs, persistence и recovery
 
 Долгие операции — durable jobs:
 
@@ -127,13 +124,41 @@ queued → running → completed
    └─────────────→ cancelled
 ```
 
-`JobService` владеет transitions. Worker атомарно claim'ит job. Locks и worker leases находятся в SQLite.
+`JobService` владеет transitions. Worker атомарно claim'ит job. Resource locks и worker heartbeat находятся в SQLite.
 
-SQLite — system of record для audits, jobs/events, scopes, inventory, observations, findings, users/sessions, reports и artifact metadata. Используются WAL, foreign keys, busy timeout и короткие транзакции; scanner process не держит открытую SQL transaction.
+Если process restart прерывает running job, recovery переводит её в `interrupted` и освобождает stale locks. Terminal job не переписывается обратно в queued. Explicit retry создаёт новую durable job с теми же parameters:
 
-## Evidence store
+```text
+failed/interrupted/cancelled job
+        │ operator retry
+        ▼
+new queued job
+```
 
-PCAP, Nmap XML, raw provider stdout/stderr, passive-result JSON и generated reports находятся в filesystem evidence store, а не BLOB в основных таблицах.
+Связь между source и replacement сохраняется в job events. Это stage-level recovery, а не восстановление внутреннего состояния subprocess.
+
+SQLite — system of record для audits, jobs/events, scopes, inventory, observations, findings, users/sessions, reports, operational events и artifact metadata. Используются WAL, foreign keys, busy timeout и короткие transactions.
+
+## Operational audit log
+
+`backend/audit_log.py` хранит append-only operational events отдельно от job events.
+
+Middleware классифицирует значимые mutating HTTP requests и после выполнения записывает:
+
+- actor/role;
+- action;
+- normalized API path;
+- HTTP status;
+- client IP;
+- audit id, если он определяется из URL.
+
+Request body, password, cookie/session token и provider output в operational table не записываются.
+
+Ошибки записи журнала не превращают успешную operator action в outage: database/migration health отдельно виден в diagnostics.
+
+## Evidence store и retention
+
+PCAP, Nmap XML, protocol raw output, passive-result JSON и generated reports находятся в filesystem evidence store, а не BLOB в основных таблицах.
 
 Artifact записывается атомарно, получает UUID, size и SHA-256. API-клиент не выбирает filesystem path.
 
@@ -142,6 +167,10 @@ Artifact записывается атомарно, получает UUID, size 
 ```text
 GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
+
+`backend/lifecycle.py` разделяет нормализованную историю и тяжёлые raw artifacts. Normalized inventory/findings/reports автоматически не удаляются. Aged PCAP/Nmap XML/protocol raw output становятся cleanup candidates, но удаляются только после явного confirmation.
+
+Cleanup удаляет и filesystem file, и соответствующую metadata row. Preview ничего не меняет.
 
 ## Inventory, correlation и classification
 
@@ -159,29 +188,24 @@ Device classification использует OS hints, vendor, services/ports и n
 
 Активные профили описаны декларативно в `config/active_profiles.json` и загружаются через `engine/active_profiles.py`.
 
-API отдаёт фактически загруженный каталог:
-
 ```text
 GET /api/v1/scan-profiles
 ```
 
 Профиль определяет timing, TCP/UDP coverage, service/version detection, OS detection и timeout. Пользователь не передаёт произвольный Nmap argv.
 
-## Capabilities и readiness
+## Capabilities, readiness и diagnostics
 
-`backend/capabilities.py` строит runtime inventory внешних инструментов: capture/decode, Nmap и protocol providers.
-
-Core readiness требует базовые компоненты, необходимые для работоспособности appliance. Optional provider может быть недоступен без перевода всего WireScope в `not_ready`.
-
-GUI получает capabilities через:
+`backend/capabilities.py` строит runtime inventory внешних инструментов. Core readiness требует SQLite/migrations, worker и базовые packet-capture tools. Optional provider может быть недоступен без перевода всего WireScope в `not_ready`.
 
 ```text
 GET /api/v1/capabilities
+GET /api/v1/diagnostics
 ```
 
-Там же виден effective web listener: bind host/port, TLS и trust-proxy state.
+Diagnostics дополняет capabilities состоянием SQLite `quick_check`, disk/evidence usage, retention, platform/runtime checks и recent operational events.
 
-## Dashboard и pipeline
+## Dashboard и diff
 
 Dashboard не имеет собственной таблицы. Он агрегирует существующие jobs, inventory и findings.
 
@@ -195,35 +219,36 @@ Pipeline:
 passive → discovery → protocol → findings → report
 ```
 
-Каждая стадия выводится из durable jobs.
-
-## Audit diff
-
-Сравнение двух audits вычисляется на чтении из persisted state:
+Audit diff также вычисляется на чтении из persisted state:
 
 ```text
 GET /api/v1/audits/{new_id}/diff?against={old_id}
 ```
 
-Сравниваются assets, открытые services и findings. Для identity между аудитами используется стабильный доступный signal — прежде всего MAC, затем IP/name fallback.
+Сравниваются assets, открытые services и findings.
 
 ## Findings и reports
 
-Findings engine читает normalized observations и inventory, применяет versioned rules и создаёт finding с severity, confidence, rationale, recommendation и evidence links.
+Findings engine читает normalized observations/inventory, применяет versioned rules и создаёт findings с severity, confidence, rationale, recommendation и evidence links.
 
-Report generation не обращается к сети. Канонический документ — `audit-report v1` JSON. Из него строятся self-contained HTML и Markdown. PDF пока не реализован.
+Report generation не обращается к сети. Канонический документ — `audit-report v1` JSON. Из него строятся self-contained HTML и Markdown.
 
 ## Frontend
 
-Основной wizard остаётся в `frontend/app.js`. Новая operator-insights панель вынесена в `frontend/enhancements.js` и `enhancements.css`, чтобы не раздувать основной workflow.
+Основной wizard остаётся в `frontend/app.js`. Дополнительные функции вынесены из него:
 
-Она показывает:
+```text
+frontend/enhancements.js   dashboard / diff / evidence / Markdown
+frontend/operations.js     diagnostics / retention / retry / audit log
+```
 
-- dashboard/pipeline;
-- capabilities и listener;
-- scan profiles;
-- audit diff;
-- evidence viewer.
+Это позволяет развивать operator views без переписывания основного audit wizard.
+
+## Backup / restore
+
+`appliance/backup.py` использует SQLite backup API, поэтому snapshot создаётся корректно и для WAL database. Evidence при необходимости копируется вместе с БД.
+
+Restore сначала проверяет backup через `PRAGMA integrity_check`, затем атомарно заменяет database file; evidence восстанавливается отдельно.
 
 ## Privilege boundary
 
@@ -241,13 +266,13 @@ Python backend не получает packet-capture capabilities. Nmap не по
 
 ## Deployment
 
-Нормальный appliance должен быть доступен оператору через любой настроенный интерфейс, поэтому application settings, installer и upgrade path по умолчанию используют:
+Нормальный appliance доступен через любой настроенный интерфейс, поэтому application settings, argparse, installer и upgrade path используют по умолчанию:
 
 ```text
 0.0.0.0:8000
 ```
 
-Локальный kiosk при этом открывает `http://127.0.0.1:8000/`.
+Локальный kiosk открывает `http://127.0.0.1:8000/`.
 
 Loopback-only deployment остаётся явной опцией:
 
@@ -255,16 +280,21 @@ Loopback-only deployment остаётся явной опцией:
 sudo ./packaging/install.sh --bind-host 127.0.0.1
 ```
 
-Firewall, direct TLS и reverse proxy могут применяться по требованиям конкретной сети; они не меняют внутреннюю архитектуру WireScope.
+## CI и release boundary
 
-## CI и тестирование
+GitHub Actions на Python 3.11 устанавливает проект, компилирует Python sources и запускает default `pytest` suite. Live-network/browser/platform checks остаются opt-in там, где это необходимо.
 
-GitHub Actions на Python 3.11 устанавливает проект, компилирует Python sources и запускает default `pytest` suite. Live-network и browser-specific проверки остаются opt-in там, где это требуется.
+Архитектурный финиш первой версии определён не отсутствием новых идей, а release gate в [RELEASE_READINESS.md](RELEASE_READINESS.md). После зелёного CI последней обязательной проверкой остаётся smoke-test на реально обновлённом appliance.
 
-## Оставшийся technical debt
+## Post-1.0 technical work
+
+Не блокируют первую стабильную версию:
 
 - PDF export;
-- отдельная security audit-log таблица;
-- policy-driven retention/deletion завершённых audits/evidence;
-- автоматический retry terminal/interrupted jobs;
-- release-проверка tshark/provider compatibility на пакетных версиях поддерживаемых дистрибутивов.
+- дополнительные protocol modules;
+- topology graph / CVE enrichment;
+- scheduled audits;
+- deeper cross-audit identity history;
+- дальнейшая frontend decomposition;
+- полный отказ от `/api/*` compatibility alias;
+- расширенная distro/architecture CI matrix.

@@ -22,6 +22,7 @@ from jobs.state import InvalidTransition
 from reports.html_v2 import render_html
 from reports.markdown import render_markdown
 from reports.models import AuditReport
+from reports.presentation import localized_report
 from reports.store import ReportNotFound
 
 
@@ -162,7 +163,7 @@ def export_report(
                 media_type = "text/markdown; charset=utf-8"
             else:
                 canonical = AuditReport.model_validate(document)
-                payload = render_html(canonical).encode("utf-8")
+                payload = render_html(localized_report(canonical)).encode("utf-8")
                 media_type = "text/html; charset=utf-8"
     except EntityNotFound as exc:
         raise not_found(exc) from exc

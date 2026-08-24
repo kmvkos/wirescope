@@ -9,6 +9,8 @@ during install. Raspberry Pi kiosk hardware is an optional later extra.
 ```bash
 systemctl is-active wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
+# LAN via reverse proxy:
+# curl -sS https://wirescope.example/api/health
 curl -sS http://127.0.0.1:8000/api/ready
 python3 -m appliance verify --project-root /opt/wirescope
 python3 -m appliance detect
@@ -33,7 +35,8 @@ On `--user-install`, use `systemctl --user` and `journalctl --user`.
 
 ## Sign in
 
-1. Open `http://127.0.0.1:8000/` (or `http://<host>:8000/` if bound on LAN).
+1. Open `http://127.0.0.1:8000/` on the appliance, or `https://<host>/` through
+   the reverse proxy (see `packaging/proxy/README.md`).
 2. Use the auditor username (`auditor` unless overridden).
 3. Use the password from `/etc/wirescope/initial-admin.txt` or the operator
    password file supplied to the installer.
@@ -41,7 +44,14 @@ On `--user-install`, use `systemctl --user` and `journalctl --user`.
    manager.
 
 The GUI is Russian. Viewers can inspect results but cannot start or cancel
-work.
+work. If login does not stick, the page is probably HTTP while cookies are
+`Secure` — open the GUI over HTTPS.
+
+## LAN TLS
+
+Preferred: API on loopback, Caddy or nginx on 443, `--trust-proxy`.
+Optional: uvicorn `--tls-cert` / `--tls-key` on 8443. Firewall examples are
+in `packaging/proxy/`. The installer does not start a proxy or change nft/ufw.
 
 ## Reboot during an audit
 

@@ -172,12 +172,16 @@ through the `wireshark` group. See
   false.
 - `WIRESCOPE_BIND_HOST` / `WIRESCOPE_BIND_PORT` — API listen address;
   defaults to `127.0.0.1:8000`.
+- `WIRESCOPE_TRUST_PROXY` — trust `X-Forwarded-*` from loopback and default
+  Secure cookies; use with Caddy/nginx. Defaults to false.
+- `WIRESCOPE_TLS_CERTFILE` / `WIRESCOPE_TLS_KEYFILE` — optional direct TLS
+  for uvicorn; both must be set together. Paths only, not PEM in units.
 - `WIRESCOPE_SESSION_COOKIE_NAME` — session cookie name; defaults to
   `wirescope_session`.
 - `WIRESCOPE_SESSION_TTL_SECONDS` — session lifetime; defaults to 43200
   (12 hours).
 - `WIRESCOPE_SESSION_COOKIE_SECURE` — set the Secure cookie flag; defaults
-  to false for local HTTP kiosk use.
+  to false for local HTTP, true when `--trust-proxy` or direct TLS is on.
 - `WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME` / `_PASSWORD` and
   `WIRESCOPE_BOOTSTRAP_VIEWER_USERNAME` / `_PASSWORD` — create the first
   local users only when the user table is empty. There is no default

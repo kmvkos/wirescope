@@ -34,11 +34,60 @@ Upgrade is the same command (`packaging/upgrade.sh`). It reuses the service
 account, keeps an existing env file, re-verifies dumpcap, upgrades the venv,
 and migrates SQLite.
 
-## Bind address
+## Bind address and LAN TLS
 
-Default bind is `127.0.0.1:8000` (local browser only). For a VM or LAN
-deploy, pass `--bind-host 0.0.0.0` and restrict TCP 8000 on the host
-firewall. See [SECURITY_MODEL.md](SECURITY_MODEL.md).
+Default bind is `127.0.0.1:8000` (local browser only). That is the
+conservative production default.
+
+**Preferred LAN path:** keep the API on loopback and terminate TLS on Caddy
+or nginx. Session cookies become `Secure`. Do not expose TCP 8000.
+
+```bash
+sudo /opt/wirescope/packaging/install.sh \
+  --project-root /opt/wirescope \
+  --generate-admin-password \
+  --trust-proxy \
+  --bind-host 127.0.0.1
+```
+
+Sample configs and firewall notes: [packaging/proxy/README.md](../packaging/proxy/README.md)
+(`Caddyfile`, `nginx.conf`, `nftables.nft`, `ufw.example`). Replace
+`wirescope.example` and certificate paths. The installer copies those
+examples to `/etc/wirescope/proxy/` and does not start Caddy/nginx or rewrite
+the host firewall.
+
+Lab self-signed certificate (not for an untrusted network):
+
+```bash
+sudo python3 -m appliance tls-selfsigned \
+  --output-dir /etc/wirescope/tls \
+  --common-name wirescope.example
+```
+
+**Optional direct TLS** when no proxy is available. Cert/key paths go in
+`wirescope.env`, never in systemd units. The API stays unprivileged.
+
+```bash
+sudo /opt/wirescope/packaging/install.sh \
+  --project-root /opt/wirescope \
+  --generate-admin-password \
+  --bind-host 0.0.0.0 \
+  --bind-port 8443 \
+  --tls-cert /etc/wirescope/tls/cert.pem \
+  --tls-key /etc/wirescope/tls/key.pem
+```
+
+Bare HTTP on `0.0.0.0:8000` is still possible but is not a safe LAN default:
+
+```bash
+sudo /opt/wirescope/packaging/install.sh \
+  --project-root /opt/wirescope \
+  --generate-admin-password \
+  --bind-host 0.0.0.0
+```
+
+Restrict the published port (443 or 8443) with nftables, ufw, or firewalld.
+See [SECURITY_MODEL.md](SECURITY_MODEL.md).
 
 ## This Debian VM
 
@@ -164,7 +213,9 @@ Useful flags:
 - `--with-kiosk` / `--enable-kiosk` — optional local Chromium extra
 - `--auditor-password-file /root/auditor.pass` — mode `0600` file instead of generating
 - `--overwrite-env` — replace `/etc/wirescope/wirescope.env`
-- `--bind-host` / `--bind-port` — API listen address
+- `--bind-host` / `--bind-port` — API listen address (default loopback)
+- `--trust-proxy` — LAN reverse proxy: Secure cookies, trust forwarded headers from 127.0.0.1
+- `--tls-cert` / `--tls-key` — optional direct TLS (paths only; no PEM in units)
 
 The generated password is written to `/etc/wirescope/initial-admin.txt`
 (mode `0600`, root only). Copy it out, then delete that file.
@@ -194,10 +245,11 @@ sudo journalctl -u wirescope-api -u wirescope-worker -e
 ## Заметка для оператора
 
 Графический интерфейс WireScope на русском языке. Эта инструкция — на
-английском. После установки откройте `http://127.0.0.1:8000/` (или адрес
-хоста, если задан `--bind-host 0.0.0.0`) и войдите как `auditor`. Если захват
-пакетов недоступен, проверьте группу `wireshark` и перезапустите службы:
-`systemctl restart wirescope-api wirescope-worker` или
+английском. После установки откройте `http://127.0.0.1:8000/` локально или
+`https://<хост>/` через Caddy/nginx (`--trust-proxy`). Если cookie не
+сохраняется, страница должна быть HTTPS, а не HTTP. Войдите как `auditor`.
+Если захват пакетов недоступен, проверьте группу `wireshark` и перезапустите
+службы: `systemctl restart wirescope-api wirescope-worker` или
 `systemctl --user restart wirescope-api wirescope-worker`.
 
 ## Production paths

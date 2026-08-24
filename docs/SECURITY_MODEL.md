@@ -23,36 +23,53 @@ Sessions use HttpOnly cookies; mutating routes require `auditor`. Health and
 readiness stay public so a local or LAN browser can show appliance state
 before login.
 
-## Bind address and firewall
+## Bind address, TLS, and firewall
 
 The API binds to `127.0.0.1:8000` unless `WIRESCOPE_BIND_HOST` /
-`WIRESCOPE_BIND_PORT` are set. Loopback is the conservative default for a
-local browser on the same host.
+`WIRESCOPE_BIND_PORT` are set. Loopback is the conservative default.
 
-Do not expose the API to an untrusted network. If an operator explicitly
-binds a LAN address or `0.0.0.0` (VM/LAN deploy):
+For LAN access from another machine, prefer a reverse proxy:
 
+- keep the unprivileged API on `127.0.0.1:8000`;
+- terminate TLS on Caddy or nginx (`packaging/proxy/`);
+- install with `--trust-proxy` so session cookies are `Secure` and uvicorn
+  accepts `X-Forwarded-*` only from `127.0.0.1`;
 - keep `WIRESCOPE_DOCS_ENABLED=false`;
-- restrict TCP 8000 with nftables, `ufw`, or `firewalld` to the management
-  network;
-- leave SSH and other host services as they are — the installer does not
-  rewrite the host firewall;
-- treat HTTP as a trusted-network protocol until a later reverse-proxy or
-  TLS decision.
+- allow TCP 443 from the management network only;
+- do not publish TCP 8000.
 
-Example nftables intent (do not apply blindly on a remote SSH host):
+Optional direct TLS (`WIRESCOPE_TLS_CERTFILE` / `WIRESCOPE_TLS_KEYFILE`) lets
+uvicorn serve HTTPS itself, typically on `0.0.0.0:8443`. Certificate paths
+belong in `wirescope.env`. PEM material must not appear in unit files. The
+API and worker still must not run as root and still must not receive
+`CAP_NET_RAW`.
+
+Bare HTTP on `0.0.0.0:8000` is an explicit, discouraged choice. If used,
+restrict the port the same way and treat the LAN as trusted.
+
+The installer does not rewrite the host firewall. Examples:
+
+nftables — see `packaging/proxy/nftables.nft` (loopback, SSH, 443 from a
+documented prefix; do not accept 8000 from the LAN).
+
+ufw:
 
 ```text
-allow 127.0.0.0/8
-allow established/related
-optional: allow tcp 8000 from a documented management prefix
-default deny incoming
+ufw allow OpenSSH
+ufw allow from 192.0.2.0/24 to any port 443 proto tcp
+ufw deny 8000/tcp
 ```
 
-On Fedora/RHEL, the equivalent is a `firewalld` rich rule or zone limited to
-the management interface. Direct TLS versus a local reverse proxy remains
-deferred. The current appliance GUI is a browser talking HTTP to the
-configured bind address.
+firewalld:
+
+```text
+firewall-cmd --permanent --add-service=ssh
+firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address="192.0.2.0/24" port port="443" protocol="tcp" accept'
+firewall-cmd --reload
+```
+
+Do not apply those examples blindly on a remote SSH host. Replace
+`192.0.2.0/24` with the real management prefix.
 
 ## Job safety
 

@@ -590,8 +590,10 @@ The appliance process boundary is:
 
 The backend binds to `127.0.0.1:8000` by default (`WIRESCOPE_BIND_HOST` /
 `WIRESCOPE_BIND_PORT`). Listening on `0.0.0.0` is an explicit VM/LAN choice.
-Remote access, TLS termination, and listening interfaces are explicit
-deployment settings. Production documentation routes are disabled from the
+The preferred LAN path keeps the API on loopback and terminates TLS on Caddy
+or nginx (`--trust-proxy`). Optional direct TLS uses
+`WIRESCOPE_TLS_CERTFILE` / `WIRESCOPE_TLS_KEYFILE` without running the
+backend as root. Production documentation routes are disabled from the
 appliance environment file.
 
 ## Known transitional debt
@@ -604,8 +606,7 @@ appliance environment file.
 - terminal-job retry records and a manual retry API are not implemented;
 - tshark field compatibility is tested against 4.4 fixtures and still requires
   release testing against each distro's package version;
-- Raspberry Pi OS Lite kiosk hardware remains an optional later extra;
-- direct TLS versus a local reverse proxy is not chosen yet.
+- Raspberry Pi OS Lite kiosk hardware remains an optional later extra.
 
 These limitations are scheduled explicitly in
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).

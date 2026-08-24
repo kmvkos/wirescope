@@ -48,6 +48,8 @@ Local users persist in SQLite. Roles are `auditor` and `viewer`.
 
 Sessions are HttpOnly `SameSite=strict` cookies. The cookie stores a random
 token; SQLite stores only the SHA-256 digest. Login uses PBKDF2-HMAC-SHA256.
+LAN installs that terminate TLS (`--trust-proxy` or direct TLS) set the
+`Secure` flag; the Russian GUI warns if that cookie is used over HTTP.
 
 Bootstrap users are created only when the `users` table is empty and
 `WIRESCOPE_BOOTSTRAP_AUDITOR_*` / `WIRESCOPE_BOOTSTRAP_VIEWER_*` are set.

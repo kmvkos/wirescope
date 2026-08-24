@@ -635,8 +635,9 @@ Lite HDMI kiosk remains an optional later extra of the same installer.
 - **PDF engine:** defer until HTML report requirements stabilize.
 - **Optional scanners:** package and enable independently; absence must degrade
   capability, not application health.
-- **Remote transport security:** determine direct TLS versus a local reverse
-  proxy during appliance deployment design.
+- **Remote transport security:** reverse proxy in front of loopback is the
+  preferred LAN path; optional direct TLS on uvicorn is documented. Do not
+  expose unprivileged HTTP on `0.0.0.0` without a firewall.
 
 ## Definition of done for every task
 

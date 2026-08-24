@@ -157,6 +157,7 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
         bind_port=8000,
     )
     assert "WIRESCOPE_DOCS_ENABLED=false" in env
+    assert "WIRESCOPE_TRUST_PROXY=false" in env
     assert "PASSWORD" not in env
 
 

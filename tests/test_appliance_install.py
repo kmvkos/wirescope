@@ -193,4 +193,55 @@ def test_public_bind_host_warns_for_lan_deploy(tmp_path):
     report = install(config, host)
     assert any("public" in item.lower() for item in report.warnings)
     assert "WIRESCOPE_BIND_HOST=0.0.0.0" in host.read_text(config.paths.env_file)
+    assert any("packaging/proxy" in item or "firewall" in item for item in report.warnings)
+
+
+def test_trust_proxy_install_stays_on_loopback_and_copies_examples(tmp_path):
+    host = _host()
+    config = _config(
+        tmp_path,
+        start_services=False,
+        skip_pip=True,
+        apply_packages=False,
+        trust_proxy=True,
+        bind_host="127.0.0.1",
+    )
+    report = install(config, host)
+    env = host.read_text(config.paths.env_file)
+    assert "WIRESCOPE_TRUST_PROXY=true" in env
+    assert "WIRESCOPE_SESSION_COOKIE_SECURE=true" in env
+    assert host.exists(config.paths.etc_dir / "proxy" / "Caddyfile")
+    assert "127.0.0.1:8000" in host.read_text(
+        config.paths.etc_dir / "proxy" / "Caddyfile"
+    )
+    assert host.exists(config.paths.etc_dir / "proxy" / "nftables.nft")
+    assert any("reverse proxy" in item or "cookie Secure" in item for item in report.steps)
+
+
+def test_direct_tls_install_writes_cert_paths_not_pem(tmp_path):
+    host = _host()
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    host.files[str(cert)] = MemoryFile(content="NOT-A-REAL-CERT", mode=0o644)
+    host.files[str(key)] = MemoryFile(content="NOT-A-REAL-KEY", mode=0o600)
+    config = _config(
+        tmp_path,
+        start_services=False,
+        skip_pip=True,
+        apply_packages=False,
+        bind_host="0.0.0.0",
+        bind_port=8443,
+        tls_certfile=cert,
+        tls_keyfile=key,
+    )
+    install(config, host)
+    env = host.read_text(config.paths.env_file)
+    assert f"WIRESCOPE_TLS_CERTFILE={cert}" in env
+    assert "NOT-A-REAL-KEY" not in env
+    assert "WIRESCOPE_SESSION_COOKIE_SECURE=true" in env
+    api_unit = host.read_text(config.paths.systemd_dir / "wirescope-api.service")
+    assert "User=wirescope" in api_unit
+    assert "BEGIN " not in api_unit
+    assert "AmbientCapabilities=" not in api_unit
+
 

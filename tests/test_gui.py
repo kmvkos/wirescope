@@ -77,6 +77,8 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "state.draft.proposed" in script
     assert "job.dumpcapPermission" in i18n
     assert "службе не хватает группы wireshark" in i18n
+    assert "error.tlsOrNetwork" in i18n
+    assert "cookie_secure" in script
     assert "Захват завершён без кадров" in i18n
     assert "Итоговая сводка" in i18n
     assert "VLAN в кадре виден только при 802.1Q" in i18n
@@ -98,6 +100,9 @@ def test_i18n_russian_default_matches_english_fallback_keys():
     assert "login.title" in russian
     assert "scope.hint" in russian
     assert "error.invalid_credentials" in russian
+    assert "error.tlsOrNetwork" in russian
+    assert "cookie Secure не работает по HTTP" in i18n
+    assert "error.secureCookieOverHttp" in russian
 
 
 def test_root_is_public_and_static_assets_load(api_context):

@@ -1,0 +1,15 @@
+# Example nftables intent. Do not apply blindly on a remote SSH host.
+# Conservative LAN: API stays on loopback; allow HTTPS from a management prefix.
+
+table inet wirescope_lan {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        iif "lo" accept
+        ct state established,related accept
+        tcp dport 22 accept
+        ip saddr 192.0.2.0/24 tcp dport 443 accept
+        ip6 saddr 2001:db8::/32 tcp dport 443 accept
+        # Direct TLS alternative: tcp dport 8443 from the same prefix
+        # Do not accept 8000 from the LAN when using a reverse proxy.
+    }
+}

@@ -64,6 +64,7 @@ def default_release_paths(project_root: Path) -> list[Path]:
         project_root / "packaging" / "upgrade.sh",
         *sorted((project_root / "packaging" / "systemd").glob("*.service")),
         *sorted((project_root / "packaging" / "inventory").glob("*")),
+        *sorted((project_root / "packaging" / "proxy").glob("*")),
         project_root / "packaging" / "kiosk" / "kiosk.sh",
     ]
     return [path for path in candidates if path.is_file()]

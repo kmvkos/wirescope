@@ -117,6 +117,9 @@ class Settings:
     session_cookie_name: str
     session_ttl_seconds: int
     session_cookie_secure: bool
+    trust_proxy: bool
+    tls_certfile: str
+    tls_keyfile: str
     bootstrap_auditor_username: str
     bootstrap_auditor_password: str
     bootstrap_viewer_username: str
@@ -166,6 +169,10 @@ class Settings:
             raise ValueError("session_ttl_seconds must be at least 60")
         if not self.session_cookie_name:
             raise ValueError("session_cookie_name must not be empty")
+        if bool(self.tls_certfile) != bool(self.tls_keyfile):
+            raise ValueError(
+                "tls_certfile and tls_keyfile must be set together"
+            )
         if not self.bind_host.strip():
             raise ValueError("bind_host must not be empty")
         if not (1 <= self.bind_port <= 65_535):
@@ -185,6 +192,10 @@ class Settings:
     def database_url(self) -> str:
         return f"sqlite+pysqlite:///{self.database_path}"
 
+    @property
+    def tls_enabled(self) -> bool:
+        return bool(self.tls_certfile and self.tls_keyfile)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
@@ -198,6 +209,20 @@ def get_settings() -> Settings:
         "WIRESCOPE_RUNTIME_DIR",
         data_dir / "runtime",
     )
+    trust_proxy = _env_bool("WIRESCOPE_TRUST_PROXY", False)
+    tls_certfile = os.getenv("WIRESCOPE_TLS_CERTFILE", "").strip()
+    tls_keyfile = os.getenv("WIRESCOPE_TLS_KEYFILE", "").strip()
+    tls_enabled = bool(tls_certfile and tls_keyfile)
+    cookie_raw = os.getenv("WIRESCOPE_SESSION_COOKIE_SECURE")
+    if cookie_raw is None:
+        session_cookie_secure = trust_proxy or tls_enabled
+    else:
+        session_cookie_secure = cookie_raw.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     return Settings(
         app_name="WireScope",
@@ -374,10 +399,10 @@ def get_settings() -> Settings:
             "WIRESCOPE_SESSION_TTL_SECONDS",
             43_200,
         ),
-        session_cookie_secure=_env_bool(
-            "WIRESCOPE_SESSION_COOKIE_SECURE",
-            False,
-        ),
+        session_cookie_secure=session_cookie_secure,
+        trust_proxy=trust_proxy,
+        tls_certfile=tls_certfile,
+        tls_keyfile=tls_keyfile,
         bootstrap_auditor_username=os.getenv(
             "WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME",
             "",

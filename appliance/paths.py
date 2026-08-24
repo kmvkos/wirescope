@@ -96,24 +96,39 @@ class InstallPaths:
         )
 
 
-def production_env_text(paths: InstallPaths, *, bind_host: str, bind_port: int) -> str:
-    return "\n".join(
-        [
-            "# WireScope appliance environment. Do not put passwords here.",
-            f"WIRESCOPE_ROOT={paths.project_root}",
-            f"WIRESCOPE_FRONTEND_DIR={paths.project_root / 'frontend'}",
-            f"WIRESCOPE_DATA_DIR={paths.data_dir}",
-            f"WIRESCOPE_DATABASE_PATH={paths.database_path}",
-            f"WIRESCOPE_EVIDENCE_DIR={paths.evidence_dir}",
-            f"WIRESCOPE_RUNTIME_DIR={paths.runtime_dir}",
-            f"WIRESCOPE_CAPTURE_DIR={paths.capture_dir}",
-            "WIRESCOPE_DOCS_ENABLED=false",
-            f"WIRESCOPE_BIND_HOST={bind_host}",
-            f"WIRESCOPE_BIND_PORT={bind_port}",
-            "WIRESCOPE_SESSION_COOKIE_SECURE=false",
-            "WIRESCOPE_DUMPCAP_BINARY=/usr/bin/dumpcap",
-            "WIRESCOPE_TSHARK_BINARY=/usr/bin/tshark",
-            "WIRESCOPE_NMAP_BINARY=/usr/bin/nmap",
-            "",
-        ]
-    )
+def production_env_text(
+    paths: InstallPaths,
+    *,
+    bind_host: str,
+    bind_port: int,
+    trust_proxy: bool = False,
+    tls_certfile: str = "",
+    tls_keyfile: str = "",
+    session_cookie_secure: bool | None = None,
+) -> str:
+    tls = bool(tls_certfile.strip() and tls_keyfile.strip())
+    if session_cookie_secure is None:
+        session_cookie_secure = trust_proxy or tls
+    lines = [
+        "# WireScope appliance environment. Do not put passwords here.",
+        f"WIRESCOPE_ROOT={paths.project_root}",
+        f"WIRESCOPE_FRONTEND_DIR={paths.project_root / 'frontend'}",
+        f"WIRESCOPE_DATA_DIR={paths.data_dir}",
+        f"WIRESCOPE_DATABASE_PATH={paths.database_path}",
+        f"WIRESCOPE_EVIDENCE_DIR={paths.evidence_dir}",
+        f"WIRESCOPE_RUNTIME_DIR={paths.runtime_dir}",
+        f"WIRESCOPE_CAPTURE_DIR={paths.capture_dir}",
+        "WIRESCOPE_DOCS_ENABLED=false",
+        f"WIRESCOPE_BIND_HOST={bind_host}",
+        f"WIRESCOPE_BIND_PORT={bind_port}",
+        f"WIRESCOPE_TRUST_PROXY={'true' if trust_proxy else 'false'}",
+        f"WIRESCOPE_SESSION_COOKIE_SECURE={'true' if session_cookie_secure else 'false'}",
+        "WIRESCOPE_DUMPCAP_BINARY=/usr/bin/dumpcap",
+        "WIRESCOPE_TSHARK_BINARY=/usr/bin/tshark",
+        "WIRESCOPE_NMAP_BINARY=/usr/bin/nmap",
+    ]
+    if tls:
+        lines.append(f"WIRESCOPE_TLS_CERTFILE={tls_certfile}")
+        lines.append(f"WIRESCOPE_TLS_KEYFILE={tls_keyfile}")
+    lines.append("")
+    return "\n".join(lines)

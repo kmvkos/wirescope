@@ -120,6 +120,9 @@ class HealthResponse(BaseModel):
     status: str
     product: str
     version: str
+    cookie_secure: bool = False
+    trust_proxy: bool = False
+    tls: bool = False
 
 
 class ReadinessResponse(BaseModel):

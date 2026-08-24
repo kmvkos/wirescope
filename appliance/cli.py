@@ -15,6 +15,7 @@ from appliance.install import InstallConfig, install
 from appliance.inventory import build_inventory, render_inventory_text
 from appliance.paths import DEFAULT_PROJECT_ROOT, InstallPaths
 from appliance.release import checksum_paths, default_release_paths, render_checksums
+from appliance.tls import self_signed_argv
 from appliance.wait import wait_ready, health_url
 from config.settings import get_settings
 
@@ -67,6 +68,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_path_arguments(install_cmd)
     install_cmd.add_argument("--bind-host", default="127.0.0.1")
     install_cmd.add_argument("--bind-port", type=int, default=8000)
+    install_cmd.add_argument(
+        "--trust-proxy",
+        action="store_true",
+        help="LAN reverse proxy: Secure cookies, trust X-Forwarded-* from loopback",
+    )
+    install_cmd.add_argument("--tls-cert", default="", help="Direct TLS certificate path")
+    install_cmd.add_argument("--tls-key", default="", help="Direct TLS private key path")
     install_cmd.add_argument("--skip-packages", action="store_true")
     install_cmd.add_argument(
         "--skip-apt",
@@ -133,6 +141,17 @@ def build_parser() -> argparse.ArgumentParser:
     ready.add_argument("--timeout", type=float, default=60.0)
     ready.set_defaults(handler=cmd_wait_ready)
 
+    tls_cmd = sub.add_parser(
+        "tls-selfsigned",
+        help="Write a lab self-signed TLS cert/key (not for untrusted networks)",
+    )
+    tls_cmd.add_argument("--output-dir", default="/etc/wirescope/tls")
+    tls_cmd.add_argument("--common-name", default="wirescope.local")
+    tls_cmd.add_argument("--days", type=int, default=825)
+    tls_cmd.add_argument("--cert-name", default="cert.pem")
+    tls_cmd.add_argument("--key-name", default="key.pem")
+    tls_cmd.set_defaults(handler=cmd_tls_selfsigned)
+
     return parser
 
 
@@ -182,6 +201,9 @@ def cmd_install(args: argparse.Namespace) -> int:
         consume_password_files=args.consume_password_files,
         dry_run=args.dry_run,
         user_session=args.user_install,
+        trust_proxy=args.trust_proxy,
+        tls_certfile=Path(args.tls_cert) if args.tls_cert else None,
+        tls_keyfile=Path(args.tls_key) if args.tls_key else None,
     )
     report = install(config, RealHost())
     for step in report.steps:
@@ -285,6 +307,28 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 def cmd_wait_ready(args: argparse.Namespace) -> int:
     wait_ready(url=args.url or health_url(), timeout_seconds=args.timeout)
+    return 0
+
+
+def cmd_tls_selfsigned(args: argparse.Namespace) -> int:
+    output = Path(args.output_dir).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    cert = output / args.cert_name
+    key = output / args.key_name
+    argv = self_signed_argv(
+        certfile=cert,
+        keyfile=key,
+        common_name=args.common_name,
+        days=args.days,
+    )
+    result = RealHost().run(argv)
+    if not result.ok:
+        print(result.stderr.strip() or result.stdout.strip(), file=sys.stderr)
+        return 1
+    cert.chmod(0o644)
+    key.chmod(0o600)
+    print(cert)
+    print(key)
     return 0
 
 

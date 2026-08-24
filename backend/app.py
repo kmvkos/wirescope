@@ -224,6 +224,9 @@ def create_app(
             status="ok",
             product=active_settings.app_name,
             version=active_settings.app_version,
+            cookie_secure=active_settings.session_cookie_secure,
+            trust_proxy=active_settings.trust_proxy,
+            tls=active_settings.tls_enabled,
         )
 
     @application.get("/api/ready", response_model=ReadinessResponse)

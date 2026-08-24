@@ -1,0 +1,16 @@
+# Recommended LAN: terminate TLS here. Keep WireScope on 127.0.0.1:8000.
+# Replace the hostname and certificate paths. Do not expose TCP 8000.
+#
+#   sudo install.sh --trust-proxy --bind-host 127.0.0.1
+#   sudo systemctl enable --now caddy
+
+wirescope.example {
+	tls /etc/wirescope/tls/cert.pem /etc/wirescope/tls/key.pem
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+	reverse_proxy 127.0.0.1:8000
+}

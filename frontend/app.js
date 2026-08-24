@@ -202,16 +202,35 @@ function applyVlanScanInterface(proposal) {
     state.draft.interface = proposal.interface;
 }
 
+function isNetworkError(error) {
+    return Boolean(
+        error &&
+        !(error.status) &&
+        (error.name === "TypeError" || /failed to fetch|network|load failed/i.test(String(error.message || "")))
+    );
+}
+
 function displayError(error) {
+    if (isNetworkError(error)) {
+        return t("error.tlsOrNetwork");
+    }
     return I18N.apiError(error);
 }
 
 async function refreshHealth() {
     try {
-        await api("GET", "/api/status");
+        const health = await api("GET", "/api/status");
+        if (health && health.cookie_secure && !window.isSecureContext) {
+            setStatus("offline", t("status.error"));
+            setError("login-error", t("error.secureCookieOverHttp"));
+            return;
+        }
         setStatus("online", t("status.ready"));
-    } catch {
+    } catch (error) {
         setStatus("offline", t("status.error"));
+        if (isNetworkError(error)) {
+            setError("login-error", t("error.tlsOrNetwork"));
+        }
     }
 }
 

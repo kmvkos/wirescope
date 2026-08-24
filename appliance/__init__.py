@@ -1,4 +1,4 @@
-"""Debian-family appliance installer, systemd units, and operational helpers."""
+"""Generic Linux appliance installer, dumpcap verification, and operational helpers."""
 
 from appliance.detect import Platform, detect_platform
 from appliance.packages import OPTIONAL_PROVIDERS, REQUIRED_PACKAGES

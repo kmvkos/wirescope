@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import ssl
 import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 
 
 def health_url(host: str | None = None, port: int | None = None) -> str:
@@ -15,15 +17,32 @@ def health_url(host: str | None = None, port: int | None = None) -> str:
     if bind_host in {"0.0.0.0", "::"}:
         bind_host = "127.0.0.1"
     bind_port = port if port is not None else int(os.getenv("WIRESCOPE_BIND_PORT", "8000"))
-    return f"http://{bind_host}:{bind_port}/api/health"
+    tls = bool(
+        os.getenv("WIRESCOPE_TLS_CERTFILE", "").strip()
+        and os.getenv("WIRESCOPE_TLS_KEYFILE", "").strip()
+    )
+    scheme = "https" if tls else "http"
+    return f"{scheme}://{bind_host}:{bind_port}/api/health"
+
+
+def _ssl_context(url: str) -> ssl.SSLContext | None:
+    if not url.startswith("https://"):
+        return None
+    context = ssl.create_default_context()
+    hostname = urlparse(url).hostname or ""
+    if hostname in {"127.0.0.1", "localhost", "::1"}:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 def wait_ready(*, url: str, timeout_seconds: float = 60.0, interval: float = 0.25) -> None:
     deadline = time.monotonic() + timeout_seconds
     last_error = "not contacted"
+    context = _ssl_context(url)
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=2) as response:
+            with urllib.request.urlopen(url, timeout=2, context=context) as response:
                 if 200 <= response.status < 300:
                     return
                 last_error = f"HTTP {response.status}"

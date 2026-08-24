@@ -15,6 +15,12 @@ from appliance.kiosk import KIOSK_SCRIPT, XINITRC
 from appliance.packages import select_packages
 from appliance.paths import ENV_FILE_MODE, InstallPaths, production_env_text
 from appliance.systemd import render_journald_dropin, unit_files
+from appliance.tls import (
+    PROXY_SAMPLE_NAMES,
+    lan_warnings,
+    proxy_sample_dir,
+    validate_tls_settings,
+)
 
 
 class InstallError(RuntimeError):
@@ -43,6 +49,10 @@ class InstallConfig:
     consume_password_files: bool = False
     dry_run: bool = False
     user_session: bool = False
+    trust_proxy: bool = False
+    tls_certfile: Path | None = None
+    tls_keyfile: Path | None = None
+    session_cookie_secure: bool | None = None
 
 
 @dataclass
@@ -70,6 +80,7 @@ def service_environment(config: InstallConfig) -> dict[str, str]:
         "WIRESCOPE_DOCS_ENABLED": "false",
         "WIRESCOPE_BIND_HOST": config.bind_host,
         "WIRESCOPE_BIND_PORT": str(config.bind_port),
+        "WIRESCOPE_TRUST_PROXY": "true" if config.trust_proxy else "false",
         "HOME": str(paths.data_dir),
         "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
     }
@@ -113,6 +124,7 @@ def install(config: InstallConfig, host: Host) -> InstallReport:
     _install_account(config, host, report)
     _install_directories(config, host, report)
     _install_env(config, host, report)
+    _install_proxy_examples(config, host, report)
     _install_venv(config, host, report)
     report.dumpcap = _install_dumpcap(config, host, report)
     _install_units(config, host, report)
@@ -145,10 +157,17 @@ def _plan(config: InstallConfig, host: Host, report: InstallReport) -> None:
     _note(report, "migrate SQLite and create initial auditor if needed")
     if config.start_services:
         _note(report, "enable and start wirescope-api and wirescope-worker")
-    if config.bind_host in {"0.0.0.0", "::"}:
-        report.warnings.append(
-            "bind_host is public; restrict with a firewall before exposing"
+    if config.trust_proxy:
+        _note(report, "LAN reverse proxy: API stays on loopback, cookie Secure")
+    if config.tls_certfile and config.tls_keyfile:
+        _note(report, "direct TLS cert/key paths in env (not in unit files)")
+    report.warnings.extend(
+        lan_warnings(
+            bind_host=config.bind_host,
+            trust_proxy=config.trust_proxy,
+            tls_enabled=bool(config.tls_certfile and config.tls_keyfile),
         )
+    )
 
 
 def _install_packages(
@@ -302,10 +321,24 @@ def _install_env(
     host: Host,
     report: InstallReport,
 ) -> None:
+    tls_cert = str(config.tls_certfile) if config.tls_certfile else ""
+    tls_key = str(config.tls_keyfile) if config.tls_keyfile else ""
+    try:
+        validate_tls_settings(tls_cert, tls_key)
+    except ValueError as exc:
+        raise InstallError(str(exc)) from exc
+    if tls_cert and not host.is_file(Path(tls_cert)):
+        raise InstallError(f"TLS certificate is missing: {tls_cert}")
+    if tls_key and not host.is_file(Path(tls_key)):
+        raise InstallError(f"TLS private key is missing: {tls_key}")
     text = production_env_text(
         config.paths,
         bind_host=config.bind_host,
         bind_port=config.bind_port,
+        trust_proxy=config.trust_proxy,
+        tls_certfile=tls_cert,
+        tls_keyfile=tls_key,
+        session_cookie_secure=config.session_cookie_secure,
     )
     env_owner = "root" if not config.user_session else config.paths.service_user
     exists = host.exists(config.paths.env_file)
@@ -321,10 +354,46 @@ def _install_env(
         _note(report, f"kept existing {config.paths.env_file}")
     else:
         _note(report, f"wrote {config.paths.env_file}")
-    if config.bind_host in {"0.0.0.0", "::"}:
-        report.warnings.append(
-            "API bind address is public; see SECURITY_MODEL.md firewall guidance"
+    if config.trust_proxy:
+        _note(report, "LAN reverse proxy: API stays on loopback, cookie Secure")
+    report.warnings.extend(
+        warning
+        for warning in lan_warnings(
+            bind_host=config.bind_host,
+            trust_proxy=config.trust_proxy,
+            tls_enabled=bool(tls_cert and tls_key),
         )
+        if warning not in report.warnings
+        )
+
+
+def _install_proxy_examples(
+    config: InstallConfig,
+    host: Host,
+    report: InstallReport,
+) -> None:
+    source = proxy_sample_dir(config.paths.project_root)
+    dest = config.paths.etc_dir / "proxy"
+    owner = "root" if not config.user_session else config.paths.service_user
+    group = "root" if not config.user_session else config.paths.service_group
+    host.mkdir(dest, mode=0o755, owner=owner, group=group)
+    copied = 0
+    for name in PROXY_SAMPLE_NAMES:
+        src = source / name
+        if not src.is_file():
+            continue
+        host.write_file(
+            dest / name,
+            src.read_text(encoding="utf-8"),
+            mode=0o644,
+            owner=owner,
+            group=group,
+        )
+        copied += 1
+    if copied:
+        _note(report, f"wrote {copied} LAN proxy/firewall examples in {dest}")
+    else:
+        _note(report, "LAN proxy examples were not found in packaging/proxy")
 
 
 def _install_venv(

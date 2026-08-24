@@ -43,9 +43,12 @@ AUDIT_TRANSITIONS: dict[AuditStatus, frozenset[AuditStatus]] = {
         }
     ),
     AuditStatus.COMPLETED: frozenset({AuditStatus.RUNNING}),
-    AuditStatus.FAILED: frozenset(),
-    AuditStatus.CANCELLED: frozenset(),
-    AuditStatus.INTERRUPTED: frozenset(),
+    # Terminal audit states may return to RUNNING only through an explicit
+    # operator retry of a durable job. Individual terminal jobs remain
+    # immutable; recovery always creates a new queued job.
+    AuditStatus.FAILED: frozenset({AuditStatus.RUNNING}),
+    AuditStatus.CANCELLED: frozenset({AuditStatus.RUNNING}),
+    AuditStatus.INTERRUPTED: frozenset({AuditStatus.RUNNING}),
 }
 
 AUDIT_JOB_ACCEPTING = frozenset(

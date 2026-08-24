@@ -2,10 +2,12 @@ import shutil
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from auth.models import LoginRequest, Role, SessionUser, SessionUserResponse
+from auth.service import AuthError, AuthService
 from backend.models import (
     AssetPageResponse,
     AuditPageResponse,
@@ -79,6 +81,7 @@ def create_app(
     observation_store: ProtocolObservationStore | None = None,
     finding_store: FindingStore | None = None,
     report_store: ReportStore | None = None,
+    auth_service: AuthService | None = None,
     environment_provider: Callable[[], dict[str, Any]] = get_environment,
 ) -> FastAPI:
     active_settings = settings or get_settings()
@@ -104,7 +107,32 @@ def create_app(
     )
     active_findings = finding_store or FindingStore(active_database)
     active_reports = report_store or ReportStore(active_database)
+    active_auth = auth_service or AuthService(active_database, active_settings)
+    active_auth.bootstrap()
     module_registry = default_registry()
+
+    def _auth_guard(request: Request) -> None:
+        if _is_public_request(request):
+            return
+        token = request.cookies.get(active_settings.session_cookie_name)
+        user = active_auth.resolve_token(token)
+        if user is None:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "unauthenticated",
+                    "message": "Sign in required",
+                },
+            )
+        if _requires_auditor(request) and user.role is not Role.AUDITOR:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "forbidden_role",
+                    "message": "Viewer cannot start or cancel audits",
+                },
+            )
+        request.state.user = user
 
     application = FastAPI(
         title=active_settings.app_name,
@@ -114,6 +142,7 @@ def create_app(
         ),
         docs_url="/docs" if active_settings.docs_enabled else None,
         redoc_url="/redoc" if active_settings.docs_enabled else None,
+        dependencies=[Depends(_auth_guard)],
     )
     application.state.settings = active_settings
     application.state.database = active_database
@@ -125,6 +154,68 @@ def create_app(
     application.state.observations = active_observations
     application.state.findings = active_findings
     application.state.reports = active_reports
+    application.state.auth = active_auth
+
+    def _session_payload(user: SessionUser) -> SessionUserResponse:
+        capabilities = (
+            [
+                "start_audits",
+                "cancel_jobs",
+                "manage_findings",
+                "generate_reports",
+            ]
+            if user.can_mutate
+            else []
+        )
+        return SessionUserResponse(
+            username=user.username,
+            role=user.role,
+            capabilities=capabilities,
+            policy={
+                "passive_duration_min": active_settings.passive_duration_min,
+                "passive_duration_max": active_settings.passive_duration_max,
+                "passive_duration_default": (
+                    active_settings.passive_duration_default
+                ),
+            },
+        )
+
+    def _set_session_cookie(response: Response, token: str) -> None:
+        response.set_cookie(
+            key=active_settings.session_cookie_name,
+            value=token,
+            max_age=active_settings.session_ttl_seconds,
+            httponly=True,
+            samesite="strict",
+            secure=active_settings.session_cookie_secure,
+            path="/",
+        )
+
+    @application.post("/api/auth/login", response_model=SessionUserResponse)
+    def login(payload: LoginRequest, response: Response) -> SessionUserResponse:
+        try:
+            user = active_auth.authenticate(payload.username, payload.password)
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=401,
+                detail={"code": exc.code, "message": exc.message},
+            ) from exc
+        token = active_auth.create_session(user)
+        _set_session_cookie(response, token)
+        return _session_payload(user)
+
+    @application.post("/api/auth/logout", status_code=204)
+    def logout(request: Request, response: Response) -> None:
+        token = request.cookies.get(active_settings.session_cookie_name)
+        active_auth.revoke_token(token)
+        response.delete_cookie(
+            key=active_settings.session_cookie_name,
+            path="/",
+        )
+
+    @application.get("/api/auth/me", response_model=SessionUserResponse)
+    def current_user(request: Request) -> SessionUserResponse:
+        return _session_payload(request.state.user)
 
     @application.get("/api/health", response_model=HealthResponse)
     @application.get("/api/status", response_model=HealthResponse)
@@ -190,16 +281,19 @@ def create_app(
         response_model=AuditResponse,
         status_code=201,
     )
-    def create_audit(request: CreateAuditRequest) -> AuditResponse:
+    def create_audit(
+        payload: CreateAuditRequest,
+        http_request: Request,
+    ) -> AuditResponse:
         try:
-            active_interfaces.validate(request.interface)
+            active_interfaces.validate(payload.interface)
         except InterfaceValidationError as exc:
             raise _interface_http_error(exc) from exc
         audit = active_jobs.create_audit(
-            profile=request.profile,
-            interface=request.interface,
-            scope=request.scope,
-            actor=request.actor,
+            profile=payload.profile,
+            interface=payload.interface,
+            scope=payload.scope,
+            actor=http_request.state.user.username,
         )
         try:
             snapshot = active_evidence.put_json(
@@ -748,13 +842,15 @@ def create_app(
     def suppress_finding(
         audit_id: str,
         finding_id: str,
-        request: FindingStateChangeRequest,
+        payload: FindingStateChangeRequest,
+        http_request: Request,
     ) -> FindingResponse:
         return _change_finding_status(
             audit_id,
             finding_id,
             FindingStatus.SUPPRESSED,
-            request,
+            payload,
+            http_request,
         )
 
     @application.post(
@@ -764,13 +860,15 @@ def create_app(
     def accept_finding_risk(
         audit_id: str,
         finding_id: str,
-        request: FindingStateChangeRequest,
+        payload: FindingStateChangeRequest,
+        http_request: Request,
     ) -> FindingResponse:
         return _change_finding_status(
             audit_id,
             finding_id,
             FindingStatus.ACCEPTED_RISK,
-            request,
+            payload,
+            http_request,
         )
 
     @application.post(
@@ -780,20 +878,23 @@ def create_app(
     def reopen_finding(
         audit_id: str,
         finding_id: str,
-        request: FindingStateChangeRequest,
+        payload: FindingStateChangeRequest,
+        http_request: Request,
     ) -> FindingResponse:
         return _change_finding_status(
             audit_id,
             finding_id,
             FindingStatus.OPEN,
-            request,
+            payload,
+            http_request,
         )
 
     def _change_finding_status(
         audit_id: str,
         finding_id: str,
         to_status: FindingStatus,
-        request: FindingStateChangeRequest,
+        payload: FindingStateChangeRequest,
+        http_request: Request,
     ) -> FindingResponse:
         try:
             active_jobs.get_audit(audit_id)
@@ -802,8 +903,8 @@ def create_app(
                     audit_id=audit_id,
                     finding_id=finding_id,
                     to_status=to_status,
-                    actor=request.actor,
-                    reason=request.reason,
+                    actor=http_request.state.user.username,
+                    reason=payload.reason,
                 )
             )
         except EntityNotFound as exc:
@@ -826,7 +927,8 @@ def create_app(
     )
     def enqueue_report(
         audit_id: str,
-        request: ReportJobRequest,
+        payload: ReportJobRequest,
+        http_request: Request,
     ) -> JobAcceptedResponse:
         try:
             audit = active_jobs.get_audit(audit_id)
@@ -834,8 +936,8 @@ def create_app(
                 audit_id=audit.id,
                 job_type="report_generation",
                 target=audit.interface,
-                parameters={"actor": request.actor},
-                priority=request.priority,
+                parameters={"actor": http_request.state.user.username},
+                priority=payload.priority,
                 resource_key=f"audit:{audit.id}",
                 resource_group="report",
                 resource_limit=active_settings.max_report_jobs,
@@ -1174,6 +1276,30 @@ def _report_response(report) -> ReportResponse:
         f"/api/audits/{report.audit_id}/reports/{report.id}/export?format=html"
     )
     return ReportResponse(**payload)
+
+
+def _is_public_request(request: Request) -> bool:
+    path = request.url.path
+    method = request.method.upper()
+    if method == "OPTIONS":
+        return True
+    if path == "/" or path.startswith("/static/"):
+        return True
+    if path in {"/docs", "/redoc", "/openapi.json"}:
+        return True
+    if method == "GET" and path in {
+        "/api/health",
+        "/api/status",
+        "/api/ready",
+    }:
+        return True
+    if method == "POST" and path in {"/api/auth/login", "/api/auth/logout"}:
+        return True
+    return False
+
+
+def _requires_auditor(request: Request) -> bool:
+    return request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
 
 
 def _not_found(error: EntityNotFound) -> HTTPException:

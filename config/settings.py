@@ -27,6 +27,23 @@ def _env_float(name: str, default: float) -> float:
     return float(raw_value) if raw_value is not None else default
 
 
+def _validate_bootstrap_pair(
+    username: str,
+    password: str,
+    role: str,
+) -> None:
+    if not username and not password:
+        return
+    if not username or not password:
+        raise ValueError(
+            f"bootstrap {role} username and password must be set together"
+        )
+    if len(password) < 8:
+        raise ValueError(
+            f"bootstrap {role} password must be at least 8 characters"
+        )
+
+
 def _env_list(name: str) -> tuple[str, ...]:
     raw_value = os.getenv(name, "")
     return tuple(
@@ -95,6 +112,13 @@ class Settings:
     smbclient_binary: str
     snmpget_binary: str
     ldapsearch_binary: str
+    session_cookie_name: str
+    session_ttl_seconds: int
+    session_cookie_secure: bool
+    bootstrap_auditor_username: str
+    bootstrap_auditor_password: str
+    bootstrap_viewer_username: str
+    bootstrap_viewer_password: str
 
     def __post_init__(self) -> None:
         if self.passive_duration_min < 1:
@@ -136,6 +160,20 @@ class Settings:
             raise ValueError("sqlite_busy_timeout_ms must be positive")
         if self.sqlite_synchronous not in {"FULL", "NORMAL"}:
             raise ValueError("sqlite_synchronous must be FULL or NORMAL")
+        if self.session_ttl_seconds < 60:
+            raise ValueError("session_ttl_seconds must be at least 60")
+        if not self.session_cookie_name:
+            raise ValueError("session_cookie_name must not be empty")
+        _validate_bootstrap_pair(
+            self.bootstrap_auditor_username,
+            self.bootstrap_auditor_password,
+            "auditor",
+        )
+        _validate_bootstrap_pair(
+            self.bootstrap_viewer_username,
+            self.bootstrap_viewer_password,
+            "viewer",
+        )
 
     @property
     def database_url(self) -> str:
@@ -317,5 +355,34 @@ def get_settings() -> Settings:
         ldapsearch_binary=os.getenv(
             "WIRESCOPE_LDAPSEARCH_BINARY",
             "ldapsearch",
+        ),
+        session_cookie_name=os.getenv(
+            "WIRESCOPE_SESSION_COOKIE_NAME",
+            "wirescope_session",
+        ).strip()
+        or "wirescope_session",
+        session_ttl_seconds=_env_int(
+            "WIRESCOPE_SESSION_TTL_SECONDS",
+            43_200,
+        ),
+        session_cookie_secure=_env_bool(
+            "WIRESCOPE_SESSION_COOKIE_SECURE",
+            False,
+        ),
+        bootstrap_auditor_username=os.getenv(
+            "WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME",
+            "",
+        ).strip(),
+        bootstrap_auditor_password=os.getenv(
+            "WIRESCOPE_BOOTSTRAP_AUDITOR_PASSWORD",
+            "",
+        ),
+        bootstrap_viewer_username=os.getenv(
+            "WIRESCOPE_BOOTSTRAP_VIEWER_USERNAME",
+            "",
+        ).strip(),
+        bootstrap_viewer_password=os.getenv(
+            "WIRESCOPE_BOOTSTRAP_VIEWER_PASSWORD",
+            "",
         ),
     )

@@ -36,6 +36,7 @@ include = [
     "protocol_audits*",
     "findings*",
     "reports*",
+    "auth*",
     "providers*",
     "sensors*",
     "storage*",
@@ -52,4 +53,5 @@ addopts = ["-ra", "-m", "not network"]
 markers = [
     "network: opt-in tests that may contact a live network",
     "integration: broader pipeline tests that still stay fixture-based unless also marked network",
+    "browser: optional headless browser tests skipped when Playwright is unavailable",
 ]

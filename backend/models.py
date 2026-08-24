@@ -200,7 +200,7 @@ class FindingsJobRequest(BaseModel):
 
 
 class FindingStateChangeRequest(BaseModel):
-    actor: str = Field(min_length=1, max_length=128)
+    actor: str | None = Field(default=None, max_length=128)
     reason: str = Field(min_length=1, max_length=512)
 
 

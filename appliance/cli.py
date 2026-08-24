@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     install_cmd = sub.add_parser("install", help="Install or upgrade the appliance")
     _add_path_arguments(install_cmd)
-    install_cmd.add_argument("--bind-host", default="127.0.0.1")
+    install_cmd.add_argument("--bind-host", default="0.0.0.0")
     install_cmd.add_argument("--bind-port", type=int, default=8000)
     install_cmd.add_argument(
         "--trust-proxy",
@@ -359,106 +359,91 @@ def cmd_bootstrap_admin(args: argparse.Namespace) -> int:
 
 def cmd_set_password(args: argparse.Namespace) -> int:
     settings = _runtime_settings()
-    password = None
-    output = Path(args.output).expanduser() if args.output else None
-    if args.password_file:
-        source = read_password_file(Path(args.password_file).expanduser())
-        password = source.password
-        if output is None:
-            output = source.path
     try:
-        path = set_operator_password(
+        result = set_operator_password(
             settings,
             username=args.username,
-            password=password,
-            output=output,
+            password_file=(Path(args.password_file) if args.password_file else None),
+            output_path=(Path(args.output) if args.output else None),
         )
     except BootstrapError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    print(f"password_file={path}")
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"username={result.username}")
+    print(f"password_file={result.password_path}")
     return 0
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
-    settings = get_settings()
-    backup_dir = (
-        Path(args.backup_dir) if args.backup_dir else settings.data_dir / "backups"
+    settings = _runtime_settings()
+    target = (
+        Path(args.backup_dir)
+        if args.backup_dir
+        else settings.data_dir / "backups"
     )
     archive = create_backup(
         database_path=settings.database_path,
         evidence_dir=settings.evidence_dir,
-        backup_dir=backup_dir,
+        backup_dir=target,
         include_evidence=not args.no_evidence,
     )
-    print(archive.directory)
+    print(f"backup={archive.directory}")
+    print(f"database={archive.database_path}")
+    if archive.evidence_path:
+        print(f"evidence={archive.evidence_path}")
     return 0
 
 
 def cmd_restore(args: argparse.Namespace) -> int:
-    settings = get_settings()
+    settings = _runtime_settings()
     restore_backup(
         Path(args.archive),
         database_path=settings.database_path,
         evidence_dir=settings.evidence_dir,
         restore_evidence=not args.no_evidence,
     )
-    print("restored")
+    print("restored=true")
     return 0
 
 
 def cmd_checksums(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
-    records = checksum_paths(default_release_paths(root), root=root)
-    text = render_checksums(records)
-    if args.output:
-        output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(text, encoding="utf-8")
-        print(output)
-    else:
-        sys.stdout.write(text)
+    paths = default_release_paths(root)
+    rows = checksum_paths(paths, root=root)
+    output = (
+        Path(args.output)
+        if args.output
+        else root / "packaging" / "inventory" / "SHA256SUMS"
+    )
+    output.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    output.write_text(render_checksums(rows), encoding="utf-8")
+    print(f"checksums={output}")
     return 0
 
 
 def cmd_inventory(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
-    sys.stdout.write(render_inventory_text(build_inventory(root)))
+    print(render_inventory_text(build_inventory(root)))
     return 0
 
 
 def cmd_wait_ready(args: argparse.Namespace) -> int:
-    wait_ready(url=args.url or health_url(), timeout_seconds=args.timeout)
-    return 0
+    settings = _runtime_settings()
+    url = args.url or health_url(
+        settings.bind_host,
+        settings.bind_port,
+        tls=settings.tls_enabled,
+    )
+    return 0 if wait_ready(url, timeout_seconds=args.timeout) else 1
 
 
 def cmd_tls_selfsigned(args: argparse.Namespace) -> int:
-    output = Path(args.output_dir).resolve()
-    output.mkdir(parents=True, exist_ok=True)
-    cert = output / args.cert_name
-    key = output / args.key_name
     argv = self_signed_argv(
-        certfile=cert,
-        keyfile=key,
+        output_dir=Path(args.output_dir),
         common_name=args.common_name,
         days=args.days,
+        cert_name=args.cert_name,
+        key_name=args.key_name,
     )
-    result = RealHost().run(argv)
-    if not result.ok:
-        print(result.stderr.strip() or result.stdout.strip(), file=sys.stderr)
-        return 1
-    cert.chmod(0o644)
-    key.chmod(0o600)
-    print(cert)
-    print(key)
+    os.execvp(argv[0], argv)
     return 0
-
-
-def main(argv: list[str] | None = None) -> None:
-    try:
-        parser = build_parser()
-        args = parser.parse_args(argv)
-        raise SystemExit(args.handler(args))
-    except KeyboardInterrupt:
-        print("установка прервана / install interrupted", file=sys.stderr)
-        raise SystemExit(130)

@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from appliance.__main__ import _argv
+from appliance.cli import build_parser
 from appliance.install import InstallConfig
 from config.settings import get_settings
 
@@ -17,6 +18,11 @@ def test_application_defaults_to_all_interfaces(monkeypatch):
 
 def test_appliance_install_defaults_to_all_interfaces():
     assert InstallConfig.__dataclass_fields__["bind_host"].default == "0.0.0.0"
+
+
+def test_appliance_parser_defaults_to_all_interfaces():
+    args = build_parser().parse_args(["install", "--dry-run"])
+    assert args.bind_host == "0.0.0.0"
 
 
 def test_packaging_entrypoints_pass_all_interface_bind():

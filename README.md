@@ -1,8 +1,10 @@
 # WireScope
 
 WireScope is a portable network discovery, diagnostics, and security audit
-appliance intended for Raspberry Pi OS on ARM64 and Debian-based development
-systems on AMD64.
+appliance. The production target is an unprivileged API + worker + browser
+GUI on **generic Linux** (Debian/Ubuntu and RPM families such as Fedora,
+RHEL/Rocky, and openSUSE) on amd64 or arm64. Raspberry Pi kiosk hardware is
+a later extra, not a required install stage.
 
 The current `0.1.0` codebase is an early prototype being stabilized in
 milestones. It can inspect the host network environment, capture through
@@ -11,10 +13,9 @@ durable jobs, run authorized active discovery into an asset/service inventory,
 and enqueue service-aware protocol audits. The findings engine consumes those
 stored observations and can persist suppress/accepted-risk state. Reporting
 exports HTML and JSON from persisted audit data. The local operator GUI
-covers the full audit workflow with auditor/viewer sessions. Debian VM
+covers the full audit workflow with auditor/viewer sessions. Generic Linux
 appliance packaging (installer, systemd API/worker units, backup, checksums)
-is in `packaging/` and `appliance/`. Raspberry Pi OS Lite kiosk hardware
-validation remains a later attempt of the same installer.
+is in `packaging/` and `appliance/`.
 
 ## Current components
 
@@ -31,9 +32,9 @@ validation remains a later attempt of the same installer.
 - `findings/` — declarative rules that turn observations into findings.
 - `reports/` — versioned HTML/JSON audit reports from persisted data.
 - `auth/` — local operator users, password hashes, and sessions.
-- `frontend/` — kiosk operator GUI for the audit workflow.
-- `appliance/` — Debian-family installer, dumpcap verification, backup.
-- `packaging/` — install scripts, systemd units, optional kiosk templates.
+- `frontend/` — operator GUI (Russian) for the audit workflow.
+- `appliance/` — generic Linux installer, dumpcap verification, backup.
+- `packaging/` — install scripts, systemd units, optional kiosk extra.
 - `config/` — centralized application paths and runtime settings.
 - `tests/` — tests that do not require live packet capture.
 

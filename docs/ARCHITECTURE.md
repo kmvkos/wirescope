@@ -3,8 +3,9 @@
 ## Purpose
 
 WireScope is a portable network discovery, diagnostics, and security audit
-appliance. Its production target is Raspberry Pi OS Lite on ARM64, while the
-same Python application source must run on Debian AMD64 for development.
+appliance. Its production target is an unprivileged backend, worker, and
+browser GUI on generic Linux (Debian/Ubuntu and RPM families) on amd64 or
+arm64. Raspberry Pi OS kiosk hardware is a later extra.
 
 WireScope treats command-line tools as evidence providers. Users interact with
 the application API and UI, not with raw `tshark`, Nmap, or shell output.
@@ -23,8 +24,9 @@ the application API and UI, not with raw `tshark`, Nmap, or shell output.
    distributed infrastructure are not required for a single device.
 8. APIs have explicit, versioned Pydantic contracts before UI workflows depend
    on them.
-9. Architecture-independent Python is preferred; OS packages must be available
-   for both Debian AMD64 and Raspberry Pi OS ARM64.
+9. Architecture-independent Python is preferred; OS packages must be
+   available on common Linux amd64/arm64 families (apt and at least one RPM
+   manager).
 10. A missing tool or tool failure is an error observation, never equivalent
     to a protocol not being detected.
 
@@ -179,10 +181,11 @@ read but cannot start or cancel work.
 
 ### `frontend/`
 
-The vanilla operator GUI implements the audit wizard and result screens at a
-480×320 kiosk baseline, with a denser laptop layout above 900px. It polls
-durable jobs and never cancels work on display restart. See
-[GUI_MODEL.md](GUI_MODEL.md).
+The vanilla operator GUI implements the audit wizard and result screens. A
+compact 480×320 layout remains available; the production client is a local
+or LAN browser on a generic Linux appliance, with a denser laptop layout
+above 900px. It polls durable jobs and never cancels work on display
+restart. See [GUI_MODEL.md](GUI_MODEL.md).
 
 ## Current HTTP surface
 
@@ -511,8 +514,8 @@ wirescope-api                       wirescope-worker
 The API creates metadata and never owns execution lifetime. The worker process
 starts a configurable bounded thread pool (default one), claims queued jobs,
 and invokes registered handlers. This keeps SQLite and appliance operation
-simple while preserving a future process split. The kiosk remains a third,
-independent process.
+simple while preserving a future process split. An optional local kiosk
+remains a third, independent process and is not required.
 
 Only one healthy worker supervisor process may hold the supervisor lease.
 Configured concurrency is therefore not multiplied accidentally by launching
@@ -573,7 +576,7 @@ The lightweight benchmark on the Debian AMD64 development host (50 jobs,
 - completion/event update median: about 1.4 ms;
 - listing 50 jobs: about 2.8 ms.
 
-These numbers are regression indicators, not Raspberry Pi guarantees. The
+These numbers are regression indicators, not hardware guarantees. The
 design performs commits per meaningful stage/event and result, never per
 captured frame.
 
@@ -583,12 +586,13 @@ The appliance process boundary is:
 
 - WireScope API;
 - WireScope worker;
-- local kiosk/browser.
+- local or LAN browser (optional kiosk extra is not required).
 
 The backend binds to `127.0.0.1:8000` by default (`WIRESCOPE_BIND_HOST` /
-`WIRESCOPE_BIND_PORT`). Remote access, TLS termination, and listening
-interfaces are explicit deployment settings. Production documentation
-routes are disabled from the appliance environment file.
+`WIRESCOPE_BIND_PORT`). Listening on `0.0.0.0` is an explicit VM/LAN choice.
+Remote access, TLS termination, and listening interfaces are explicit
+deployment settings. Production documentation routes are disabled from the
+appliance environment file.
 
 ## Known transitional debt
 
@@ -599,10 +603,8 @@ routes are disabled from the appliance environment file.
   or registered evidence automatically;
 - terminal-job retry records and a manual retry API are not implemented;
 - tshark field compatibility is tested against 4.4 fixtures and still requires
-  release testing against the Raspberry Pi OS package version;
-- live Raspberry Pi OS Lite installation, on-device ARM64 smoke, and
-  touchscreen 480×320 hardware validation remain a later attempt of the same
-  installer;
+  release testing against each distro's package version;
+- Raspberry Pi OS Lite kiosk hardware remains an optional later extra;
 - direct TLS versus a local reverse proxy is not chosen yet.
 
 These limitations are scheduled explicitly in

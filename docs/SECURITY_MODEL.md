@@ -20,20 +20,21 @@
 
 Authentication is local SQLite users with roles `auditor` and `viewer`.
 Sessions use HttpOnly cookies; mutating routes require `auditor`. Health and
-readiness stay public so a kiosk or local browser can show appliance state
+readiness stay public so a local or LAN browser can show appliance state
 before login.
 
 ## Bind address and firewall
 
 The API binds to `127.0.0.1:8000` unless `WIRESCOPE_BIND_HOST` /
 `WIRESCOPE_BIND_PORT` are set. Loopback is the conservative default for a
-Debian VM and for a local kiosk.
+local browser on the same host.
 
 Do not expose the API to an untrusted network. If an operator explicitly
-binds a LAN address or `0.0.0.0`:
+binds a LAN address or `0.0.0.0` (VM/LAN deploy):
 
 - keep `WIRESCOPE_DOCS_ENABLED=false`;
-- restrict TCP 8000 with nftables or `ufw` to the management network;
+- restrict TCP 8000 with nftables, `ufw`, or `firewalld` to the management
+  network;
 - leave SSH and other host services as they are — the installer does not
   rewrite the host firewall;
 - treat HTTP as a trusted-network protocol until a later reverse-proxy or
@@ -48,8 +49,10 @@ optional: allow tcp 8000 from a documented management prefix
 default deny incoming
 ```
 
-Direct TLS versus a local reverse proxy remains deferred. The current
-appliance GUI is a same-host browser talking to loopback HTTP.
+On Fedora/RHEL, the equivalent is a `firewalld` rich rule or zone limited to
+the management interface. Direct TLS versus a local reverse proxy remains
+deferred. The current appliance GUI is a browser talking HTTP to the
+configured bind address.
 
 ## Job safety
 
@@ -124,5 +127,5 @@ eligible. Resource locks and stale worker records are cleared transactionally.
 Startup cleanup only removes controlled temporary/orphan files. It never
 deletes registered audit evidence without explicit retention policy.
 
-Restarting Chromium or the optional kiosk unit does not stop the API or
+Restarting the browser or the optional kiosk extra does not stop the API or
 worker.

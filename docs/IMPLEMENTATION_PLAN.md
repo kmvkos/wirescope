@@ -9,7 +9,8 @@ must not bypass the boundaries in `ARCHITECTURE.md`.
 
 Cross-cutting rules:
 
-- support Python 3.11+ on Debian AMD64 and Raspberry Pi OS ARM64;
+- support Python 3.11+ on generic Linux (Debian/Ubuntu and RPM families) for
+  amd64 and arm64;
 - do not run the backend as root;
 - do not use `shell=True`;
 - validate interfaces, scope, addresses, ports, paths, and profiles;
@@ -38,7 +39,7 @@ M6 Reporting
     ↓
 M7 Full GUI
     ↓
-M8 Raspberry Pi appliance
+M8 Linux appliance
 ```
 
 M5 rule development can begin against fixtures after M3 contracts stabilize.
@@ -565,14 +566,20 @@ Implementation evidence:
 
 ---
 
-## Milestone 8 — Raspberry Pi appliance
+## Milestone 8 — Generic Linux appliance
+
+Primary target: unprivileged API + worker + browser GUI on a common Linux
+server or VM. Raspberry Pi kiosk hardware is a later extra, not a gate.
 
 ### Installer
 
-- detect Debian-family OS and `amd64` versus `arm64`;
-- install required base packages and selected optional providers;
-- create unprivileged service account and controlled directories;
-- configure dumpcap permissions without broad backend capabilities;
+- detect OS family through `apt`, `dnf`, `yum`, or `zypper`, and `amd64`
+  versus `arm64`, without requiring Raspberry Pi;
+- install dumpcap/tshark/nmap via distro package names (they differ);
+- create an unprivileged service account and controlled directories;
+- configure dumpcap file capabilities (`setcap`) without backend-as-root;
+- support `--user-install` and root systemd units when sudo works;
+- bind host is configurable (`127.0.0.1` or `0.0.0.0` for VM/LAN);
 - install pinned Python dependencies;
 - initialize and migrate SQLite;
 - create initial admin securely;
@@ -581,44 +588,42 @@ Implementation evidence:
 ### systemd
 
 - application/API unit;
-- worker unit if separated;
-- kiosk unit;
+- worker unit;
+- `SupplementaryGroups=wireshark` on system units; `sg wireshark` on user
+  units so dumpcap works without a new login;
+- optional kiosk unit kept as a later extra, not enabled by default;
 - dependency ordering and health checks;
 - controlled restart limits;
 - log retention;
 - no secrets embedded in unit files.
 
-### Kiosk
+### Optional later extra (Raspberry Pi / local display)
 
-- Raspberry Pi OS Lite;
-- minimal graphical stack;
-- Chromium kiosk;
-- touch and 480×320 validation;
-- automatic local recovery without terminating audits.
+Chromium kiosk, 480×320, Pi OS Lite, and touch validation are **not**
+acceptance criteria. Keep `packaging/kiosk/` labeled as optional. Opt-in
+`pytest -m live_pi` stays unused.
 
 ### Security and release
 
 - production docs disabled or access-controlled;
-- conservative bind address and firewall guidance;
-- dependency and OS-package inventory;
+- conservative bind address and firewall guidance for loopback or LAN;
+- dependency and OS-package inventory per family;
 - backup/restore procedure;
 - signed release artifacts or checksums;
-- ARM64 smoke tests and appliance recovery tests;
+- fixture tests including distro-detection fixtures;
 - complete `INSTALLATION.md`, `SECURITY_MODEL.md`, and operational runbook.
 
 Acceptance criteria:
 
-- clean Raspberry Pi OS Lite installation reaches the WireScope login screen;
+- a clean generic Linux install (Debian/Ubuntu, and at least one RPM family
+  in fixtures) reaches the WireScope login screen in a local or LAN browser;
 - backend and capture run with documented least privilege;
 - reboot during a queued/running audit has defined recovery behavior;
-- the same application tests pass on AMD64 and ARM64.
+- default tests pass with `pytest -m not network` (`live_pi` unused).
 
-Debian AMD64 VM is the first verification gate for this milestone: the
-installer, systemd API/worker units, loopback GUI login, dumpcap least
-privilege, backup/restore, and fixture tests must work on the development
-host. Live Raspberry Pi OS Lite, on-device ARM64 smoke, and touchscreen
-480×320 hardware remain a later attempt of the same installer (`pytest -m
-live_pi` with `WIRESCOPE_LIVE_PI=1`).
+Debian AMD64 VM is the first verification gate. Fedora/RHEL/openSUSE package
+names and package-manager detection are covered by fixtures. Raspberry Pi OS
+Lite HDMI kiosk remains an optional later extra of the same installer.
 
 ---
 

@@ -2,8 +2,10 @@
 
 Milestone 7 adds the local operator interface. Auditors complete an audit
 from the browser; they do not use a shell. Viewers can inspect results but
-cannot start or cancel work. The kiosk is a client of the durable API and
-never owns job lifetime.
+cannot start or cancel work. The GUI is a client of the durable API and
+never owns job lifetime. Production deployment is a generic Linux appliance
+with a local or LAN browser; a 480×320 kiosk layout is a compact extra, not
+an install gate.
 
 ```text
 login

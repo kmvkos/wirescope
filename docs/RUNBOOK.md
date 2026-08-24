@@ -1,7 +1,8 @@
 # WireScope operational runbook
 
-Day-2 operations for the Debian VM appliance. Raspberry Pi OS uses the same
-commands after the later hardware install.
+Day-2 operations for the generic Linux appliance (Debian/Ubuntu, Fedora/RHEL,
+openSUSE). Commands are the same on each family; package names differ only
+during install. Raspberry Pi kiosk hardware is an optional later extra.
 
 ## Service health
 
@@ -10,6 +11,7 @@ systemctl is-active wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
 python3 -m appliance verify --project-root /opt/wirescope
+python3 -m appliance detect
 ```
 
 `/api/health` is public and does not require the worker. `/api/ready` is
@@ -27,16 +29,19 @@ Journal retention is capped by `packaging/systemd/40-wirescope.journald.conf`
 
 Restart limits are five failures per 60 seconds (`StartLimitBurst`).
 
+On `--user-install`, use `systemctl --user` and `journalctl --user`.
+
 ## Sign in
 
-1. Open `http://127.0.0.1:8000/`.
+1. Open `http://127.0.0.1:8000/` (or `http://<host>:8000/` if bound on LAN).
 2. Use the auditor username (`auditor` unless overridden).
 3. Use the password from `/etc/wirescope/initial-admin.txt` or the operator
    password file supplied to the installer.
 4. Delete `/etc/wirescope/initial-admin.txt` after copying it to a password
    manager.
 
-Viewers can inspect results but cannot start or cancel work.
+The GUI is Russian. Viewers can inspect results but cannot start or cancel
+work.
 
 ## Reboot during an audit
 
@@ -66,11 +71,12 @@ sudo -u wirescope /usr/bin/dumpcap -D
 
 Expected: dumpcap `root:wireshark` `750` with `cap_net_admin,cap_net_raw=eip`;
 Python has no those capabilities; `dumpcap -D` works as `wirescope`.
+`getcap` may be `/usr/sbin/getcap` or `/sbin/getcap` depending on the distro.
 
-On a `--user-install`, also check the worker process groups include `103`
-(`wireshark`). If not, the units should exec via `sg wireshark`; then
+On a `--user-install`, also check the worker process groups include
+`wireshark`. If not, the units should exec via `sg wireshark`; then
 `systemctl --user restart wirescope-api wirescope-worker` is enough without
-a logout.
+a logout. System units use `SupplementaryGroups=wireshark`.
 
 ## Backup
 
@@ -107,7 +113,8 @@ curl -sS http://127.0.0.1:8000/api/ready
 ```
 
 The upgrade path does not install Nuclei or Nikto. Optional protocol tools
-that are missing from the distro are skipped with a warning.
+that are missing from the distro are skipped with a warning. Re-running
+install/upgrade is idempotent.
 
 ## Rollback
 
@@ -120,19 +127,21 @@ that are missing from the distro are skipped with a warning.
 
 Do not assume `alembic downgrade` is safe.
 
-## Optional kiosk (Raspberry Pi later)
+## Optional kiosk (Raspberry Pi later extra)
+
+Not required. Keep using a normal browser on generic Linux.
 
 ```bash
 sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk
 sudo systemctl status wirescope-kiosk
 ```
 
-The kiosk loops Chromium against `http://127.0.0.1:8000/` at 480×320. If
+The optional extra loops Chromium against `http://127.0.0.1:8000/`. If
 Chromium exits, the unit restarts the browser only. It does not restart or
-stop the API or worker. Debian VM bring-up does not require this unit.
+stop the API or worker.
 
 Live Raspberry Pi OS Lite, touch, and ARM64-on-device smoke tests are
-opt-in (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1` on the Pi).
+opt-in and unused (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1` on the Pi).
 
 ## Dependency inventory
 

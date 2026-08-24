@@ -19,6 +19,7 @@ from backend.models import (
 from jobs.errors import JobExecutionError
 from jobs.service import EntityNotFound
 from jobs.state import InvalidTransition
+from reports.markdown import render_markdown
 from reports.store import ReportNotFound
 
 
@@ -112,44 +113,58 @@ def export_report(
     services: AppServices = Depends(get_services),
 ) -> Response:
     requested = format.strip().lower()
+    if requested in {"md", "markdown"}:
+        requested = "markdown"
     if requested == "pdf":
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "pdf_not_available",
-                "message": (
-                    "PDF export is deferred until the HTML report "
-                    "contract stabilizes"
-                ),
+                "message": "PDF export is not implemented",
             },
         )
-    if requested not in {"json", "html"}:
+    if requested not in {"json", "html", "markdown"}:
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "unsupported_report_format",
-                "message": "format must be json or html",
+                "message": "format must be json, html, or markdown",
             },
         )
 
     try:
         services.jobs.get_audit(audit_id)
         report = services.reports.get(audit_id, report_id)
-        artifact_id = (
-            report.json_artifact_id
-            if requested == "json"
-            else report.html_artifact_id
-        )
-        artifact = services.jobs.artifact(artifact_id)
-        if artifact.audit_id != audit_id:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "artifact_audit_mismatch",
-                    "message": "Report artifact does not belong to audit",
-                },
+        if requested == "markdown":
+            json_artifact = services.jobs.artifact(report.json_artifact_id)
+            if json_artifact.audit_id != audit_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "artifact_audit_mismatch",
+                        "message": "Report artifact does not belong to audit",
+                    },
+                )
+            document = services.evidence.read_json(json_artifact)
+            payload = render_markdown(document).encode("utf-8")
+            media_type = "text/markdown; charset=utf-8"
+        else:
+            artifact_id = (
+                report.json_artifact_id
+                if requested == "json"
+                else report.html_artifact_id
             )
-        payload = services.evidence.read_bytes(artifact)
+            artifact = services.jobs.artifact(artifact_id)
+            if artifact.audit_id != audit_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "artifact_audit_mismatch",
+                        "message": "Report artifact does not belong to audit",
+                    },
+                )
+            payload = services.evidence.read_bytes(artifact)
+            media_type = artifact.content_type
     except EntityNotFound as exc:
         raise not_found(exc) from exc
     except ReportNotFound as exc:
@@ -157,11 +172,12 @@ def export_report(
     except JobExecutionError as exc:
         raise job_execution_http_error(exc) from exc
 
-    filename = f"wirescope-report-{report.id}.{requested}"
+    extension = "md" if requested == "markdown" else requested
+    filename = f"wirescope-report-{report.id}.{extension}"
     disposition = "inline" if requested == "html" else "attachment"
     return Response(
         content=payload,
-        media_type=artifact.content_type,
+        media_type=media_type,
         headers={
             "Content-Disposition": f'{disposition}; filename="{filename}"',
         },

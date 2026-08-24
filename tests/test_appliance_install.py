@@ -214,7 +214,12 @@ def test_trust_proxy_install_stays_on_loopback_and_copies_examples(tmp_path):
     assert "127.0.0.1:8000" in host.read_text(
         config.paths.etc_dir / "proxy" / "Caddyfile"
     )
+    assert "proxy_pass http://127.0.0.1:8000" in host.read_text(
+        config.paths.etc_dir / "proxy" / "nginx.conf"
+    )
     assert host.exists(config.paths.etc_dir / "proxy" / "nftables.nft")
+    assert host.exists(config.paths.etc_dir / "proxy" / "ufw.example")
+    assert host.exists(config.paths.etc_dir / "proxy" / "firewalld.example")
     assert any("reverse proxy" in item or "cookie Secure" in item for item in report.steps)
 
 

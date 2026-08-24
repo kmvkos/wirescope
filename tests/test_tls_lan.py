@@ -1,7 +1,13 @@
 from pathlib import Path
 
 from appliance.paths import InstallPaths, production_env_text
-from appliance.tls import lan_warnings, self_signed_argv, validate_tls_settings
+from appliance.tls import (
+    PROXY_SAMPLE_NAMES,
+    lan_warnings,
+    proxy_sample_dir,
+    self_signed_argv,
+    validate_tls_settings,
+)
 from appliance.wait import health_url
 from backend.serve import uvicorn_run_kwargs
 from config.settings import get_settings
@@ -138,3 +144,39 @@ def test_production_env_records_trust_proxy_without_secrets():
     assert "WIRESCOPE_TLS_CERTFILE=/etc/wirescope/tls/cert.pem" in text
     assert "BEGIN " not in text
     assert "PASSWORD" not in text
+
+
+def test_proxy_templates_forward_loopback_and_listen_on_443():
+    root = Path(__file__).resolve().parents[1]
+    source = proxy_sample_dir(root)
+    for name in PROXY_SAMPLE_NAMES:
+        path = source / name
+        assert path.is_file(), name
+        text = path.read_text(encoding="utf-8")
+        assert "BEGIN " not in text
+        assert "PRIVATE KEY" not in text
+
+    caddy = (source / "Caddyfile").read_text(encoding="utf-8")
+    nginx = (source / "nginx.conf").read_text(encoding="utf-8")
+    assert "reverse_proxy 127.0.0.1:8000" in caddy
+    assert "tls /etc/wirescope/tls/cert.pem" in caddy
+    assert "Let's Encrypt" in caddy
+    assert "proxy_pass http://127.0.0.1:8000" in nginx
+    assert "listen 443 ssl" in nginx
+    assert "X-Forwarded-Proto" in nginx
+    assert "/etc/letsencrypt/live/" in nginx
+
+
+def test_firewall_examples_allow_443_and_document_direct_bind():
+    root = Path(__file__).resolve().parents[1] / "packaging" / "proxy"
+    nft = (root / "nftables.nft").read_text(encoding="utf-8")
+    ufw = (root / "ufw.example").read_text(encoding="utf-8")
+    firewalld = (root / "firewalld.example").read_text(encoding="utf-8")
+    assert "tcp dport 443 accept" in nft
+    assert "Do not accept 8000" in nft or "do not accept 8000" in nft.lower()
+    assert "port 443" in ufw
+    assert "deny 8000/tcp" in ufw
+    assert 'port="443"' in firewalld
+    assert "firewall-cmd" in firewalld
+    for text in (nft, ufw, firewalld):
+        assert "8000" in text

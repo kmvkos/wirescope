@@ -35,8 +35,8 @@ On `--user-install`, use `systemctl --user` and `journalctl --user`.
 
 ## Sign in
 
-1. Open `http://127.0.0.1:8000/` on the appliance, or `https://<host>/` through
-   the reverse proxy (see `packaging/proxy/README.md`).
+1. On the appliance: `http://127.0.0.1:8000/`. From another PC:
+   `https://<host>/` through Caddy or nginx (see `packaging/proxy/README.md`).
 2. Use the auditor username (`auditor` unless overridden).
 3. Use the password from `/etc/wirescope/initial-admin.txt` or the operator
    password file supplied to the installer.
@@ -47,11 +47,21 @@ The GUI is Russian. Viewers can inspect results but cannot start or cancel
 work. If login does not stick, the page is probably HTTP while cookies are
 `Secure` — open the GUI over HTTPS.
 
-## LAN TLS
+## From another PC
 
-Preferred: API on loopback, Caddy or nginx on 443, `--trust-proxy`.
-Optional: uvicorn `--tls-cert` / `--tls-key` on 8443. Firewall examples are
-in `packaging/proxy/`. The installer does not start a proxy or change nft/ufw.
+Preferred: API stays on `127.0.0.1:8000`, Caddy or nginx on 443,
+`--trust-proxy`. Open `https://<host>/`.
+
+| Family | Enable proxy | Open 443 | URL |
+| --- | --- | --- | --- |
+| This Debian VM | `apt install caddy` or `nginx`; copy `/etc/wirescope/proxy/` | `nftables.nft` or `ufw.example` | `https://<debian-host>/` |
+| Ubuntu | same packages (`apt`); `ufw.example` | ufw | `https://<ubuntu-host>/` |
+| Fedora / RHEL | `dnf install caddy` or `nginx`; `firewalld.example` | firewalld | `https://<fedora-host>/` |
+
+Lab: `python3 -m appliance tls-selfsigned`. Real hostname: Let's Encrypt
+(Caddy automatic HTTPS, or `certbot` with nginx). Optional direct TLS:
+`https://<host>:8443/`. The installer does not start a proxy or change
+nft/ufw/firewalld.
 
 ## Reboot during an audit
 

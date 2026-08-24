@@ -39,8 +39,12 @@ and migrates SQLite.
 Default bind is `127.0.0.1:8000` (local browser only). That is the
 conservative production default.
 
-**Preferred LAN path:** keep the API on loopback and terminate TLS on Caddy
-or nginx. Session cookies become `Secure`. Do not expose TCP 8000.
+### From another PC (preferred)
+
+Keep the unprivileged API on loopback. Terminate TLS on Caddy or nginx.
+Session cookies become `Secure`. Do not expose TCP 8000.
+
+On this host:
 
 ```bash
 sudo /opt/wirescope/packaging/install.sh \
@@ -50,13 +54,19 @@ sudo /opt/wirescope/packaging/install.sh \
   --bind-host 127.0.0.1
 ```
 
-Sample configs and firewall notes: [packaging/proxy/README.md](../packaging/proxy/README.md)
-(`Caddyfile`, `nginx.conf`, `nftables.nft`, `ufw.example`). Replace
-`wirescope.example` and certificate paths. The installer copies those
-examples to `/etc/wirescope/proxy/` and does not start Caddy/nginx or rewrite
-the host firewall.
+On the other machine open **`https://<hostname>/`** (not `http://<host>:8000`).
+Sample configs land in `/etc/wirescope/proxy/` (`Caddyfile`, `nginx.conf`,
+`nftables.nft`, `ufw.example`, `firewalld.example`). The installer does not
+start Caddy/nginx and does not rewrite the host firewall. Details:
+[packaging/proxy/README.md](../packaging/proxy/README.md).
 
-Lab self-signed certificate (not for an untrusted network):
+| This host | Proxy | Firewall | URL from another PC |
+| --- | --- | --- | --- |
+| This Debian VM | `apt install caddy` or `nginx` | nftables or ufw | `https://<debian-host>/` |
+| Ubuntu | `apt install caddy` or `nginx` | ufw | `https://<ubuntu-host>/` |
+| Fedora / RHEL | `dnf install caddy` or `nginx` | firewalld | `https://<fedora-host>/` |
+
+Lab self-signed certificate (browser warning; not for an untrusted network):
 
 ```bash
 sudo python3 -m appliance tls-selfsigned \
@@ -64,8 +74,18 @@ sudo python3 -m appliance tls-selfsigned \
   --common-name wirescope.example
 ```
 
-**Optional direct TLS** when no proxy is available. Cert/key paths go in
-`wirescope.env`, never in systemd units. The API stays unprivileged.
+**Let's Encrypt** (public DNS name pointing at this host, TCP 80 + 443):
+
+- Caddy: delete the `tls` line in the Caddyfile; Caddy obtains and renews
+  certificates automatically.
+- nginx: `certbot certonly --webroot -w /var/www/html -d <hostname>` then
+  use `/etc/letsencrypt/live/<hostname>/fullchain.pem` and `privkey.pem`.
+  Debian/Ubuntu: `apt install certbot`. Fedora: `dnf install certbot`.
+
+### Direct TLS or bare HTTP (less preferred)
+
+Cert/key paths go in `wirescope.env`, never in systemd units. The API stays
+unprivileged. URL: `https://<host>:8443/`.
 
 ```bash
 sudo /opt/wirescope/packaging/install.sh \
@@ -77,17 +97,9 @@ sudo /opt/wirescope/packaging/install.sh \
   --tls-key /etc/wirescope/tls/key.pem
 ```
 
-Bare HTTP on `0.0.0.0:8000` is still possible but is not a safe LAN default:
-
-```bash
-sudo /opt/wirescope/packaging/install.sh \
-  --project-root /opt/wirescope \
-  --generate-admin-password \
-  --bind-host 0.0.0.0
-```
-
-Restrict the published port (443 or 8443) with nftables, ufw, or firewalld.
-See [SECURITY_MODEL.md](SECURITY_MODEL.md).
+Bare HTTP on `0.0.0.0:8000` (`http://<host>:8000/`) is still possible but is
+not a safe LAN default. Restrict 443, 8443, or 8000 with nftables, ufw, or
+firewalld. See [SECURITY_MODEL.md](SECURITY_MODEL.md).
 
 ## This Debian VM
 
@@ -101,14 +113,9 @@ sudo /opt/wirescope/packaging/install.sh \
   --bind-host 127.0.0.1
 ```
 
-LAN example:
-
-```bash
-sudo /opt/wirescope/packaging/install.sh \
-  --project-root /opt/wirescope \
-  --generate-admin-password \
-  --bind-host 0.0.0.0
-```
+From another PC on this VM: install with `--trust-proxy --bind-host 127.0.0.1`,
+enable Caddy or nginx from `/etc/wirescope/proxy/`, open
+`https://<this-host>/`. Local GUI remains `http://127.0.0.1:8000/`.
 
 If this host has no passwordless root, install into the operator's user systemd
 session (dumpcap capabilities still need root once):
@@ -154,8 +161,8 @@ sudo ./packaging/install.sh \
 ```
 
 Capture packages are `tshark` and `wireshark-common` (provides `dumpcap`).
-Use `--bind-host 0.0.0.0` when the GUI should be reachable from other hosts
-on a trusted network.
+From another PC: `--trust-proxy`, `apt install caddy` or `nginx`, apply
+`packaging/proxy/ufw.example`, open `https://<ubuntu-host>/`.
 
 ## Fedora / RHEL / Rocky
 
@@ -171,8 +178,10 @@ sudo ./packaging/install.sh \
   --bind-host 127.0.0.1
 ```
 
-On RHEL-like systems without `dnf`, the same script selects `yum`. Restrict
-TCP 8000 with `firewalld` if you bind `0.0.0.0`.
+On RHEL-like systems without `dnf`, the same script selects `yum`. From
+another PC: `--trust-proxy`, `dnf install caddy` or `nginx`, apply
+`packaging/proxy/firewalld.example`, open `https://<fedora-host>/`. Restrict
+TCP 8000 with `firewalld` only if you insist on a direct HTTP bind.
 
 ## openSUSE / SLES
 
@@ -187,7 +196,8 @@ sudo ./packaging/install.sh \
   --bind-host 127.0.0.1
 ```
 
-## What stays distro-specific
+From another PC: `--trust-proxy`, `zypper install caddy` or `nginx`, apply
+`packaging/proxy/firewalld.example`, open `https://<suse-host>/`.
 
 | Concern | Debian / Ubuntu | Fedora / RHEL | openSUSE |
 | --- | --- | --- | --- |
@@ -199,6 +209,8 @@ sudo ./packaging/install.sh \
 | sqlite CLI | `sqlite3` | `sqlite` | `sqlite3` |
 | optional DNS | `bind9-dnsutils` | `bind-utils` | `bind-utils` |
 | firewall if LAN bind | `nftables` / `ufw` | `firewalld` | `firewalld` |
+| reverse proxy | `caddy` or `nginx` (`apt`) | `caddy` or `nginx` (`dnf`) | `caddy` or `nginx` (`zypper`) |
+| Let's Encrypt | `certbot` or Caddy automatic | `certbot` or Caddy automatic | `certbot` or Caddy automatic |
 
 systemd unit shape, service user, dumpcap capabilities, and `--user-install`
 are the same on all supported families.
@@ -223,12 +235,15 @@ The generated password is written to `/etc/wirescope/initial-admin.txt`
 ### Login
 
 ```bash
-# health (public)
+# health (public, on the appliance)
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
+# from another PC after Caddy/nginx:
+# curl -sS https://<host>/api/health
 
 # GUI
-xdg-open http://127.0.0.1:8000/   # or any local browser
+xdg-open http://127.0.0.1:8000/   # local
+# from another PC: https://<host>/
 ```
 
 Sign in as `auditor` with the generated password. Production OpenAPI/Swagger
@@ -245,8 +260,8 @@ sudo journalctl -u wirescope-api -u wirescope-worker -e
 ## Заметка для оператора
 
 Графический интерфейс WireScope на русском языке. Эта инструкция — на
-английском. После установки откройте `http://127.0.0.1:8000/` локально или
-`https://<хост>/` через Caddy/nginx (`--trust-proxy`). Если cookie не
+английском. С другого ПК откройте `https://<хост>/` через Caddy/nginx
+(`--trust-proxy`). Локально: `http://127.0.0.1:8000/`. Если cookie не
 сохраняется, страница должна быть HTTPS, а не HTTP. Войдите как `auditor`.
 Если захват пакетов недоступен, проверьте группу `wireshark` и перезапустите
 службы: `systemctl restart wirescope-api wirescope-worker` или

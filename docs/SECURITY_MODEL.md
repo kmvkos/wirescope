@@ -36,7 +36,9 @@ For LAN access from another machine, prefer a reverse proxy:
   accepts `X-Forwarded-*` only from `127.0.0.1`;
 - keep `WIRESCOPE_DOCS_ENABLED=false`;
 - allow TCP 443 from the management network only;
-- do not publish TCP 8000.
+- do not publish TCP 8000;
+- lab: self-signed files under `/etc/wirescope/tls/`; production: Let's Encrypt
+  (Caddy automatic HTTPS, or certbot with nginx).
 
 Optional direct TLS (`WIRESCOPE_TLS_CERTFILE` / `WIRESCOPE_TLS_KEYFILE`) lets
 uvicorn serve HTTPS itself, typically on `0.0.0.0:8443`. Certificate paths
@@ -60,7 +62,7 @@ ufw allow from 192.0.2.0/24 to any port 443 proto tcp
 ufw deny 8000/tcp
 ```
 
-firewalld:
+firewalld — see `packaging/proxy/firewalld.example`:
 
 ```text
 firewall-cmd --permanent --add-service=ssh

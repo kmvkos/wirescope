@@ -144,3 +144,16 @@ def artifact_content(
             "X-WireScope-SHA256": artifact.sha256,
         },
     )
+
+
+@router.get("/artifacts/{artifact_id}", include_in_schema=False)
+def artifact_content_compat(
+    artifact_id: str,
+    services: AppServices = Depends(get_services),
+) -> Response:
+    """Compatibility path for the transitional enhancement UI."""
+    try:
+        artifact = services.jobs.artifact(artifact_id)
+    except EntityNotFound as exc:
+        raise _missing(str(exc)) from exc
+    return artifact_content(artifact.audit_id, artifact_id, services)

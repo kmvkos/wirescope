@@ -9,7 +9,7 @@ import signal
 import subprocess
 import threading
 import time
-from typing import TextIO
+from typing import Any, TextIO
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,6 +42,7 @@ class ToolCommand(BaseModel):
     stdout_path: Path | None = None
     environment: dict[str, str] = Field(default_factory=dict, exclude=True)
     sensitive_arg_indexes: set[int] = Field(default_factory=set)
+    on_stderr: Any = Field(default=None, exclude=True)
 
     @property
     def argv(self) -> list[str]:
@@ -151,18 +152,46 @@ class ToolRunner:
             deadline = started_monotonic + command.timeout_seconds
             timed_out = False
             cancelled = False
+            stream_stderr = command.on_stderr is not None
+            stderr_chunks: list[str] = []
+            stderr_thread: threading.Thread | None = None
+
+            if stream_stderr:
+                stderr_thread = threading.Thread(
+                    target=self._drain_stderr,
+                    args=(process, command.on_stderr, stderr_chunks),
+                    daemon=True,
+                    name=f"stderr-{command.tool}",
+                )
+                stderr_thread.start()
 
             while True:
                 if cancellation_token and cancellation_token.cancelled:
                     cancelled = True
-                    stdout, stderr = self._terminate(process, stdout_handle)
+                    stdout, stderr = self._terminate(
+                        process,
+                        stdout_handle,
+                        stderr_owned=stream_stderr,
+                    )
                     break
 
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     timed_out = True
-                    stdout, stderr = self._terminate(process, stdout_handle)
+                    stdout, stderr = self._terminate(
+                        process,
+                        stdout_handle,
+                        stderr_owned=stream_stderr,
+                    )
                     break
+
+                if stream_stderr:
+                    if process.poll() is not None:
+                        stdout = self._read_stdout(process, stdout_handle)
+                        stderr = ""
+                        break
+                    time.sleep(min(0.2, remaining))
+                    continue
 
                 try:
                     stdout, stderr = process.communicate(
@@ -172,6 +201,9 @@ class ToolRunner:
                 except subprocess.TimeoutExpired:
                     continue
 
+            if stderr_thread is not None:
+                stderr_thread.join(timeout=2)
+                stderr = "".join(stderr_chunks)
             exit_code = process.returncode
             error = self._result_error(
                 exit_code=exit_code,
@@ -226,11 +258,24 @@ class ToolRunner:
         self,
         process: subprocess.Popen[str],
         stdout_handle: TextIO | None,
+        *,
+        stderr_owned: bool = False,
     ) -> tuple[str, str]:
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             process.terminate()
+
+        if stderr_owned:
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    process.kill()
+                process.wait(timeout=2)
+            return self._read_stdout(process, stdout_handle), ""
 
         try:
             stdout, stderr = process.communicate(timeout=2)
@@ -245,6 +290,39 @@ class ToolRunner:
             "" if stdout_handle is not None else (stdout or ""),
             stderr or "",
         )
+
+    @staticmethod
+    def _read_stdout(
+        process: subprocess.Popen[str],
+        stdout_handle: TextIO | None,
+    ) -> str:
+        if stdout_handle is not None or process.stdout is None:
+            return ""
+        try:
+            return process.stdout.read() or ""
+        except (OSError, ValueError):
+            return ""
+
+    @staticmethod
+    def _drain_stderr(
+        process: subprocess.Popen[str],
+        callback: Any,
+        chunks: list[str],
+    ) -> None:
+        stream = process.stderr
+        if stream is None:
+            return
+        while True:
+            chunk = stream.read(512)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if callback is None:
+                continue
+            try:
+                callback(chunk)
+            except Exception:
+                continue
 
     def _failed_to_start(
         self,

@@ -1,5 +1,7 @@
 """Exceptions that preserve safe structured job errors."""
 
+from typing import Any
+
 from jobs.models import ErrorCategory, JobError
 
 
@@ -10,7 +12,13 @@ class JobExecutionError(RuntimeError):
 
 
 class JobCancelled(JobExecutionError):
-    def __init__(self, message: str = "Job cancellation requested") -> None:
+    def __init__(
+        self,
+        message: str = "Job cancellation requested",
+        *,
+        result_reference: str | None = None,
+        summary: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(
             JobError(
                 code="cancelled",
@@ -20,3 +28,5 @@ class JobCancelled(JobExecutionError):
                 retryable=False,
             )
         )
+        self.result_reference = result_reference
+        self.summary = summary or {}

@@ -10,7 +10,7 @@ hardware is optional; Raspberry Pi OS is not required.
 
 ```text
 login
-  → home (audits · Сеть · Сменить пароль)
+  → home (audits · Прослушивание · Сеть · Сменить пароль)
   → new audit
   → environment
   → interface
@@ -21,10 +21,31 @@ login
   → summary
   → assets / observations / assessment / findings
   → report
+
+listen
+  → interface + optional tcpdump filter + duration/size
+  → progress (frames / bytes / elapsed)
+  → download pcap
 ```
 
 The frontend remains vanilla HTML, CSS, and JavaScript. A framework is still
 unnecessary: the workflow is a linear wizard plus read-only result screens.
+
+## Listen / record
+
+**Прослушивание** is not the 30-second audit capture. An auditor picks any
+selectable NIC (same rule as audits, including the GUI interface), an optional
+tcpdump/BPF filter, a duration and/or max pcap size, then starts a
+`packet_capture` job. Dumpcap runs in promiscuous mode and writes a pcap into
+the evidence store (never a SQLite BLOB). Cancel stops the dumpcap process
+group; frames already written are kept.
+
+Without SPAN/mirroring on the switch the NIC only sees broadcasts, flooded
+frames, and unicast to its own MAC. Promiscuous mode still records
+**everything the NIC actually receives** — not all traffic on the segment.
+
+Viewers may list and download sessions. They cannot start or stop them.
+Default Pi-safe limits are 120 s and 16 MiB (overridable; max 30 min / 64 MiB).
 
 ## Layout
 
@@ -46,9 +67,9 @@ Local users persist in SQLite. Roles are `auditor` and `viewer`.
 
 | Action | Auditor | Viewer |
 | --- | --- | --- |
-| Sign in / view audits, jobs, inventory, findings, reports | yes | yes |
+| Sign in / view audits, jobs, inventory, findings, reports, listen sessions | yes | yes |
 | Change own password | yes | yes |
-| Create audits, enqueue jobs, cancel, change finding state, generate reports, edit network | yes | no |
+| Create audits, enqueue jobs, start/stop listen capture, cancel, change finding state, generate reports, edit network | yes | no |
 
 Sessions are HttpOnly `SameSite=strict` cookies. The cookie stores a random
 token; SQLite stores only the SHA-256 digest. Login uses PBKDF2-HMAC-SHA256.

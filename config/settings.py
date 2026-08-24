@@ -81,6 +81,12 @@ class Settings:
     capture_snaplen: int
     capture_promiscuous: bool
     passive_retain_capture: bool
+    listen_duration_min: int
+    listen_duration_max: int
+    listen_duration_default: int
+    listen_max_filesize_kb_default: int
+    listen_max_filesize_kb_max: int
+    listen_filter_max_length: int
     worker_concurrency: int
     max_packet_captures: int
     max_active_discovery_jobs: int
@@ -137,6 +143,24 @@ class Settings:
             <= self.passive_duration_max
         ):
             raise ValueError("passive_duration_default is outside policy")
+        if self.listen_duration_min < 1:
+            raise ValueError("listen_duration_min must be positive")
+        if self.listen_duration_max < self.listen_duration_min:
+            raise ValueError("listen_duration_max must not be below minimum")
+        if not (
+            self.listen_duration_min
+            <= self.listen_duration_default
+            <= self.listen_duration_max
+        ):
+            raise ValueError("listen_duration_default is outside policy")
+        if self.listen_max_filesize_kb_default < 1:
+            raise ValueError("listen_max_filesize_kb_default must be positive")
+        if self.listen_max_filesize_kb_max < self.listen_max_filesize_kb_default:
+            raise ValueError(
+                "listen_max_filesize_kb_max must not be below default"
+            )
+        if not (1 <= self.listen_filter_max_length <= 1024):
+            raise ValueError("listen_filter_max_length must be 1..1024")
         if self.worker_concurrency < 1:
             raise ValueError("worker_concurrency must be at least one")
         if self.max_packet_captures < 1:
@@ -291,6 +315,24 @@ def get_settings() -> Settings:
         passive_retain_capture=_env_bool(
             "WIRESCOPE_PASSIVE_RETAIN_CAPTURE",
             False,
+        ),
+        listen_duration_min=_env_int("WIRESCOPE_LISTEN_DURATION_MIN", 5),
+        listen_duration_max=_env_int("WIRESCOPE_LISTEN_DURATION_MAX", 1_800),
+        listen_duration_default=_env_int(
+            "WIRESCOPE_LISTEN_DURATION_DEFAULT",
+            120,
+        ),
+        listen_max_filesize_kb_default=_env_int(
+            "WIRESCOPE_LISTEN_MAX_FILESIZE_KB",
+            16_384,
+        ),
+        listen_max_filesize_kb_max=_env_int(
+            "WIRESCOPE_LISTEN_MAX_FILESIZE_KB_MAX",
+            65_536,
+        ),
+        listen_filter_max_length=_env_int(
+            "WIRESCOPE_LISTEN_FILTER_MAX_LENGTH",
+            512,
         ),
         worker_concurrency=_env_int("WIRESCOPE_WORKER_CONCURRENCY", 1),
         max_packet_captures=_env_int("WIRESCOPE_MAX_PACKET_CAPTURES", 1),

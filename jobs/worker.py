@@ -14,6 +14,7 @@ from jobs.errors import JobCancelled, JobExecutionError
 from jobs.handlers import (
     ActiveDiscoveryHandler,
     FindingsEvaluationHandler,
+    PacketCaptureHandler,
     PassiveDiscoveryHandler,
     ProtocolAuditHandler,
     ReportGenerationHandler,
@@ -108,7 +109,11 @@ class JobWorker:
             )
             current = self.service.get_job(job.id)
             if token.cancelled or current.cancel_requested:
-                self.service.cancel_running_job(job.id)
+                self.service.cancel_running_job(
+                    job.id,
+                    result_reference=result.result_reference,
+                    summary=result.summary,
+                )
             else:
                 self.service.complete_job(
                     job.id,
@@ -119,6 +124,8 @@ class JobWorker:
             self.service.cancel_running_job(
                 job.id,
                 message=exc.error.message,
+                result_reference=exc.result_reference,
+                summary=exc.summary,
             )
         except JobExecutionError as exc:
             current = self.service.get_job(job.id)
@@ -255,6 +262,7 @@ class WorkerSupervisor:
 def build_registry() -> HandlerRegistry:
     registry = HandlerRegistry()
     registry.register("passive_discovery", PassiveDiscoveryHandler())
+    registry.register("packet_capture", PacketCaptureHandler())
     registry.register("active_discovery", ActiveDiscoveryHandler())
     registry.register("protocol_audit", ProtocolAuditHandler())
     registry.register("findings_evaluation", FindingsEvaluationHandler())

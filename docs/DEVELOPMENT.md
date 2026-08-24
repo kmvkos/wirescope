@@ -59,8 +59,8 @@ parser runs.
 
 Tests use a temporary migrated SQLite database and temporary evidence root.
 The default `pytest` invocation excludes `@pytest.mark.network`. Passive,
-active, protocol-audit, findings, reporting, and GUI tests use fixtures and
-do not scan the live network. Live Nmap or protocol probes require an
+active, protocol-audit, findings, reporting, listen/record, and GUI tests use
+fixtures and do not scan the live network. Live Nmap or protocol probes require an
 explicit `WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation
 and report generation never contact a network. Optional Playwright kiosk
 tests (`@pytest.mark.browser`) skip when Playwright or Chromium is not

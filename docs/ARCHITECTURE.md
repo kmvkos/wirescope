@@ -460,12 +460,18 @@ The verified Debian development configuration is:
 - `wirescope` is a member of `wireshark`;
 - bounded capture as `wirescope` succeeds without root.
 
-Normal capture disables promiscuous mode by default (`dumpcap -p`), uses a
+Normal audit capture disables promiscuous mode by default (`dumpcap -p`), uses a
 65,535-byte snap length, and enforces independent duration, packet-count, and
-file-size limits. Capture directories are `0700`; decode output is `0600`.
+file-size limits. Operator **listen/record** sessions (`packet_capture`) omit
+`-p` so dumpcap stays promiscuous, always retain the pcap as an evidence file,
+and take an optional tcpdump filter as a single `dumpcap -f` argv (never a
+shell). Capture directories are `0700`; decode output is `0600`.
 Dropped packet counters produce warnings even when dumpcap exits successfully.
 An L3 address on the capture NIC is not required for `dumpcap`; CDP, LLDP,
 STP, ARP, and tagged 802.1Q frames are still decoded if they arrive.
+Without a switch SPAN/mirror port the host still only receives flooded,
+broadcast, and unicast-to-this-MAC frames; promiscuous mode records all of
+those, not the rest of the segment.
 
 ## Persistence and jobs
 
@@ -547,9 +553,11 @@ request; a worker-side monitor sets the Milestone 1 cancellation token, which
 terminates the active subprocess group cooperatively. Cancellation ends as
 `cancelled`, not `failed`.
 
-Passive jobs request both `interface:<name>` and the `packet_capture` resource
-group. Locks live in SQLite, so two worker threads cannot capture the same
-interface and the configured global capture limit is enforced.
+Passive jobs and listen/record jobs both request `interface:<name>` and the
+`packet_capture` resource group. Locks live in SQLite, so two worker threads
+cannot capture the same interface and the configured global capture limit is
+enforced. Listen sessions always import the pcap into evidence; audit passive
+jobs still follow `passive_retain_capture` (off by default).
 
 ### Artifact durability and cleanup
 

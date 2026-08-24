@@ -34,6 +34,14 @@ class PassiveJobRequest(BaseModel):
     priority: int = Field(default=0, ge=-100, le=100)
 
 
+class CaptureJobRequest(BaseModel):
+    interface: str = Field(min_length=1, max_length=64)
+    duration_seconds: int | None = Field(default=None, ge=0, le=21_600)
+    max_filesize_kb: int | None = Field(default=None, ge=1, le=1_048_576)
+    filter: str | None = Field(default=None, max_length=1024)
+    priority: int = Field(default=0, ge=-100, le=100)
+
+
 class DiscoveryJobRequest(BaseModel):
     interface: str = Field(min_length=1, max_length=64)
     scope: list[str] = Field(min_length=1, max_length=256)
@@ -93,6 +101,37 @@ class AuditPageResponse(BaseModel):
 
 class JobPageResponse(BaseModel):
     items: list[JobResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class CaptureSessionResponse(BaseModel):
+    job_id: str
+    audit_id: str
+    status: JobStatus
+    interface: str
+    filter: str | None
+    duration_seconds: int | None
+    max_filesize_kb: int | None
+    promiscuous: bool = True
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    progress: int = Field(ge=0, le=100)
+    stage: str
+    message: str | None
+    frame_count: int | None = None
+    byte_count: int | None = None
+    pcap_bytes: int | None = None
+    pcap_url: str | None = None
+    result_available: bool = False
+    cancel_requested: bool = False
+    error: JobError | None = None
+
+
+class CaptureSessionPageResponse(BaseModel):
+    items: list[CaptureSessionResponse]
     limit: int
     offset: int
     total: int

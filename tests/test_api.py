@@ -576,3 +576,129 @@ def test_failed_audit_report_explains_invalid_transition(api_context):
     assert detail["code"] == "invalid_state_transition"
     assert detail["current"] == "failed"
     assert "failed" in detail["message"]
+
+
+def test_enqueue_listen_capture_locks_interface_and_lists_sessions(api_context):
+    app, service, _evidence, _environment = api_context
+
+    response = request(
+        app,
+        "POST",
+        "/api/captures",
+        json={
+            "interface": "eth0",
+            "duration_seconds": 120,
+            "max_filesize_kb": 1024,
+            "filter": "tcp port 80",
+        },
+    )
+
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    persisted = service.get_job(job_id)
+    assert persisted.type == "packet_capture"
+    assert persisted.resource_key == "interface:eth0"
+    assert persisted.resource_group == "packet_capture"
+    assert persisted.parameters["filter"] == "tcp port 80"
+    assert persisted.parameters["promiscuous"] is True
+    listing = request(app, "GET", "/api/captures")
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["job_id"] == job_id
+    assert listing.json()["items"][0]["interface"] == "eth0"
+
+
+def test_listen_capture_rejects_invalid_filter_and_unknown_interface(api_context):
+    app, _service, _evidence, _environment = api_context
+
+    bad_filter = request(
+        app,
+        "POST",
+        "/api/captures",
+        json={"interface": "eth0", "filter": "tcp; id"},
+    )
+    missing = request(
+        app,
+        "POST",
+        "/api/captures",
+        json={"interface": "missing0"},
+    )
+
+    assert bad_filter.status_code == 422
+    assert bad_filter.json()["detail"]["code"] == "invalid_filter"
+    assert missing.status_code == 422
+    assert missing.json()["detail"]["code"] == "unknown_interface"
+
+
+def test_viewer_cannot_start_listen_but_can_list(api_context):
+    app, _service, _evidence, _environment = api_context
+    created = request(
+        app,
+        "POST",
+        "/api/captures",
+        json={"interface": "eth0"},
+    )
+    viewer_start = request(
+        app,
+        "POST",
+        "/api/captures",
+        as_role="viewer",
+        json={"interface": "eth0"},
+    )
+    listing = request(app, "GET", "/api/captures", as_role="viewer")
+
+    assert created.status_code == 202
+    assert viewer_start.status_code == 403
+    assert listing.status_code == 200
+
+
+def test_listen_pcap_download_streams_evidence_file(api_context, tmp_path):
+    app, service, evidence, _environment = api_context
+    queued = request(
+        app,
+        "POST",
+        "/api/captures",
+        json={"interface": "eth0"},
+    )
+    job_id = queued.json()["job_id"]
+    audit_id = queued.json()["audit_id"]
+    service.claim_next("capture-api-worker")
+    source = tmp_path / "listen.pcap"
+    source.write_bytes(b"pcap-header-placeholder!!!!")
+    pcap = evidence.import_file(
+        audit_id=audit_id,
+        job_id=job_id,
+        artifact_type="packet_capture",
+        source=source,
+        content_type="application/vnd.tcpdump.pcap",
+        extension=".pcap",
+        retention_class=RetentionClass.AUDIT,
+    )
+    result = evidence.put_json(
+        audit_id=audit_id,
+        job_id=job_id,
+        artifact_type="packet_capture_result",
+        document={
+            "schema": "packet-capture-result",
+            "schema_version": 1,
+            "pcap_artifact_id": pcap.id,
+        },
+        retention_class=RetentionClass.AUDIT,
+        schema_name="packet-capture-result",
+        schema_version=1,
+    )
+    service.complete_job(
+        job_id,
+        result_reference=result.id,
+        summary={"pcap_artifact_id": pcap.id, "frame_count": 6},
+    )
+
+    download = request(app, "GET", f"/api/jobs/{job_id}/pcap")
+    session = request(app, "GET", f"/api/captures/{job_id}")
+
+    assert download.status_code == 200
+    assert download.content.startswith(b"pcap-header")
+    assert "attachment" in download.headers.get("content-disposition", "")
+    assert session.json()["pcap_url"] == f"/api/jobs/{job_id}/pcap"
+    assert session.json()["frame_count"] == 6
+

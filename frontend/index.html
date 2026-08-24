@@ -91,6 +91,12 @@
                 >Новый аудит</button>
                 <button
                     type="button"
+                    id="listen-button"
+                    class="secondary"
+                    data-i18n="action.listen"
+                >Прослушивание</button>
+                <button
+                    type="button"
                     id="network-button"
                     class="secondary"
                     data-i18n="action.network"
@@ -200,6 +206,143 @@
                     <button type="submit" class="primary" data-i18n="password.submit">Сменить пароль</button>
                 </div>
             </form>
+        </section>
+
+        <section
+            id="screen-listen"
+            class="screen"
+            data-screen="listen"
+            hidden
+        >
+            <h2 data-i18n="listen.title">Прослушивание</h2>
+            <p class="hint" data-i18n="listen.hint">Запись кадров с любого интерфейса, в том числе того, через который открыт веб. Это не аудит и не SPAN.</p>
+            <p class="callout" data-i18n="listen.spanCaveat">Без SPAN/зеркалирования на коммутаторе видны только широковещательные и flooded-кадры, плюс unicast на MAC этого интерфейса. В режиме promiscuous записывается всё, что NIC реально принимает — не весь трафик сегмента.</p>
+            <div
+                id="listen-interface-list"
+                class="choice-list"
+                role="listbox"
+                data-i18n-aria="interface.listLabel"
+            ></div>
+            <label for="listen-filter" data-i18n="listen.filter">Фильтр tcpdump</label>
+            <input
+                id="listen-filter"
+                type="text"
+                maxlength="512"
+                autocomplete="off"
+                spellcheck="false"
+                data-i18n-placeholder="listen.filterPlaceholder"
+                placeholder="пусто = все кадры, которые принимает NIC; напр. tcp port 80"
+            >
+            <div class="grid listen-limits">
+                <div>
+                    <label for="listen-duration" data-i18n="listen.duration">Длительность, с (0 — до Стоп)</label>
+                    <input
+                        id="listen-duration"
+                        type="number"
+                        min="0"
+                        max="1800"
+                        step="1"
+                        value="120"
+                    >
+                </div>
+                <div>
+                    <label for="listen-filesize" data-i18n="listen.filesize">Макс. pcap, КиБ</label>
+                    <input
+                        id="listen-filesize"
+                        type="number"
+                        min="1"
+                        max="65536"
+                        step="1"
+                        value="16384"
+                    >
+                </div>
+            </div>
+            <p id="listen-error" class="error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="home" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" id="listen-start" data-i18n="listen.start">Начать запись</button>
+            </div>
+            <h3 data-i18n="listen.sessions">Сессии</h3>
+            <div id="listen-session-list" class="list" aria-live="polite"></div>
+        </section>
+
+        <section
+            id="screen-listen-progress"
+            class="screen"
+            data-screen="listen-progress"
+            hidden
+        >
+            <h2 data-i18n="listen.progressTitle">Запись</h2>
+            <div class="progress-hud">
+                <div
+                    class="progress-ring-wrap indeterminate"
+                    id="listen-progress-ring"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                    data-i18n-aria="listen.progressTitle"
+                >
+                    <svg viewBox="0 0 36 36" aria-hidden="true">
+                        <circle class="progress-ring-track" cx="18" cy="18" r="15.5"></circle>
+                        <circle
+                            class="progress-ring-value"
+                            id="listen-progress-ring-value"
+                            cx="18"
+                            cy="18"
+                            r="15.5"
+                        ></circle>
+                    </svg>
+                    <span id="listen-progress-ring-label">…</span>
+                </div>
+                <div class="progress-hud-copy">
+                    <p id="listen-progress-stage" class="stage" data-i18n="progress.queued">В очереди</p>
+                    <p id="listen-progress-message" class="hint" data-i18n="progress.waiting">Ждём исполнителя…</p>
+                    <p id="listen-progress-timing" class="hint"></p>
+                </div>
+            </div>
+            <dl id="listen-stats" class="summary-list stats-readout">
+                <dt data-i18n="listen.frames">Кадры</dt>
+                <dd id="listen-stat-frames">0</dd>
+                <dt data-i18n="listen.bytes">Байты</dt>
+                <dd id="listen-stat-bytes">0</dd>
+                <dt data-i18n="listen.elapsed">Время</dt>
+                <dd id="listen-stat-elapsed">0:00</dd>
+            </dl>
+            <div
+                class="progress-bar"
+                role="progressbar"
+                aria-hidden="true"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                id="listen-progress-bar"
+            >
+                <div id="listen-progress-fill"></div>
+            </div>
+            <p id="listen-progress-warning" class="warning" hidden></p>
+            <div class="actions wrap">
+                <button
+                    type="button"
+                    class="danger"
+                    id="listen-stop-button"
+                    data-i18n="action.stop"
+                >Стоп</button>
+                <button
+                    type="button"
+                    class="secondary"
+                    id="listen-download-button"
+                    hidden
+                    data-i18n="listen.download"
+                >Скачать pcap</button>
+                <button
+                    type="button"
+                    class="primary"
+                    id="listen-done-button"
+                    hidden
+                    data-i18n="action.back"
+                >Назад</button>
+            </div>
         </section>
 
         <section

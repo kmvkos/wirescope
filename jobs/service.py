@@ -191,6 +191,7 @@ class JobService:
         offset: int,
         status: JobStatus | None = None,
         audit_id: str | None = None,
+        job_type: str | None = None,
     ) -> Page[JobRecord]:
         with self.database.session() as session:
             base = select(JobModel)
@@ -201,6 +202,9 @@ class JobService:
             if audit_id is not None:
                 base = base.where(JobModel.audit_id == audit_id)
                 count = count.where(JobModel.audit_id == audit_id)
+            if job_type is not None:
+                base = base.where(JobModel.type == job_type)
+                count = count.where(JobModel.type == job_type)
             rows = session.scalars(
                 base.order_by(JobModel.created_at.desc())
                 .limit(limit)
@@ -399,9 +403,13 @@ class JobService:
         job_id: str,
         *,
         message: str = "Job cancelled",
+        result_reference: str | None = None,
+        summary: dict[str, Any] | None = None,
     ) -> JobRecord:
         with self.database.immediate_session() as session:
             job = self._require_job(session, job_id)
+            if result_reference:
+                job.result_reference = result_reference
             self._transition_job(
                 session,
                 job,
@@ -417,6 +425,11 @@ class JobService:
                 ),
             )
             self._release_lock(session, job.id)
+            if summary:
+                audit = self._require_audit(session, job.audit_id)
+                merged = dict(audit.summary or {})
+                merged.update(summary)
+                audit.summary = merged
             self._refresh_audit(session, job.audit_id)
         return self._job_record(job)
 

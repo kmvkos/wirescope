@@ -132,3 +132,21 @@ def test_tool_runner_classifies_start_permission_error(monkeypatch):
     assert result.success is False
     assert result.error is not None
     assert result.error.code == ToolErrorCode.PERMISSION_DENIED
+
+
+def test_tool_runner_streams_stderr_chunks(tmp_path):
+    chunks = []
+    result = ToolRunner().run(
+        ToolCommand(
+            tool=sys.executable,
+            args=[
+                "-c",
+                "import sys; sys.stderr.write('Packets captured: 3\\n'); sys.stderr.flush()",
+            ],
+            on_stderr=chunks.append,
+        )
+    )
+
+    assert result.success is True
+    assert "Packets captured: 3" in "".join(chunks)
+    assert "Packets captured: 3" in result.stderr

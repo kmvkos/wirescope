@@ -13,7 +13,7 @@ class SuccessfulDumpcap:
     def run(self, command, cancellation_token=None):
         self.command = command
         output = Path(command.args[command.args.index("-w") + 1])
-        output.write_bytes(b"pcap")
+        output.write_bytes(b"pcap-header-placeholder!!!!")
         return tool_result(
             tool="dumpcap",
             stderr="Packets captured: 4\nPackets dropped: 2\n",
@@ -108,3 +108,35 @@ def test_force_cleanup_removes_retained_capture(tmp_path):
     assert provider.cleanup(result, force=True) == []
     assert not capture_path.exists()
     assert result.retained is False
+
+
+def test_listen_record_is_promiscuous_passes_filter_as_single_arg(tmp_path):
+    runner = SuccessfulDumpcap()
+    settings = replace(
+        settings_for(tmp_path),
+        listen_duration_min=1,
+        listen_duration_max=60,
+        listen_duration_default=5,
+        listen_max_filesize_kb_default=1024,
+        listen_max_filesize_kb_max=2048,
+    )
+    provider = CaptureProvider(runner=runner, settings=settings)
+
+    result = provider.record(
+        interface(),
+        duration_seconds=5,
+        max_filesize_kb=1024,
+        bpf_filter="tcp port 80",
+    )
+
+    assert result.status == CaptureStatus.COMPLETED
+    assert result.retained is True
+    assert "-p" not in runner.command.args
+    assert "-c" not in runner.command.args
+    filter_index = runner.command.args.index("-f")
+    assert runner.command.args[filter_index + 1] == "tcp port 80"
+    assert runner.command.args[runner.command.args.index("-a") + 1] == "duration:5"
+    assert "filesize:1024" in runner.command.args
+    assert runner.command.argv[0] == settings.dumpcap_binary
+    assert result.pcap_path is not None
+    assert Path(result.pcap_path).is_file()

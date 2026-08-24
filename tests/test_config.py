@@ -46,6 +46,10 @@ def test_settings_default_to_source_checkout(monkeypatch):
     assert settings.require_interface_up is True
     assert settings.capture_snaplen == 65_535
     assert settings.capture_promiscuous is False
+    assert settings.listen_duration_default == 120
+    assert settings.listen_duration_max == 1_800
+    assert settings.listen_max_filesize_kb_default == 16_384
+    assert settings.listen_max_filesize_kb_max == 65_536
     assert settings.database_path == settings.data_dir / "wirescope.db"
     assert settings.evidence_dir == settings.data_dir / "evidence"
     assert settings.runtime_dir == settings.data_dir / "runtime"

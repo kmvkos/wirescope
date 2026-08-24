@@ -10,6 +10,8 @@ SCREENS = (
     "home",
     "network",
     "password",
+    "listen",
+    "listen-progress",
     "environment",
     "interface",
     "scope",
@@ -91,6 +93,16 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "ifaceHostsGui" in script
     assert "Аудит можно запустить на любом интерфейсе, в том числе том, через который открыт веб" in i18n
     assert "на этом адресе сейчас открыт GUI" in i18n
+    assert 'id="listen-button"' in html
+    assert 'data-screen="listen"' in html
+    assert 'data-screen="listen-progress"' in html
+    assert 'id="listen-filter"' in html
+    assert 'id="listen-progress-ring"' in html
+    assert "listen.spanCaveat" in i18n
+    assert "Без SPAN/зеркалирования" in i18n
+    assert "всё, что NIC реально принимает" in i18n
+    assert "/api/captures" in script
+    assert "startListen" in script
     assert "preferredCaptureInterface" not in script
     assert "emptyManagement" not in script
     assert "scope.managementWarning" not in i18n
@@ -169,6 +181,9 @@ def test_i18n_russian_default_matches_english_fallback_keys():
     assert "password.title" in russian
     assert "password.success" in russian
     assert "action.changePassword" in russian
+    assert "action.listen" in russian
+    assert "screen.listen" in russian
+    assert "listen.spanCaveat" in russian
     assert "screen.password" in russian
 
 

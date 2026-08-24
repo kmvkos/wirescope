@@ -1,3 +1,4 @@
+import re
 import shutil
 from collections.abc import Callable
 from typing import Any
@@ -18,6 +19,9 @@ from backend.models import (
     AssetPageResponse,
     AuditPageResponse,
     AuditResponse,
+    CaptureJobRequest,
+    CaptureSessionPageResponse,
+    CaptureSessionResponse,
     CreateAuditRequest,
     DiscoveryJobRequest,
     FindingPageResponse,
@@ -78,6 +82,7 @@ from persistence.database import Database
 from persistence.schema import migrations_current
 from protocol_audits.registry import default_registry
 from protocol_audits.store import ProtocolObservationStore
+from providers.bpf import BpfFilterError, normalize_bpf_filter
 from reports.store import ReportNotFound, ReportStore
 from storage.evidence import EvidenceStore
 
@@ -192,6 +197,20 @@ def create_app(
                 "passive_duration_max": active_settings.passive_duration_max,
                 "passive_duration_default": (
                     active_settings.passive_duration_default
+                ),
+                "listen_duration_min": active_settings.listen_duration_min,
+                "listen_duration_max": active_settings.listen_duration_max,
+                "listen_duration_default": (
+                    active_settings.listen_duration_default
+                ),
+                "listen_max_filesize_kb_default": (
+                    active_settings.listen_max_filesize_kb_default
+                ),
+                "listen_max_filesize_kb_max": (
+                    active_settings.listen_max_filesize_kb_max
+                ),
+                "listen_filter_max_length": (
+                    active_settings.listen_filter_max_length
                 ),
             },
         )
@@ -561,6 +580,223 @@ def create_app(
             job_id=job.id,
             status=job.status,
             status_url=f"/api/jobs/{job.id}",
+        )
+
+    @application.post(
+        "/api/captures",
+        response_model=JobAcceptedResponse,
+        status_code=202,
+    )
+    def enqueue_capture(
+        request: CaptureJobRequest,
+        http_request: Request,
+    ) -> JobAcceptedResponse:
+        try:
+            interface = active_interfaces.validate(request.interface)
+            try:
+                filter_text = normalize_bpf_filter(
+                    request.filter,
+                    max_length=active_settings.listen_filter_max_length,
+                )
+            except BpfFilterError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": exc.code, "message": exc.message},
+                ) from exc
+            duration = (
+                request.duration_seconds
+                if request.duration_seconds is not None
+                else active_settings.listen_duration_default
+            )
+            if duration < 0 or duration > active_settings.listen_duration_max:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "invalid_duration",
+                        "message": (
+                            "duration_seconds must be 0 (until stop) or between "
+                            f"{active_settings.listen_duration_min} and "
+                            f"{active_settings.listen_duration_max}"
+                        ),
+                    },
+                )
+            if (
+                duration > 0
+                and duration < active_settings.listen_duration_min
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "invalid_duration",
+                        "message": (
+                            "duration_seconds must be 0 (until stop) or between "
+                            f"{active_settings.listen_duration_min} and "
+                            f"{active_settings.listen_duration_max}"
+                        ),
+                    },
+                )
+            filesize = (
+                request.max_filesize_kb
+                if request.max_filesize_kb is not None
+                else active_settings.listen_max_filesize_kb_default
+            )
+            if not (
+                1
+                <= filesize
+                <= active_settings.listen_max_filesize_kb_max
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "invalid_filesize",
+                        "message": (
+                            "max_filesize_kb must be between 1 and "
+                            f"{active_settings.listen_max_filesize_kb_max}"
+                        ),
+                    },
+                )
+            audit = active_jobs.create_audit(
+                profile="packet_capture",
+                interface=interface.name,
+                scope={
+                    "filter": filter_text,
+                    "duration_seconds": duration,
+                    "max_filesize_kb": filesize,
+                    "promiscuous": True,
+                },
+                actor=http_request.state.user.username,
+            )
+            job = active_jobs.create_job(
+                audit_id=audit.id,
+                job_type="packet_capture",
+                target=interface.name,
+                parameters={
+                    "interface": interface.name,
+                    "duration_seconds": duration,
+                    "max_filesize_kb": filesize,
+                    "filter": filter_text,
+                    "promiscuous": True,
+                },
+                priority=request.priority,
+                resource_key=f"interface:{interface.name}",
+                resource_group="packet_capture",
+                resource_limit=active_settings.max_packet_captures,
+            )
+        except InterfaceValidationError as exc:
+            raise _interface_http_error(exc) from exc
+        except InvalidTransition as exc:
+            raise _invalid_transition_http(exc) from exc
+        return JobAcceptedResponse(
+            audit_id=audit.id,
+            job_id=job.id,
+            status=job.status,
+            status_url=f"/api/jobs/{job.id}",
+        )
+
+    @application.get(
+        "/api/captures",
+        response_model=CaptureSessionPageResponse,
+    )
+    def list_captures(
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        status: JobStatus | None = None,
+    ) -> CaptureSessionPageResponse:
+        page = active_jobs.list_jobs(
+            limit=limit,
+            offset=offset,
+            status=status,
+            job_type="packet_capture",
+        )
+        return CaptureSessionPageResponse(
+            items=[
+                _capture_session_response(
+                    item,
+                    active_jobs.get_audit(item.audit_id).summary,
+                )
+                for item in page.items
+            ],
+            limit=page.limit,
+            offset=page.offset,
+            total=page.total,
+        )
+
+    @application.get(
+        "/api/captures/{job_id}",
+        response_model=CaptureSessionResponse,
+    )
+    def get_capture(job_id: str) -> CaptureSessionResponse:
+        try:
+            job = active_jobs.get_job(job_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        if job.type != "packet_capture":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "not_found",
+                    "message": "Capture session not found",
+                },
+            )
+        return _capture_session_response(
+            job,
+            active_jobs.get_audit(job.audit_id).summary,
+        )
+
+    @application.get("/api/jobs/{job_id}/pcap")
+    def download_capture_pcap(job_id: str) -> FileResponse:
+        try:
+            job = active_jobs.get_job(job_id)
+            if job.type != "packet_capture":
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "not_found",
+                        "message": "Capture session not found",
+                    },
+                )
+            if not job.result_reference:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "pcap_unavailable",
+                        "message": "Capture file is not available yet",
+                    },
+                )
+            result_artifact = active_jobs.artifact(job.result_reference)
+            document = active_evidence.read_json(result_artifact)
+            pcap_id = document.get("pcap_artifact_id")
+            if not pcap_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "pcap_unavailable",
+                        "message": "Capture file is not available",
+                    },
+                )
+            pcap_artifact = active_jobs.artifact(str(pcap_id))
+            if pcap_artifact.job_id != job.id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "artifact_job_mismatch",
+                        "message": "Capture artifact does not belong to job",
+                    },
+                )
+            path = active_evidence.path_for(pcap_artifact)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except JobExecutionError as exc:
+            raise _job_execution_http_error(exc) from exc
+        interface = str(
+            (job.parameters or {}).get("interface") or job.target or "iface"
+        )
+        safe_iface = re.sub(r"[^A-Za-z0-9._-]", "_", interface)[:32] or "iface"
+        filename = f"wirescope-{safe_iface}-{job.id[:8]}.pcap"
+        return FileResponse(
+            path=path,
+            media_type="application/vnd.tcpdump.pcap",
+            filename=filename,
         )
 
     @application.post(
@@ -1212,6 +1448,7 @@ def create_app(
         offset: int = Query(default=0, ge=0),
         status: JobStatus | None = None,
         audit_id: str | None = None,
+        job_type: str | None = Query(default=None, max_length=64),
     ) -> JobPageResponse:
         return _job_page(
             active_jobs.list_jobs(
@@ -1219,6 +1456,7 @@ def create_app(
                 offset=offset,
                 status=status,
                 audit_id=audit_id,
+                job_type=job_type,
             )
         )
 
@@ -1370,6 +1608,53 @@ def _job_response(job: JobRecord) -> JobResponse:
         result_url=(
             f"/api/jobs/{job.id}/result" if job.result_available else None
         ),
+    )
+
+
+_STATS_MESSAGE = re.compile(
+    r"(?P<frames>\d+) frames, (?P<bytes>\d+) bytes, (?P<elapsed>\d+)s"
+)
+
+
+def _capture_session_response(
+    job: JobRecord,
+    summary: dict[str, Any] | None = None,
+) -> CaptureSessionResponse:
+    parameters = job.parameters or {}
+    summary = summary or {}
+    parsed = None
+    if job.message:
+        parsed = _STATS_MESSAGE.search(job.message)
+    frame_count = summary.get("frame_count")
+    byte_count = summary.get("byte_count") or summary.get("pcap_bytes")
+    if frame_count is None and parsed is not None:
+        frame_count = int(parsed.group("frames"))
+    if byte_count is None and parsed is not None:
+        byte_count = int(parsed.group("bytes"))
+    pcap_id = summary.get("pcap_artifact_id")
+    pcap_available = bool(job.result_available and pcap_id)
+    return CaptureSessionResponse(
+        job_id=job.id,
+        audit_id=job.audit_id,
+        status=job.status,
+        interface=str(parameters.get("interface") or job.target or ""),
+        filter=parameters.get("filter"),
+        duration_seconds=parameters.get("duration_seconds"),
+        max_filesize_kb=parameters.get("max_filesize_kb"),
+        promiscuous=bool(parameters.get("promiscuous", True)),
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        progress=job.progress,
+        stage=job.stage,
+        message=job.message,
+        frame_count=frame_count,
+        byte_count=byte_count,
+        pcap_bytes=summary.get("pcap_bytes") or byte_count,
+        pcap_url=(f"/api/jobs/{job.id}/pcap" if pcap_available else None),
+        result_available=job.result_available,
+        cancel_requested=job.cancel_requested,
+        error=job.error,
     )
 
 

@@ -1,4 +1,5 @@
 const ACTIVE_KEY = "wirescope.activeAudit";
+const CAPTURE_KEY = "wirescope.activeCapture";
 const DRAFT_KEY = "wirescope.draft";
 const TERMINAL = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const STAGE_JOB_TYPES = {
@@ -33,6 +34,9 @@ const state = {
     stopping: false,
     network: null,
     networkIface: "",
+    listenIface: "",
+    captureJobId: null,
+    captureAuditId: null,
 };
 
 function defaultDraft() {
@@ -164,6 +168,36 @@ function clearActive() {
     sessionStorage.removeItem(ACTIVE_KEY);
 }
 
+function saveCapture() {
+    if (!state.captureJobId) {
+        sessionStorage.removeItem(CAPTURE_KEY);
+        return;
+    }
+    sessionStorage.setItem(
+        CAPTURE_KEY,
+        JSON.stringify({
+            jobId: state.captureJobId,
+            auditId: state.captureAuditId,
+            iface: state.listenIface,
+        })
+    );
+}
+
+function loadCapture() {
+    try {
+        const raw = sessionStorage.getItem(CAPTURE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+function clearCapture() {
+    sessionStorage.removeItem(CAPTURE_KEY);
+    state.captureJobId = null;
+    state.captureAuditId = null;
+}
+
 function setError(id, message) {
     const element = $(id);
     if (!element) {
@@ -279,6 +313,22 @@ function applyPolicy(policy) {
     if (!state.draft.duration) {
         state.draft.duration = policy.passive_duration_default;
     }
+    const listenDuration = $("listen-duration");
+    const listenFilesize = $("listen-filesize");
+    if (listenDuration && policy.listen_duration_max) {
+        listenDuration.min = 0;
+        listenDuration.max = policy.listen_duration_max;
+        if (!listenDuration.value) {
+            listenDuration.value = String(policy.listen_duration_default);
+        }
+    }
+    if (listenFilesize && policy.listen_max_filesize_kb_max) {
+        listenFilesize.min = 1;
+        listenFilesize.max = policy.listen_max_filesize_kb_max;
+        if (!listenFilesize.value) {
+            listenFilesize.value = String(policy.listen_max_filesize_kb_default);
+        }
+    }
 }
 
 async function showLogin(message) {
@@ -299,11 +349,14 @@ async function showHome() {
     const page = await api("GET", "/api/audits?limit=20");
     const list = $("audit-list");
     list.replaceChildren();
-    if (!page.items.length) {
+    const audits = (page.items || []).filter(
+        (audit) => audit.profile !== "packet_capture"
+    );
+    if (!audits.length) {
         list.append(listItem(t("home.emptyTitle"), t("home.emptyDetail")));
         return;
     }
-    page.items.forEach((audit) => {
+    audits.forEach((audit) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "list-item";
@@ -712,9 +765,14 @@ function startProgressClock() {
         return;
     }
     state.progressClock = setInterval(() => {
-        if (state.currentJob) {
-            renderProgressTiming(state.currentJob, state.jobsSnapshot);
+        if (!state.currentJob) {
+            return;
         }
+        if ($("screen-listen-progress") && !$("screen-listen-progress").hidden) {
+            renderListenProgress(state.currentJob);
+            return;
+        }
+        renderProgressTiming(state.currentJob, state.jobsSnapshot);
     }, 1000);
 }
 
@@ -793,6 +851,276 @@ function humanPhase(job) {
         return t("progress.phase.services");
     }
     return t("progress.phase.listen");
+}
+
+function formatBytes(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KiB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function parseListenStats(message) {
+    const match = String(message || "").match(
+        /(\d+) frames, (\d+) bytes, (\d+)s/
+    );
+    if (!match) {
+        return null;
+    }
+    return {
+        frames: Number(match[1]),
+        bytes: Number(match[2]),
+        elapsed: Number(match[3]),
+    };
+}
+
+async function showListen() {
+    showScreen("listen");
+    setError("listen-error", "");
+    $("listen-start").hidden = !canMutate();
+    applyPolicy(state.user && state.user.policy);
+    const data = await api("GET", "/api/interfaces");
+    const list = $("listen-interface-list");
+    list.replaceChildren();
+    const ifaces = data.interfaces || [];
+    if (!state.listenIface) {
+        state.listenIface = preferredAuditInterface(ifaces);
+    }
+    ifaces.forEach((iface) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "choice";
+        const selectable = iface.selectable !== false && !iface.is_loopback
+            && iface.denial_reason !== "loopback_denied"
+            && iface.denial_reason !== "not_allowed";
+        button.disabled = !selectable;
+        if (!selectable) {
+            button.classList.add("denied");
+        }
+        if (iface.name === state.listenIface) {
+            button.classList.add("selected");
+        }
+        const title = document.createElement("strong");
+        title.textContent = iface.name;
+        const meta = document.createElement("span");
+        const addressing = iface.addressing === "none"
+            ? t("common.noIpv4")
+            : (iface.ipv4 || []).join(", ") || t("common.noIpv4");
+        if (!selectable) {
+            meta.textContent = I18N.denial(iface.denial_reason);
+        } else {
+            meta.textContent = [
+                I18N.link(iface.state),
+                addressing,
+                ifaceHostsGui(iface) ? t("interface.guiHint") : "",
+            ].filter(Boolean).join(" · ");
+        }
+        button.append(title, meta);
+        button.addEventListener("click", () => {
+            if (!selectable) {
+                return;
+            }
+            state.listenIface = iface.name;
+            list.querySelectorAll(".choice").forEach((node) => {
+                node.classList.toggle("selected", node === button);
+            });
+        });
+        list.append(button);
+    });
+    await renderListenSessions();
+}
+
+async function renderListenSessions() {
+    const list = $("listen-session-list");
+    list.replaceChildren();
+    const page = await api("GET", "/api/captures?limit=20");
+    if (!page.items.length) {
+        list.append(listItem(t("listen.emptySessions"), t("listen.emptySessionsDetail")));
+        return;
+    }
+    page.items.forEach((session) => {
+        const row = document.createElement("div");
+        row.className = "session-row";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "list-item";
+        const title = document.createElement("strong");
+        const filterLabel = session.filter || t("listen.allFrames");
+        title.textContent = [
+            I18N.status(session.status),
+            session.interface,
+            filterLabel,
+        ].join(" · ");
+        const meta = document.createElement("span");
+        const frames = session.frame_count == null ? t("common.dash") : String(session.frame_count);
+        meta.textContent = [
+            frames,
+            session.pcap_bytes != null ? formatBytes(session.pcap_bytes) : "",
+        ].filter(Boolean).join(" · ");
+        button.append(title, meta);
+        button.addEventListener("click", () => {
+            openListenSession(session.job_id);
+        });
+        row.append(button);
+        if (session.pcap_url) {
+            const download = document.createElement("button");
+            download.type = "button";
+            download.className = "secondary";
+            download.textContent = t("listen.download");
+            download.addEventListener("click", (event) => {
+                event.stopPropagation();
+                window.location.href = session.pcap_url;
+            });
+            row.append(download);
+        }
+        list.append(row);
+    });
+}
+
+async function startListen() {
+    if (!canMutate()) {
+        setError("listen-error", t("error.viewerCannotStart"));
+        return;
+    }
+    if (!state.listenIface) {
+        setError("listen-error", t("error.selectAllowedInterface"));
+        return;
+    }
+    setError("listen-error", "");
+    const filter = $("listen-filter").value.trim();
+    const duration = Number($("listen-duration").value);
+    const filesize = Number($("listen-filesize").value);
+    const body = {
+        interface: state.listenIface,
+        duration_seconds: Number.isFinite(duration) ? duration : 120,
+        max_filesize_kb: Number.isFinite(filesize) ? filesize : 16384,
+    };
+    if (filter) {
+        body.filter = filter;
+    }
+    const accepted = await api("POST", "/api/captures", body);
+    state.captureJobId = accepted.job_id;
+    state.captureAuditId = accepted.audit_id;
+    saveCapture();
+    await openListenSession(accepted.job_id);
+}
+
+async function openListenSession(jobId) {
+    state.captureJobId = jobId;
+    saveCapture();
+    showScreen("listen-progress");
+    $("listen-progress-warning").hidden = true;
+    $("listen-download-button").hidden = true;
+    $("listen-done-button").hidden = true;
+    $("listen-stop-button").hidden = !canMutate();
+    await pollListenJob(jobId);
+}
+
+function renderListenProgress(job) {
+    const percent = Number(job.progress) || 0;
+    const queued = job.status === "queued";
+    const indeterminate = queued || (
+        job.status === "running" && percent === 0
+    );
+    const ring = $("listen-progress-ring");
+    const arc = $("listen-progress-ring-value");
+    ring.classList.toggle("indeterminate", Boolean(indeterminate));
+    ring.classList.toggle("done", job.status === "completed");
+    ring.classList.toggle(
+        "failed",
+        job.status === "failed" || job.status === "cancelled"
+    );
+    ring.setAttribute("aria-valuenow", String(percent));
+    if (indeterminate) {
+        $("listen-progress-ring-label").textContent = "…";
+        arc.style.strokeDashoffset = "0";
+    } else {
+        $("listen-progress-ring-label").textContent = t("progress.percent", {
+            value: percent,
+        });
+        arc.style.strokeDashoffset = String(
+            RING_CIRCUMFERENCE * (1 - percent / 100)
+        );
+    }
+    $("listen-progress-stage").textContent = I18N.jobType(job.type);
+    $("listen-progress-message").textContent = I18N.jobMessage(job.message);
+    $("listen-progress-fill").style.width = `${percent}%`;
+    $("listen-progress-bar").setAttribute("aria-valuenow", String(percent));
+    const stats = parseListenStats(job.message);
+    if (stats) {
+        $("listen-stat-frames").textContent = String(stats.frames);
+        $("listen-stat-bytes").textContent = formatBytes(stats.bytes);
+        $("listen-stat-elapsed").textContent = formatElapsed(stats.elapsed * 1000);
+    } else if (job.frame_count != null) {
+        $("listen-stat-frames").textContent = String(job.frame_count);
+        $("listen-stat-bytes").textContent = formatBytes(job.byte_count || job.pcap_bytes || 0);
+    }
+    const start = parseTime(job.started_at) || parseTime(job.created_at);
+    if (!Number.isNaN(start)) {
+        const end = TERMINAL.has(job.status)
+            ? (parseTime(job.finished_at) || Date.now())
+            : Date.now();
+        $("listen-progress-timing").textContent = t("progress.elapsedJob", {
+            time: formatElapsed(end - start),
+        });
+        if (!stats) {
+            $("listen-stat-elapsed").textContent = formatElapsed(end - start);
+        }
+    }
+    const download = $("listen-download-button");
+    download.hidden = !job.result_available;
+    $("listen-done-button").hidden = !TERMINAL.has(job.status);
+    $("listen-stop-button").hidden = !canMutate() || TERMINAL.has(job.status);
+}
+
+async function pollListenJob(jobId) {
+    state.pollDelay = 1000;
+    startProgressClock();
+    while (true) {
+        try {
+            const session = await api("GET", `/api/captures/${jobId}`);
+            state.lastPollAt = Date.now();
+            state.currentJob = session;
+            state.captureAuditId = session.audit_id;
+            saveCapture();
+            renderListenProgress(session);
+            if (TERMINAL.has(session.status)) {
+                stopPolling();
+                if (session.frame_count != null) {
+                    $("listen-stat-frames").textContent = String(session.frame_count);
+                }
+                if (session.byte_count != null || session.pcap_bytes != null) {
+                    $("listen-stat-bytes").textContent = formatBytes(
+                        session.byte_count || session.pcap_bytes
+                    );
+                }
+                return session;
+            }
+        } catch (error) {
+            $("listen-progress-warning").hidden = false;
+            $("listen-progress-warning").textContent = t("progress.pollFailed");
+        }
+        await sleep(state.pollDelay);
+        state.pollDelay = Math.min(state.pollDelay * 1.4, 5000);
+    }
+}
+
+async function requestListenStop() {
+    if (!state.captureJobId || !canMutate()) {
+        return;
+    }
+    const confirmed = await showConfirm(
+        t("listen.stopTitle"),
+        t("listen.stopBody")
+    );
+    if (!confirmed) {
+        return;
+    }
+    await api("POST", `/api/jobs/${state.captureJobId}/cancel`);
 }
 
 function overallPercent(job, jobs) {
@@ -1604,6 +1932,12 @@ function bindUi() {
             });
             applyPolicy(state.user.policy);
             setSessionChip();
+            const capture = loadCapture();
+            if (capture && capture.jobId) {
+                state.listenIface = capture.iface || "";
+                await openListenSession(capture.jobId);
+                return;
+            }
             const active = loadActive();
             if (active && active.auditId) {
                 await openAudit(active.auditId);
@@ -1629,6 +1963,36 @@ function bindUi() {
         await showEnvironment();
     });
 
+    $("listen-button").addEventListener("click", async () => {
+        await showListen();
+    });
+
+    $("listen-start").addEventListener("click", async () => {
+        try {
+            await startListen();
+        } catch (error) {
+            setError("listen-error", displayError(error));
+        }
+    });
+
+    $("listen-stop-button").addEventListener("click", () => {
+        requestListenStop().catch((error) => {
+            $("listen-progress-message").textContent = displayError(error);
+        });
+    });
+
+    $("listen-download-button").addEventListener("click", () => {
+        if (state.captureJobId) {
+            window.location.href = `/api/jobs/${state.captureJobId}/pcap`;
+        }
+    });
+
+    $("listen-done-button").addEventListener("click", async () => {
+        stopPolling();
+        clearCapture();
+        await showListen();
+    });
+
     $("network-button").addEventListener("click", async () => {
         await showNetwork();
     });
@@ -1647,7 +2011,12 @@ function bindUi() {
             const target = button.dataset.nav;
             if (target === "home") {
                 clearActive();
+                clearCapture();
                 await showHome();
+                return;
+            }
+            if (target === "listen") {
+                await showListen();
                 return;
             }
             if (target === "network") {
@@ -1774,6 +2143,13 @@ async function boot() {
     const signedIn = await restoreSession();
     if (!signedIn) {
         await showLogin();
+        return;
+    }
+    const capture = loadCapture();
+    if (capture && capture.jobId) {
+        state.draft = { ...state.draft };
+        state.listenIface = capture.iface || "";
+        await openListenSession(capture.jobId);
         return;
     }
     const active = loadActive();

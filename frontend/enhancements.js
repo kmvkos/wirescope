@@ -44,6 +44,18 @@
         return box;
     }
 
+    function sectionTitle(text) { return el("h3", text); }
+
+    function stageLabel(value) {
+        return ({
+            passive: "Пассивный анализ",
+            discovery: "Discovery",
+            protocol: "Протоколы",
+            findings: "Findings",
+            report: "Отчёт",
+        })[value] || value;
+    }
+
     function pipeline(data) {
         const wrap = el("div", null, "ws-inline-pipeline");
         (data || []).forEach((item) => {
@@ -58,18 +70,6 @@
         });
         return wrap;
     }
-
-    function stageLabel(value) {
-        return ({
-            passive: "Пассивный анализ",
-            discovery: "Discovery",
-            protocol: "Протоколы",
-            findings: "Findings",
-            report: "Отчёт",
-        })[value] || value;
-    }
-
-    function sectionTitle(text) { return el("h3", text); }
 
     async function loadAudits() {
         const page = await request("/audits?limit=100");
@@ -110,28 +110,48 @@
         );
         body.append(grid, sectionTitle("Pipeline"), pipeline(data.pipeline));
 
-        const classes = inv.device_classes || {};
         body.append(sectionTitle("Классы устройств"));
         const classesGrid = el("div", null, "ws-metric-grid");
-        Object.entries(classes).forEach(([name, count]) => classesGrid.append(metric(name, count)));
+        Object.entries(inv.device_classes || {}).forEach(([name, count]) => classesGrid.append(metric(name, count)));
         if (!classesGrid.children.length) classesGrid.append(el("p", "Пока нет классифицированных устройств."));
         body.append(classesGrid);
 
         body.append(sectionTitle("Частые сервисы"));
         const table = el("table", null, "ws-table");
-        const head = el("tr"); head.append(el("th", "Сервис"), el("th", "Количество")); table.append(head);
+        const head = el("tr");
+        head.append(el("th", "Сервис"), el("th", "Количество"));
+        table.append(head);
         (data.common_services || []).forEach((item) => {
-            const row = el("tr"); row.append(el("td", item.name), el("td", item.count)); table.append(row);
+            const row = el("tr");
+            row.append(el("td", item.name), el("td", item.count));
+            table.append(row);
         });
         body.append(table);
     }
 
     async function renderCapabilities(body) {
         clear(body);
-        const [caps, profiles] = await Promise.all([request("/capabilities"), request("/scan-profiles")]);
+        const [caps, profiles] = await Promise.all([
+            request("/capabilities"),
+            request("/scan-profiles"),
+        ]);
+
+        body.append(sectionTitle("Web-интерфейс"));
+        const web = caps.web || {};
+        const webGrid = el("div", null, "ws-metric-grid");
+        webGrid.append(
+            metric("Bind", `${web.bind_host || "—"}:${web.bind_port || "—"}`),
+            metric("Все интерфейсы", web.all_interfaces ? "да" : "нет"),
+            metric("TLS", web.tls ? "включён" : "нет"),
+            metric("Trust proxy", web.trust_proxy ? "да" : "нет")
+        );
+        body.append(webGrid);
+
         body.append(sectionTitle("Возможности хоста"));
         const table = el("table", null, "ws-table");
-        const h = el("tr"); h.append(el("th", "Функция"), el("th", "Инструмент"), el("th", "Статус"), el("th", "Путь")); table.append(h);
+        const h = el("tr");
+        h.append(el("th", "Функция"), el("th", "Инструмент"), el("th", "Статус"), el("th", "Путь"));
+        table.append(h);
         (caps.tools || []).forEach((item) => {
             const row = el("tr");
             const status = el("td", item.available ? "доступно" : "нет", item.available ? "ws-ok" : "ws-missing");
@@ -156,6 +176,24 @@
         });
     }
 
+    function diffGroup(title, items) {
+        const box = el("div", null, "ws-section");
+        box.append(sectionTitle(`${title} (${(items || []).length})`));
+        if (!(items || []).length) {
+            box.append(el("p", "Нет изменений."));
+            return box;
+        }
+        (items || []).slice(0, 100).forEach((item) => {
+            const text = item.label || item.title || [
+                item.asset,
+                item.protocol && `${item.protocol}/${item.port}`,
+                item.service,
+            ].filter(Boolean).join(" · ") || JSON.stringify(item);
+            box.append(el("div", text));
+        });
+        return box;
+    }
+
     async function renderDiff(body) {
         clear(body);
         if (!selectedAudit) return body.append(el("p", "Нет выбранного аудита."));
@@ -176,32 +214,27 @@
             clear(result);
             try {
                 const data = await request(`/audits/${encodeURIComponent(selectedAudit)}/diff?against=${encodeURIComponent(select.value)}`);
-                result.append(diffGroup("Новые узлы", data.assets.added), diffGroup("Исчезнувшие узлы", data.assets.removed));
-                result.append(diffGroup("Новые сервисы", data.services.added), diffGroup("Исчезнувшие сервисы", data.services.removed));
-                result.append(diffGroup("Новые findings", data.findings.added), diffGroup("Исчезнувшие findings", data.findings.removed));
-            } catch (error) { result.append(el("p", error.message, "error")); }
+                result.append(
+                    diffGroup("Новые узлы", data.assets.added),
+                    diffGroup("Исчезнувшие узлы", data.assets.removed),
+                    diffGroup("Новые сервисы", data.services.added),
+                    diffGroup("Исчезнувшие сервисы", data.services.removed),
+                    diffGroup("Новые findings", data.findings.added),
+                    diffGroup("Исчезнувшие findings", data.findings.removed)
+                );
+            } catch (error) {
+                result.append(el("p", error.message, "error"));
+            }
         });
-    }
-
-    function diffGroup(title, items) {
-        const box = el("div", null, "ws-section");
-        box.append(sectionTitle(`${title} (${(items || []).length})`));
-        if (!(items || []).length) {
-            box.append(el("p", "Нет изменений."));
-            return box;
-        }
-        (items || []).slice(0, 100).forEach((item) => {
-            const text = item.label || item.title || [item.asset, item.protocol && `${item.protocol}/${item.port}`, item.service].filter(Boolean).join(" · ") || JSON.stringify(item);
-            box.append(el("div", text));
-        });
-        return box;
     }
 
     async function renderEvidence(body) {
         clear(body);
         if (!selectedAudit) return body.append(el("p", "Нет выбранного аудита."));
-        const page = await request(`/audits/${encodeURIComponent(selectedAudit)}/findings?limit=100`);
+        const auditId = encodeURIComponent(selectedAudit);
+        const page = await request(`/audits/${auditId}/findings?limit=100`);
         if (!(page.items || []).length) return body.append(el("p", "Findings отсутствуют."));
+
         for (const finding of page.items) {
             const block = el("div", null, "ws-section");
             const button = el("button", `[${finding.severity}] ${finding.title}`, "secondary");
@@ -210,8 +243,11 @@
             button.addEventListener("click", async () => {
                 clear(details);
                 try {
-                    const evidence = await request(`/audits/${encodeURIComponent(selectedAudit)}/findings/${encodeURIComponent(finding.id)}/evidence`);
-                    if (!(evidence.items || []).length) return details.append(el("p", "Для этого finding evidence не зарегистрирован."));
+                    const evidence = await request(`/audits/${auditId}/findings/${encodeURIComponent(finding.id)}/evidence`);
+                    if (!(evidence.items || []).length) {
+                        details.append(el("p", "Для этого finding evidence не зарегистрирован."));
+                        return;
+                    }
                     for (const item of evidence.items) {
                         if (!item.available) {
                             details.append(el("p", `${item.id}: artifact отсутствует`, "ws-missing"));
@@ -219,23 +255,32 @@
                         }
                         const line = el("div", null, "ws-section");
                         const open = el("button", `${item.artifact_type} · ${item.size} B`, "secondary");
-                        const raw = el("pre", null, "ws-pre"); raw.hidden = true;
-                        line.append(open, raw); details.append(line);
+                        const raw = el("pre", null, "ws-pre");
+                        raw.hidden = true;
+                        line.append(open, raw);
+                        details.append(line);
+
                         open.addEventListener("click", async () => {
+                            const artifactUrl = item.url || `/api/v1/audits/${auditId}/artifacts/${encodeURIComponent(item.id)}`;
                             try {
-                                const response = await fetch(`${API}/artifacts/${encodeURIComponent(item.id)}`, { credentials: "same-origin" });
-                                if (!response.ok) throw new Error(response.statusText);
+                                const response = await fetch(artifactUrl, { credentials: "same-origin" });
+                                if (!response.ok) throw new Error(response.statusText || `HTTP ${response.status}`);
                                 const contentType = response.headers.get("content-type") || "";
                                 if (/text|json|xml|ndjson/.test(contentType)) {
                                     raw.textContent = await response.text();
                                     raw.hidden = !raw.hidden;
                                 } else {
-                                    window.open(`${API}/artifacts/${encodeURIComponent(item.id)}`, "_blank", "noopener");
+                                    window.open(artifactUrl, "_blank", "noopener");
                                 }
-                            } catch (error) { raw.textContent = error.message; raw.hidden = false; }
+                            } catch (error) {
+                                raw.textContent = error.message;
+                                raw.hidden = false;
+                            }
                         });
                     }
-                } catch (error) { details.append(el("p", error.message, "error")); }
+                } catch (error) {
+                    details.append(el("p", error.message, "error"));
+                }
             });
             body.append(block);
         }
@@ -258,40 +303,64 @@
 
     function buildPanel() {
         if (document.getElementById("ws-insights")) return;
-        const backdrop = el("div", null, "ws-insights-backdrop"); backdrop.id = "ws-insights-backdrop"; backdrop.hidden = true;
-        const panel = el("section", null, "ws-insights"); panel.id = "ws-insights"; panel.hidden = true;
+        const backdrop = el("div", null, "ws-insights-backdrop");
+        backdrop.id = "ws-insights-backdrop";
+        backdrop.hidden = true;
+        const panel = el("section", null, "ws-insights");
+        panel.id = "ws-insights";
+        panel.hidden = true;
         const head = el("div", null, "ws-insights-head");
         head.append(el("h2", "Обзор WireScope"));
-        const close = el("button", "Закрыть", "secondary"); head.append(close);
+        const close = el("button", "Закрыть", "secondary");
+        head.append(close);
         const controls = el("div", null, "ws-insights-controls");
-        const auditSelect = el("select"); auditSelect.id = "ws-audit-select";
+        const auditSelect = el("select");
+        auditSelect.id = "ws-audit-select";
         controls.append(el("span", "Аудит:"), auditSelect);
         const tabs = el("div", null, "ws-insights-tabs");
-        const tabNames = [["overview", "Обзор"], ["capabilities", "Система"], ["diff", "Сравнение"], ["evidence", "Evidence"]];
+        const tabNames = [
+            ["overview", "Обзор"],
+            ["capabilities", "Система"],
+            ["diff", "Сравнение"],
+            ["evidence", "Evidence"],
+        ];
         tabNames.forEach(([key, label]) => {
             const button = el("button", label, key === "overview" ? "primary" : "secondary");
             button.dataset.wsTab = key;
             tabs.append(button);
         });
-        const body = el("div"); body.id = "ws-insights-body";
+        const body = el("div");
+        body.id = "ws-insights-body";
         panel.append(head, controls, tabs, body);
-        const toggle = el("button", "Обзор", "primary ws-insights-toggle"); toggle.id = "ws-insights-toggle";
+        const toggle = el("button", "Обзор", "primary ws-insights-toggle");
+        toggle.id = "ws-insights-toggle";
         document.body.append(backdrop, panel, toggle);
 
         let currentTab = "overview";
         const open = async () => {
-            backdrop.hidden = false; panel.hidden = false;
+            backdrop.hidden = false;
+            panel.hidden = false;
             await loadAudits();
             await renderTab(currentTab);
         };
-        const hide = () => { backdrop.hidden = true; panel.hidden = true; };
-        toggle.addEventListener("click", open); close.addEventListener("click", hide); backdrop.addEventListener("click", hide);
-        auditSelect.addEventListener("change", async () => { selectedAudit = auditSelect.value; await renderTab(currentTab); });
+        const hide = () => {
+            backdrop.hidden = true;
+            panel.hidden = true;
+        };
+        toggle.addEventListener("click", open);
+        close.addEventListener("click", hide);
+        backdrop.addEventListener("click", hide);
+        auditSelect.addEventListener("change", async () => {
+            selectedAudit = auditSelect.value;
+            await renderTab(currentTab);
+        });
         tabs.addEventListener("click", async (event) => {
             const button = event.target.closest("button[data-ws-tab]");
             if (!button) return;
             currentTab = button.dataset.wsTab;
-            tabs.querySelectorAll("button").forEach((item) => item.className = item === button ? "primary" : "secondary");
+            tabs.querySelectorAll("button").forEach((item) => {
+                item.className = item === button ? "primary" : "secondary";
+            });
             await renderTab(currentTab);
         });
     }
@@ -299,8 +368,10 @@
     async function renderInlineDashboard() {
         const auditId = activeAuditId();
         if (!auditId) return;
-        const target = [document.getElementById("screen-progress"), document.getElementById("screen-summary")]
-            .find((node) => node && !node.hidden);
+        const target = [
+            document.getElementById("screen-progress"),
+            document.getElementById("screen-summary"),
+        ].find((node) => node && !node.hidden);
         if (!target) return;
         let box = target.querySelector(".ws-inline-dashboard");
         if (!box) {
@@ -315,7 +386,11 @@
             const inv = data.inventory || {};
             const f = data.findings || {};
             const metrics = el("div", null, "ws-metric-grid");
-            metrics.append(metric("Узлы", inv.assets), metric("Сервисы", inv.services), metric("Findings", f.total));
+            metrics.append(
+                metric("Узлы", inv.assets),
+                metric("Сервисы", inv.services),
+                metric("Findings", f.total)
+            );
             box.append(metrics, pipeline(data.pipeline));
         } catch {}
     }

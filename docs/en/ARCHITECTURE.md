@@ -2,9 +2,9 @@
 
 [Русский](../ARCHITECTURE.md)
 
-WireScope is a local modular monolith for network inventory, diagnostics, and auditing. It is designed for one Linux host, VM, or ARM64 appliance: API, worker, SQLite, evidence storage, and the browser UI form one device without Redis, Celery, or internal network microservices.
+WireScope is a local modular monolith for network inventory, diagnostics, and auditing. API, worker, SQLite, evidence storage, and the browser UI form one Linux appliance without Redis, Celery, or internal network microservices.
 
-The main design rule is **collect facts first, interpret them later**. Packet sensors, Nmap, and protocol providers produce observations/evidence. Assessment, classification, and findings logic interpret persisted data afterwards.
+The main design rule is **persist facts first, interpret them afterwards**. Packet sensors, Nmap, and protocol providers create observations/evidence. Assessment, classification, and findings logic operate on those persisted facts.
 
 ## High-level layout
 
@@ -18,9 +18,10 @@ FastAPI /api/v1
       │    ├── auth / system / network / scope
       │    ├── audits / jobs / captures
       │    ├── inventory / protocol / findings / reports
-      │    └── insights
+      │    ├── insights
+      │    └── operations
       │
-      ├── domain services
+      ├── domain / lifecycle services
       │
       ├──────── SQLite WAL
       │
@@ -36,21 +37,13 @@ FastAPI /api/v1
                     └── report generation
 ```
 
-API and worker are separate processes. The browser/kiosk is a durable-API client. Reloading or restarting Chromium does not change job lifecycle.
+API and worker are separate processes. The browser/kiosk is a client of durable state; restarting Chromium does not alter job lifecycle.
 
 ## Backend composition
 
-`backend/app.py` is the composition root. It constructs application services, groups them in `AppServices`, mounts routers, and serves the static frontend.
+`backend/app.py` is the composition root. It constructs `AppServices`, mounts routers, installs operational middleware, and serves the frontend.
 
-`backend/dependencies.py` contains the runtime dependency container. Routers receive already-created services through `Depends(get_services)` and do not become a second domain layer.
-
-The canonical HTTP API is published below:
-
-```text
-/api/v1/...
-```
-
-`/api/...` remains a temporary compatibility alias using the same handlers, models, authorization, and scope checks. The legacy alias is hidden from OpenAPI.
+The canonical API is `/api/v1/...`. `/api/...` remains a hidden compatibility alias using the same handlers, models, authorization, and scope checks.
 
 ## Router layout
 
@@ -58,30 +51,26 @@ The canonical HTTP API is published below:
 backend/routers/
 ├── auth.py
 ├── system.py
+├── insights.py
+├── operations.py
 ├── audits.py
 ├── captures.py
 ├── inventory.py
 ├── protocol.py
 ├── findings.py
 ├── reports.py
-├── jobs.py
-└── insights.py
+└── jobs.py
 ```
 
-`insights.py` does not create a second persistence model. It exposes read-only views over existing stores:
+`insights.py` provides read-only views such as capabilities, profiles, dashboard, correlations, diff, and audit-scoped evidence.
 
-- runtime capabilities;
-- active scan profile catalog;
-- audit dashboard/pipeline;
-- passive/active correlation summaries;
-- audit-to-audit diff;
-- audit-scoped evidence access.
+`operations.py` exposes the appliance lifecycle surface: diagnostics, operational audit log, retention/cleanup, and durable job retry.
 
 ## Environment, interfaces, and scope
 
-`engine/environment.py` discovers host state. `engine/interfaces.py` discovers and validates interfaces. `engine/routes.py` verifies the actual route/source used for active targets. `engine/network.py` and `netctl` handle controlled host-network changes.
+`engine/environment.py` discovers host state. `engine/interfaces.py` validates interfaces. `engine/routes.py` verifies the actual route/source for active targets. `engine/network.py` and `netctl` handle controlled host-network changes.
 
-Observed network data and authorized active scope are separate concepts. An ARP host, DHCP server, LLDP/CDP neighbor, or VLAN tag seen passively is not automatically authorized for scanning.
+Observed network data and authorized scan scope remain separate:
 
 ```text
 passive/environment evidence
@@ -113,9 +102,9 @@ in-process sensors
 assessment + inventory observations
 ```
 
-A PCAP is decoded once. Sensors do not start one tshark process per protocol.
+A PCAP is decoded once; sensors do not spawn one tshark process per protocol.
 
-## Jobs and persistence
+## Jobs, persistence, and recovery
 
 Long-running work is represented as durable jobs:
 
@@ -127,101 +116,112 @@ queued → running → completed
    └─────────────→ cancelled
 ```
 
-`JobService` owns transitions. The worker claims jobs atomically. Resource locks and worker leases live in SQLite.
+`JobService` owns state transitions. The worker claims jobs atomically. Resource locks and worker heartbeat live in SQLite.
 
-SQLite is the system of record for audits, jobs/events, scopes, inventory, observations, findings, users/sessions, reports, and artifact metadata. Connections use WAL, foreign keys, a busy timeout, and short transactions; scanner processes do not hold SQL transactions open.
+If a process restart interrupts a running job, recovery marks it `interrupted` and releases stale locks. A terminal job is never rewritten back to queued. Explicit retry creates a new durable job using the same parameters:
 
-## Evidence store
+```text
+failed/interrupted/cancelled job
+        │ operator retry
+        ▼
+new queued job
+```
 
-PCAP, Nmap XML, raw provider stdout/stderr, passive-result JSON, and generated reports live in the filesystem evidence store rather than large relational BLOBs.
+Source/replacement linkage is preserved in job events. This is stage-level recovery, not reconstruction of a dead subprocess.
 
-Artifacts are written atomically and registered with UUID, size, and SHA-256. API clients never choose filesystem paths.
+SQLite is the system of record for audits, jobs/events, scopes, inventory, observations, findings, users/sessions, reports, operational events, and artifact metadata. Connections use WAL, foreign keys, a busy timeout, and short transactions.
 
-Canonical artifact access is audit-scoped:
+## Operational audit log
+
+`backend/audit_log.py` stores append-only operational events separately from job events.
+
+Middleware records significant mutating HTTP operations after execution with actor/role, normalized API path, HTTP status, client IP, and audit id when available.
+
+Request bodies, passwords, cookies/session tokens, and provider output are never copied into the operational table.
+
+Logging failure does not turn an otherwise successful operator action into an outage; database and migration health are independently visible through diagnostics.
+
+## Evidence store and retention
+
+PCAP, Nmap XML, protocol raw output, passive-result JSON, and generated reports live in the filesystem evidence store rather than relational BLOBs.
+
+Artifacts are written atomically and registered with UUID, size, and SHA-256. Canonical access is audit-scoped:
 
 ```text
 GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
+`backend/lifecycle.py` separates normalized history from large raw artifacts. Inventory/findings/reports are not automatically deleted. Aged PCAP/Nmap XML/protocol output becomes a cleanup candidate and is removed only after explicit confirmation.
+
+Cleanup removes both the file and artifact metadata row. Preview mode changes nothing.
+
 ## Inventory, correlation, and classification
 
-Identity correlation is conservative:
+Identity correlation remains conservative: exact MAC, then exact IP; conflicts are preserved instead of silently merging assets. Hostnames remain provenance/signals rather than sufficient merge evidence.
 
-1. exact MAC;
-2. exact IP;
-3. preserve conflicts as observations instead of silently merging assets.
-
-Hostnames remain provenance/signals rather than sufficient evidence for aggressive identity merges.
-
-Device classification combines OS hints, vendor data, services/ports, and naming sources. The result is stored as a confidence-rated `device_class_hint` with explainable signal sources, not as a security finding.
+Device classification combines OS hints, vendor data, services/ports, and naming sources and stores a confidence-rated hint with explainable signals.
 
 ## Active scan profiles
 
-Active profiles are declarative in `config/active_profiles.json` and loaded by `engine/active_profiles.py`.
-
-The API exposes the effective catalog:
+Active profiles live in `config/active_profiles.json` and are loaded by `engine/active_profiles.py`.
 
 ```text
 GET /api/v1/scan-profiles
 ```
 
-A profile defines timing, TCP/UDP coverage, service/version detection, OS detection, and timeout. Clients cannot submit arbitrary Nmap argv.
+Profiles define timing, TCP/UDP coverage, service/version detection, OS detection, and timeout. Clients cannot submit arbitrary Nmap argv.
 
-## Capabilities and readiness
+## Capabilities, readiness, and diagnostics
 
-`backend/capabilities.py` builds a runtime inventory of capture/decode tools, Nmap, and protocol providers.
-
-Core readiness depends on the components required for the appliance to function. An unavailable optional provider does not force the whole WireScope instance into `not_ready`.
-
-The UI reads:
+`backend/capabilities.py` builds runtime tool inventory. Core readiness requires SQLite/migrations, worker, and the base packet-capture tools; optional providers may be unavailable without making the entire appliance `not_ready`.
 
 ```text
 GET /api/v1/capabilities
+GET /api/v1/diagnostics
 ```
 
-The response also reports the effective web listener: bind host/port, TLS, and trust-proxy state.
+Diagnostics adds SQLite `quick_check`, disk/evidence usage, retention, platform/runtime checks, and recent operational events.
 
-## Dashboard and pipeline
+## Dashboard and diff
 
-The dashboard has no dedicated table. It aggregates persisted jobs, inventory, and findings:
+Dashboard derives state from persisted jobs, inventory, and findings:
 
 ```text
 GET /api/v1/audits/{audit_id}/dashboard
 ```
 
-Pipeline stages are derived from durable jobs:
+Pipeline:
 
 ```text
 passive → discovery → protocol → findings → report
 ```
 
-## Audit diff
-
-Two audits can be compared from persisted state:
+Audit diff is also computed from persisted state:
 
 ```text
 GET /api/v1/audits/{new_id}/diff?against={old_id}
 ```
 
-The diff covers assets, open services, and findings. Cross-audit identity uses the strongest stable signal available, primarily MAC and then IP/name fallbacks.
-
 ## Findings and reports
 
-The findings engine consumes normalized observations and inventory, applies versioned rules, and produces findings with severity, confidence, rationale, recommendation, and evidence links.
-
-Report generation does not contact the network. The canonical document is `audit-report v1` JSON. Self-contained HTML and Markdown are rendered from it. PDF is not implemented yet.
+The findings engine consumes normalized observations/inventory and creates confidence-rated findings with evidence links. Report generation never contacts the network. `audit-report v1` JSON is canonical; self-contained HTML and Markdown are rendered from it.
 
 ## Frontend
 
-The established wizard remains in `frontend/app.js`. Operator insights are isolated in `frontend/enhancements.js` and `enhancements.css` so the primary workflow does not keep growing.
+The primary wizard remains in `frontend/app.js`. Additional operator functionality is isolated:
 
-The panel exposes:
+```text
+frontend/enhancements.js   dashboard / diff / evidence / Markdown
+frontend/operations.js     diagnostics / retention / retry / audit log
+```
 
-- dashboard/pipeline;
-- capabilities and listener state;
-- scan profiles;
-- audit diff;
-- evidence viewer.
+This lets operator views evolve without rewriting the primary audit workflow.
+
+## Backup and restore
+
+`appliance/backup.py` uses the SQLite backup API so a consistent snapshot can be produced from a WAL database. Evidence can be copied with the database.
+
+Restore verifies the backup with `PRAGMA integrity_check` before replacing the working database; evidence is restored separately.
 
 ## Privilege boundary
 
@@ -235,34 +235,24 @@ root:wireshark 0750
 cap_net_admin,cap_net_raw=eip
 ```
 
-The Python backend does not receive packet-capture capabilities. WireScope does not elevate Nmap itself.
+The Python backend does not receive packet-capture capabilities, and WireScope does not elevate Nmap itself.
 
 ## Deployment
 
-A normal appliance must be reachable through whichever configured interface is available to the operator, so application settings, installer, and upgrade path default to:
+Application settings, argparse, installer, and upgrade entrypoints default to:
 
 ```text
 0.0.0.0:8000
 ```
 
-The local kiosk still opens `http://127.0.0.1:8000/`.
+The local kiosk still opens `http://127.0.0.1:8000/`. Loopback-only deployment remains an explicit option.
 
-Loopback-only deployment remains an explicit option:
+## CI and release boundary
 
-```bash
-sudo ./packaging/install.sh --bind-host 127.0.0.1
-```
+GitHub Actions on Python 3.11 installs the project, compiles Python sources, and runs the default `pytest` suite. Live-network/browser/platform checks remain opt-in where necessary.
 
-Firewall restrictions, direct TLS, or a reverse proxy can be added to match a particular network without changing WireScope's internal architecture.
+The first-version finish line is defined by [RELEASE_READINESS.md](RELEASE_READINESS.md), not by the absence of new feature ideas. After green CI, the last mandatory gate is a smoke test on an actually upgraded appliance.
 
-## CI and testing
+## Post-1.0 work
 
-GitHub Actions on Python 3.11 installs the project, compiles Python sources, and runs the default `pytest` suite. Live-network and browser-specific checks remain opt-in where appropriate.
-
-## Remaining technical debt
-
-- PDF export;
-- a dedicated security audit-log table;
-- policy-driven retention/deletion for completed audits/evidence;
-- automatic retry for terminal/interrupted jobs;
-- release validation of tshark/provider compatibility across supported distro package versions.
+Useful but non-blocking work includes PDF export, more protocol modules, topology/CVE enrichment, scheduled audits, deeper cross-audit identity history, further frontend decomposition, removing the `/api/*` compatibility alias, and a broader distro/architecture CI matrix.

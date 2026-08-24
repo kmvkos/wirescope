@@ -19,7 +19,9 @@ from backend.models import (
 from jobs.errors import JobExecutionError
 from jobs.service import EntityNotFound
 from jobs.state import InvalidTransition
+from reports.html_v2 import render_html
 from reports.markdown import render_markdown
+from reports.models import AuditReport
 from reports.store import ReportNotFound
 
 
@@ -135,36 +137,33 @@ def export_report(
     try:
         services.jobs.get_audit(audit_id)
         report = services.reports.get(audit_id, report_id)
-        if requested == "markdown":
-            json_artifact = services.jobs.artifact(report.json_artifact_id)
-            if json_artifact.audit_id != audit_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "artifact_audit_mismatch",
-                        "message": "Report artifact does not belong to audit",
-                    },
-                )
-            document = services.evidence.read_json(json_artifact)
-            payload = render_markdown(document).encode("utf-8")
-            media_type = "text/markdown; charset=utf-8"
-        else:
-            artifact_id = (
-                report.json_artifact_id
-                if requested == "json"
-                else report.html_artifact_id
+
+        # JSON is the canonical report document. Human-readable HTML and
+        # Markdown are rendered from that same persisted document so even
+        # reports created by older WireScope versions immediately benefit from
+        # presentation/localization improvements without re-running an audit.
+        json_artifact = services.jobs.artifact(report.json_artifact_id)
+        if json_artifact.audit_id != audit_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "artifact_audit_mismatch",
+                    "message": "Report artifact does not belong to audit",
+                },
             )
-            artifact = services.jobs.artifact(artifact_id)
-            if artifact.audit_id != audit_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "artifact_audit_mismatch",
-                        "message": "Report artifact does not belong to audit",
-                    },
-                )
-            payload = services.evidence.read_bytes(artifact)
-            media_type = artifact.content_type
+
+        if requested == "json":
+            payload = services.evidence.read_bytes(json_artifact)
+            media_type = json_artifact.content_type
+        else:
+            document = services.evidence.read_json(json_artifact)
+            if requested == "markdown":
+                payload = render_markdown(document).encode("utf-8")
+                media_type = "text/markdown; charset=utf-8"
+            else:
+                canonical = AuditReport.model_validate(document)
+                payload = render_html(canonical).encode("utf-8")
+                media_type = "text/html; charset=utf-8"
     except EntityNotFound as exc:
         raise not_found(exc) from exc
     except ReportNotFound as exc:

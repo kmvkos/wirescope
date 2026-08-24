@@ -2,35 +2,23 @@
 
 **Русский** · [English](en/GUI_MODEL.md)
 
-GUI — основной интерфейс оператора. Для обычного аудита shell не требуется: создание audit, passive capture, подтверждение scope, active discovery, protocol audits, findings, evidence и reports доступны из браузера.
+GUI — основной интерфейс оператора. Для обычного аудита shell не требуется: создание audit, passive capture, подтверждение scope, active discovery, protocol audits, findings, evidence, reports и базовая диагностика доступны из браузера.
 
-Frontend остаётся клиентом durable API. Закрытие вкладки, reload или restart kiosk не отменяют worker job.
+Frontend — клиент durable API. Закрытие вкладки, reload или restart kiosk не отменяют worker job.
 
 ## Где запускается GUI
 
-### Локальный kiosk
-
-Chromium работает на самом appliance и открывает:
+Локальный kiosk открывает:
 
 ```text
 http://127.0.0.1:8000/
 ```
 
-System kiosk занимает `tty1` без полноценного GNOME/KDE/XFCE. На VMware используется Xorg/xinit, на подходящем железе возможен Cage.
-
-### Удалённый browser
-
-Обычная appliance-установка WireScope слушает `0.0.0.0:8000`, поэтому оператор может открыть GUI через IP любого настроенного интерфейса устройства:
-
-```text
-http://<wirescope-ip>:8000/
-```
-
-При необходимости deployment можно ужесточить firewall, direct TLS или reverse proxy. Ограничение bind до `127.0.0.1` — явная опция конкретной установки, а не default WireScope.
+Обычная appliance-установка слушает `0.0.0.0:8000`, поэтому удалённый оператор может открыть GUI через IP любого настроенного интерфейса WireScope.
 
 ## Frontend
 
-Frontend намеренно остаётся без build framework:
+Frontend остаётся без build framework:
 
 ```text
 frontend/
@@ -39,10 +27,11 @@ frontend/
 ├── i18n.js
 ├── style.css
 ├── enhancements.js
-└── enhancements.css
+├── enhancements.css
+└── operations.js
 ```
 
-`app.js` содержит основной wizard и существующие рабочие экраны. `enhancements.js` подключается отдельно и добавляет operator-insights без переписывания основного workflow.
+`app.js` содержит основной wizard. `enhancements.js` добавляет dashboard/diff/evidence/Markdown export. `operations.js` отдельно добавляет эксплуатационные функции для auditor.
 
 ## Основной audit flow
 
@@ -68,7 +57,7 @@ summary / inventory / evidence / report
 
 ## Pipeline
 
-На progress/summary GUI показывает общий pipeline:
+На progress/summary GUI показывает durable pipeline:
 
 ```text
 Пассивный анализ
@@ -82,84 +71,81 @@ Findings
 Отчёт
 ```
 
-Состояние каждой стадии вычисляется из durable jobs. GUI не хранит отдельную копию pipeline state.
+Состояние вычисляется из jobs в SQLite. Браузер не хранит отдельную state machine.
 
-Для стадии отображаются status, progress и связанный job id, если job уже создавался.
+## Панель «Обзор»
 
-## Обзор WireScope
+После успешного login панель позволяет выбрать любой сохранённый audit. На login-screen кнопка скрыта.
 
-После успешного входа дополнительная панель **«Обзор»** доступна поверх существующего wizard и позволяет выбрать любой сохранённый audit. На login-screen кнопка не показывается.
+### «Обзор»
 
-### Вкладка «Обзор»
-
-Показывает:
-
-- количество assets;
-- количество services;
-- findings;
-- Critical/High counts;
-- сколько assets имеют одновременно passive и active evidence;
-- pipeline;
-- device-class distribution;
-- наиболее частые открытые сервисы.
-
-Данные приходят из:
+Показывает assets, services, findings, Critical/High counts, passive+active correlation, pipeline, device classes и наиболее частые сервисы.
 
 ```text
 GET /api/v1/audits/{audit_id}/dashboard
 GET /api/v1/audits/{audit_id}/correlations
 ```
 
-Отдельной dashboard database нет.
+### «Система»
 
-### Вкладка «Система»
-
-Показывает доступность внешних инструментов и реально загруженные active scan profiles.
+Показывает runtime capabilities, effective listener и загруженные scan profiles:
 
 ```text
 GET /api/v1/capabilities
 GET /api/v1/scan-profiles
 ```
 
-Оператор сразу видит, например, что packet capture доступен, но SSH audit недоступен из-за отсутствующего `ssh-audit`.
+Отсутствующий optional provider отображается как недоступная capability, а не как успешная проверка.
 
-Также отображается web listener: bind host/port, TLS и trust-proxy state.
-
-### Вкладка «Сравнение»
-
-Позволяет сравнить два сохранённых аудита:
+### «Сравнение»
 
 ```text
 GET /api/v1/audits/{new_id}/diff?against={old_id}
 ```
 
-GUI группирует:
+GUI группирует новые/исчезнувшие assets, open services и findings.
 
-- новые/исчезнувшие assets;
-- новые/исчезнувшие открытые services;
-- новые/исчезнувшие findings.
-
-Diff строится backend'ом по persisted state; frontend только отображает результат.
-
-### Вкладка «Evidence»
-
-Для каждого finding GUI запрашивает зарегистрированные evidence artifacts:
+### «Evidence»
 
 ```text
 GET /api/v1/audits/{audit_id}/findings/{finding_id}/evidence
-```
-
-Текстовые/JSON/XML evidence можно раскрыть inline. Бинарные artifacts открываются/download'ятся отдельным запросом.
-
-Канонический artifact URL всегда содержит audit id:
-
-```text
 GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
+Text/JSON/XML evidence раскрывается inline; binary artifacts открываются отдельно. Artifact access всегда audit-scoped.
+
+### «Эксплуатация»
+
+Эта вкладка показывается только `auditor` и реализована отдельным `operations.js`.
+
+Она использует:
+
+```text
+GET  /api/v1/diagnostics
+GET  /api/v1/diagnostics/export
+GET  /api/v1/audits/{audit_id}/jobs
+POST /api/v1/jobs/{job_id}/retry
+POST /api/v1/maintenance/cleanup
+```
+
+На экране видны:
+
+- runtime ready/not-ready;
+- SQLite `quick_check`;
+- worker/core tools;
+- свободное место;
+- размер evidence store;
+- retention policy и количество cleanup candidates;
+- failed/interrupted/cancelled jobs выбранного audit;
+- последние operational events.
+
+Cleanup намеренно двухшаговый. Сначала **«Предпросмотр очистки»** делает запрос с `confirm=false`. Кнопка фактического удаления дополнительно требует browser confirmation и отправляет `confirm=true`.
+
+Retry создаёт новую durable job и не переписывает terminal job.
+
 ## Device classification
 
-GUI показывает только классификацию, которую уже вычислил inventory layer:
+GUI показывает classification, вычисленную inventory layer:
 
 ```text
 server-like
@@ -170,41 +156,36 @@ iot-like
 unknown
 ```
 
-Classification hint не превращается в security finding. В API доступны confidence и источники сигнала.
+Classification — confidence-rated hint, не finding.
 
 ## Роли
 
-Локальные роли:
-
-- `auditor`;
-- `viewer`.
-
 | Действие | Auditor | Viewer |
 | --- | --- | --- |
-| Просмотр audits/jobs/inventory/findings/reports | да | да |
+| Читать audits/jobs/inventory/findings/reports | да | да |
 | Dashboard / diff / capabilities / evidence | да | да |
-| Смена собственного пароля | да | да |
-| Создание audit | да | нет |
-| Запуск/отмена jobs | да | нет |
+| Сменить собственный пароль | да | да |
+| Создать audit | да | нет |
+| Запустить/отменить job | да | нет |
+| Retry terminal job | да | нет |
 | Listen / Record | да | нет |
-| Изменение network settings | да | нет |
-| Finding state changes | да | нет |
-| Генерация report | да | нет |
+| Изменить network settings | да | нет |
+| Изменить finding state | да | нет |
+| Сгенерировать report | да | нет |
+| Diagnostics / audit log / maintenance | да | нет |
 
-Backend проверяет role независимо от того, скрыта ли кнопка во frontend.
+Backend проверяет role независимо от видимости кнопки во frontend.
 
 ## Session
 
-После login backend выдаёт HttpOnly cookie. Token случайный; в SQLite хранится SHA-256 digest. `SameSite=strict`; `Secure` включается для direct TLS/trusted proxy сценария.
+После login backend выдаёт HttpOnly cookie. Token случайный; в SQLite хранится SHA-256 digest. `SameSite=strict`; `Secure` включается для direct TLS/trusted proxy deployment.
 
-Активный audit id frontend хранит в `sessionStorage`, чтобы после reload вернуть пользователя на progress/summary. Это только UI convenience; source of truth — backend/SQLite.
+Активный audit id frontend хранит в `sessionStorage` только для восстановления UI после reload. Source of truth — backend/SQLite.
 
 ## Summary / observations / assessment / findings
 
-Эти сущности не смешиваются:
-
 - **Summary** — короткая картина аудита и pipeline;
-- **Observations** — нормализованные факты protocol modules;
+- **Observations** — нормализованные факты sensors/protocol modules;
 - **Assessment** — интерпретации passive evidence с confidence;
 - **Findings** — rule-engine conclusions с severity/recommendation/state.
 
@@ -212,51 +193,23 @@ Passive sensor hit сам по себе finding не создаёт.
 
 ## VLAN display
 
-VLAN ID показывается как реально увиденный только при наличии 802.1Q tag в кадре. Untagged access traffic не получает выдуманный VLAN ID. LLDP/CDP native/voice VLAN остаётся neighbor metadata и не смешивается с frame tag.
+VLAN ID показывается как реально увиденный только при наличии 802.1Q tag. Untagged access traffic не получает выдуманный VLAN ID. LLDP/CDP native/voice VLAN остаётся neighbor metadata.
 
-## «Прослушивание» / Listen & Record
+## Listen / Record
 
-Отдельный `packet_capture` job принимает:
-
-- interface;
-- optional BPF/tcpdump filter;
-- duration;
-- max PCAP size.
-
-`dumpcap` работает promiscuous, но это не заставляет switch отправлять на порт весь traffic сегмента. PCAP сохраняется в evidence store.
+Отдельный `packet_capture` job принимает interface, optional BPF/tcpdump filter, duration и max PCAP size. Promiscuous mode записывает всё, что NIC реально принимает, но не превращает switch port в SPAN.
 
 ## Network screen
 
-Network settings идут через backend `NetworkService`/`netctl`. Потенциально опасное изменение management path требует дополнительного confirmation на backend; JavaScript не может обойти эту проверку.
+Network settings идут через backend `NetworkService`/`netctl`. Потенциально опасное изменение management path требует server-side confirmation.
 
 ## Reports
 
-GUI умеет:
+GUI умеет открывать HTML и экспортировать JSON/Markdown. Markdown-кнопка добавляется `enhancements.js` и использует `/api/v1` export endpoint. PDF пока возвращает `422 pdf_not_available` и не блокирует v1.0.
 
-- запускать report generation для `auditor`;
-- просматривать report history;
-- открывать HTML;
-- экспортировать JSON;
-- экспортировать Markdown.
+## Ошибки и recovery
 
-Markdown-кнопка добавляется модулем `enhancements.js` рядом с существующим JSON export и использует канонический `/api/v1` export endpoint.
-
-PDF пока возвращает `422 pdf_not_available`.
-
-## Ошибки
-
-GUI различает как минимум:
-
-- validation error;
-- worker not ready;
-- optional provider unavailable;
-- timeout;
-- cancellation;
-- partial result;
-- authorization/role error;
-- network apply confirmation/error.
-
-Отсутствующий provider не должен отображаться как «проверка пройдена» или «ничего не найдено».
+GUI различает validation/provider/timeout/cancellation/authorization/network errors. Terminal failed/interrupted/cancelled job может быть явно повторена auditor через Operations. Автоматического бесконтрольного retry нет.
 
 ## Kiosk lifecycle
 
@@ -266,8 +219,10 @@ wirescope-worker   переживает restart Chromium
 wirescope-kiosk    может рестартовать независимо
 ```
 
-Экран — не executor.
+Экран — клиент, не executor.
 
 ## Тестирование
 
-Backend/API GUI contracts тестируются fixture-based. Static regression tests отдельно проверяют, что `enhancements.js/.css` реально подключены к `index.html`, evidence viewer использует audit-scoped URL, а Markdown export остаётся интегрированным. Optional Playwright tests помечены `browser` и пропускаются, если Playwright/Chromium не установлен. Основной CI также компилирует Python sources и запускает default `pytest` suite.
+Fixture/API tests проверяют roles и workflow. Static regression tests контролируют подключение enhancement modules, audit-scoped evidence, Markdown и operations lifecycle UI. Optional Playwright tests остаются `browser` marker. Основной CI выполняет compileall и default pytest suite.
+
+Release checklist находится в [RELEASE_READINESS.md](RELEASE_READINESS.md).

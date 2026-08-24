@@ -37,6 +37,8 @@ def test_migrations_build_working_schema_from_empty_database(
             "resource_locks",
             "services",
             "protocol_observations",
+            "findings",
+            "finding_state_events",
             "workers",
         } <= tables
         assert migrations_current(database, settings.project_root)

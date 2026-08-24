@@ -442,3 +442,102 @@ def test_protocol_audit_requires_scope_and_inventory(api_context):
     assert listing.status_code == 200
     assert listing.json()["total"] == 0
     assert listing.json()["items"] == []
+
+
+def test_findings_api_lists_and_records_status_changes(api_context):
+    app, service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+    empty = request(app, "GET", f"/api/audits/{audit_id}/findings")
+    assert empty.status_code == 200
+    assert empty.json()["total"] == 0
+
+    from engine.passive_models import ConfidenceLevel
+    from findings.models import FindingDraft, Severity
+    from parsers.nmap import parse_nmap_xml
+    from tests.fixtures.nmap import fixture_path
+
+    app.state.inventory.ingest_nmap_document(
+        audit_id=audit_id,
+        job_id=None,
+        document=parse_nmap_xml(fixture_path("linux_host.xml")),
+    )
+    service_row = next(
+        item
+        for item in app.state.inventory.list_services(
+            audit_id=audit_id,
+            limit=10,
+            offset=0,
+        ).items
+        if item.port == 22
+    )
+    created = app.state.findings.upsert_evaluation(
+        audit_id=audit_id,
+        drafts=[
+            FindingDraft(
+                rule_id="WS-SSH-WEAK-ALGORITHMS",
+                rule_version="1",
+                family="ssh",
+                title="Weak SSH algorithms are offered",
+                severity=Severity.HIGH,
+                confidence=ConfidenceLevel.HIGH,
+                asset_id=service_row.asset_id,
+                service_id=service_row.id,
+                description="Weak algorithms were observed.",
+                rationale="ssh_algorithms listed weak ciphers.",
+                recommendation="Disable legacy algorithms.",
+                data={"weak_algorithms": {"kex": ["diffie-hellman-group1-sha1"]}},
+                observation_ids=["obs-1"],
+                evidence_artifact_ids=["evidence-1"],
+                dedupe_key=f"{service_row.asset_id}:{service_row.id}",
+            )
+        ],
+    )
+    listing = request(app, "GET", f"/api/audits/{audit_id}/findings")
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 1
+    finding_id = created[0].id
+    detail = request(app, "GET", f"/api/audits/{audit_id}/findings/{finding_id}")
+    assert detail.status_code == 200
+    assert detail.json()["rule_id"] == "WS-SSH-WEAK-ALGORITHMS"
+    assert detail.json()["observation_ids"] == ["obs-1"]
+
+    suppressed = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/findings/{finding_id}/suppress",
+        json={"actor": "auditor", "reason": "Lab host"},
+    )
+    assert suppressed.status_code == 200
+    assert suppressed.json()["status"] == "suppressed"
+    assert suppressed.json()["state_events"][0]["actor"] == "auditor"
+
+    accepted = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/findings/{finding_id}/accept-risk",
+        json={"actor": "lead", "reason": "Compensating control"},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["status"] == "accepted_risk"
+
+    reopened = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/findings/{finding_id}/reopen",
+        json={"actor": "lead", "reason": "Control removed"},
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "open"
+
+    queued = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/findings",
+        json={"priority": 1},
+    )
+    assert queued.status_code == 202
+    job = service.get_job(queued.json()["job_id"])
+    assert job.type == "findings_evaluation"
+    assert job.resource_key == f"audit:{audit_id}"
+    assert job.resource_group == "findings"
+    assert "raw_flags" not in job.parameters

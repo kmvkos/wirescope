@@ -10,7 +10,7 @@ from inventory.models import (
     DeviceClassHint,
     ServiceRecord,
 )
-from protocol_audits.models import ProbeTarget
+from protocol_audits.models import ProbeTarget, ProtocolObservationRecord
 from providers.tools import ToolError, ToolErrorCode, ToolResult
 
 
@@ -164,6 +164,37 @@ def sample_asset(
                 last_seen=now,
             )
         ],
+    )
+
+
+def sample_observation(
+    *,
+    kind: str = "ssh_algorithms",
+    data: dict | None = None,
+    observation_id: str = "obs-1",
+    asset_id: str = "asset-1",
+    service_id: str = "svc-1",
+    protocol: str = "ssh",
+    module: str = "ssh",
+    source: str = "ssh-audit",
+    evidence_artifact_id: str | None = "evidence-1",
+    confidence: ConfidenceLevel = ConfidenceLevel.HIGH,
+) -> ProtocolObservationRecord:
+    now = utcnow()
+    return ProtocolObservationRecord(
+        id=observation_id,
+        audit_id="audit-1",
+        asset_id=asset_id,
+        service_id=service_id,
+        protocol=protocol,
+        module=module,
+        kind=kind,
+        data=data or {},
+        confidence=confidence,
+        source=source,
+        evidence_artifact_id=evidence_artifact_id,
+        first_seen=now,
+        last_seen=now,
     )
 
 

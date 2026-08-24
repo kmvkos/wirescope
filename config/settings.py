@@ -284,8 +284,8 @@ def get_settings() -> Settings:
             Path("/usr/share/ieee-data/oui.txt"),
         ),
         docs_enabled=_env_bool("WIRESCOPE_DOCS_ENABLED", True),
-        bind_host=os.getenv("WIRESCOPE_BIND_HOST", "127.0.0.1").strip()
-        or "127.0.0.1",
+        bind_host=os.getenv("WIRESCOPE_BIND_HOST", "0.0.0.0").strip()
+        or "0.0.0.0",
         bind_port=_env_int("WIRESCOPE_BIND_PORT", 8000),
         allowed_interfaces=_env_list("WIRESCOPE_ALLOWED_INTERFACES"),
         allow_loopback=_env_bool("WIRESCOPE_ALLOW_LOOPBACK", False),

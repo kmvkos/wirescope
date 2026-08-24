@@ -1,0 +1,35 @@
+{
+  "discovery": {
+    "timing": "T3",
+    "tcp_top_ports": 100,
+    "tcp_ports": null,
+    "udp_ports": [],
+    "service_detection": false,
+    "version_intensity": null,
+    "os_detection": false,
+    "run_tcp_scan": false,
+    "run_udp_scan": false
+  },
+  "standard": {
+    "timing": "T3",
+    "tcp_top_ports": 1000,
+    "tcp_ports": null,
+    "udp_ports": [53, 67, 68, 69, 111, 123, 137, 161, 162, 500, 623, 1900, 4500, 5353, 5355],
+    "service_detection": true,
+    "version_intensity": 5,
+    "os_detection": true,
+    "run_tcp_scan": true,
+    "run_udp_scan": true
+  },
+  "deep": {
+    "timing": "T3",
+    "tcp_top_ports": null,
+    "tcp_ports": "1-65535",
+    "udp_ports": [7, 9, 19, 37, 49, 53, 67, 68, 69, 88, 111, 123, 135, 137, 138, 139, 161, 162, 177, 389, 427, 443, 445, 500, 514, 520, 623, 631, 1434, 1645, 1646, 1701, 1812, 1813, 1900, 2049, 3478, 4500, 5060, 5353, 5355, 5683, 10000, 17185, 20031],
+    "service_detection": true,
+    "version_intensity": 7,
+    "os_detection": true,
+    "run_tcp_scan": true,
+    "run_udp_scan": true
+  }
+}

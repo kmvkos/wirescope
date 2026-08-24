@@ -1,123 +1,314 @@
-# WireScope operator GUI
+# GUI WireScope
 
-Milestone 7 adds the local operator interface. Auditors complete an audit
-from the browser; they do not use a shell. Viewers can inspect results but
-cannot start or cancel work. The GUI is a client of the durable API and
-never owns job lifetime. Production deployment is a generic Linux appliance.
-Operators use a **local display kiosk** (loopback, no management network) or a
-LAN browser. A 480×320 layout is the compact kiosk baseline. Raspberry Pi
-hardware is optional; Raspberry Pi OS is not required.
+**Русский** · [English](en/GUI_MODEL.md)
+
+GUI — основной интерфейс оператора. Для обычного аудита shell не нужен: создание audit, passive capture, подтверждение scope, active discovery, protocol audits, findings и report доступны из браузера.
+
+Frontend — клиент durable API. Он не управляет временем жизни worker job напрямую: закрытие вкладки, reload или restart kiosk не отменяют работу.
+
+## Где запускается GUI
+
+Поддерживаются два варианта.
+
+### Локальный kiosk
+
+Chromium работает на самом WireScope appliance:
+
+```text
+http://127.0.0.1:8000/
+```
+
+Сеть управления до другого ПК не требуется.
+
+System kiosk работает на `tty1` без GNOME/KDE/XFCE. На VMware используется Xorg/xinit, на другом подходящем железе — Cage либо xinit fallback.
+
+### Удалённый browser
+
+Оператор открывает WireScope с другого компьютера. Предпочтительный production path:
+
+```text
+browser → HTTPS → Caddy/nginx → 127.0.0.1:8000
+```
+
+Подробнее: [INSTALLATION.md](INSTALLATION.md) и [SECURITY_MODEL.md](SECURITY_MODEL.md).
+
+## Технологии frontend
+
+Frontend намеренно остаётся без build framework:
+
+```text
+frontend/
+├── index.html
+├── app.js
+├── i18n.js
+└── style.css
+```
+
+Это vanilla HTML/CSS/JavaScript.
+
+При этом приложение уже достаточно большое: здесь находятся wizard аудита, status polling, inventory screens, findings, reports, network settings, login/password flow и отдельный listen/record режим.
+
+## Основной audit flow
 
 ```text
 login
-  → home (audits · Прослушивание · Сеть · Сменить пароль)
-  → new audit
-  → environment
-  → interface
-  → network / VLAN / scope
-  → profile
-  → confirmation
-  → progress
-  → summary
-  → assets / observations / assessment / findings
-  → report
-
-listen
-  → interface + optional tcpdump filter + duration/size
-  → progress (frames / bytes / elapsed)
-  → download pcap
+  ↓
+home
+  ↓
+new audit
+  ↓
+environment / interface
+  ↓
+network + scope
+  ↓
+profile
+  ↓
+confirmation
+  ↓
+passive / active / protocol jobs
+  ↓
+summary
+  ↓
+assets / observations / assessment / findings
+  ↓
+report
 ```
 
-The frontend remains vanilla HTML, CSS, and JavaScript. A framework is still
-unnecessary: the workflow is a linear wizard plus read-only result screens.
+Home также содержит отдельные действия:
 
-## Listen / record
+- **Прослушивание**;
+- **Сеть**;
+- **Сменить пароль**;
+- просмотр предыдущих audits.
 
-**Прослушивание** is not the 30-second audit capture. An auditor picks any
-selectable NIC (same rule as audits, including the GUI interface), an optional
-tcpdump/BPF filter, a duration and/or max pcap size, then starts a
-`packet_capture` job. Dumpcap runs in promiscuous mode and writes a pcap into
-the evidence store (never a SQLite BLOB). Cancel stops the dumpcap process
-group; frames already written are kept.
+## Роли
 
-Without SPAN/mirroring on the switch the NIC only sees broadcasts, flooded
-frames, and unicast to its own MAC. Promiscuous mode still records
-**everything the NIC actually receives** — not all traffic on the segment.
+Локальные роли две:
 
-Viewers may list and download sessions. They cannot start or stop them.
-Default Pi-safe limits are 120 s and 16 MiB (overridable; max 30 min / 64 MiB).
+- `auditor`;
+- `viewer`.
+
+| Действие | Auditor | Viewer |
+| --- | --- | --- |
+| Login, просмотр audits/jobs/inventory/findings/reports | да | да |
+| Смена собственного пароля | да | да |
+| Создание audit | да | нет |
+| Запуск/отмена jobs | да | нет |
+| Запуск/остановка listen capture | да | нет |
+| Просмотр/download сохранённых captures | да | да |
+| Изменение network settings | да | нет |
+| Suppress / accept risk / reopen finding | да | нет |
+| Генерация report | да | нет |
+
+Role enforcement выполняется backend, а не только скрытием кнопок в JavaScript.
+
+## Login и session
+
+После успешной аутентификации backend выставляет HttpOnly session cookie.
+
+Свойства:
+
+- random token;
+- `SameSite=strict`;
+- token digest в SQLite — SHA-256;
+- `Secure` при trusted reverse proxy или direct TLS.
+
+Если `Secure` cookie используется, а оператор открыл страницу по обычному HTTP, login визуально может «не сохраняться». GUI показывает предупреждение для такого случая.
+
+## Смена пароля
+
+На home есть **«Сменить пароль»**.
+
+Пользователь вводит:
+
+1. текущий пароль;
+2. новый пароль;
+3. подтверждение нового пароля.
+
+Backend проверяет текущий hash, обновляет пароль и отзывает остальные sessions этого пользователя. Текущая browser session остаётся активной.
+
+CLI `appliance set-password` нужен в основном для lock-out recovery.
 
 ## Layout
 
-The default layout targets a 480×320 landscape kiosk (local operator
-console). Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
+Компактная базовая раскладка рассчитана на 480×320 landscape kiosk.
 
-- single column;
-- 44px minimum touch targets;
-- compact header with health and session chip;
-- scrollable main pane;
-- confirmation and stop dialogs use `role="alertdialog"`.
+Основные ограничения:
 
-A laptop/desktop stylesheet (`min-width: 900px`) adds denser grids and a
-taller report preview without changing the kiosk flow.
+- одна колонка;
+- минимум 44 px для touch targets;
+- компактный header;
+- отдельная scrollable content area;
+- подтверждения/stop dialog используют `role="alertdialog"`.
 
-## Roles
+На ширине от 900px включается более плотная desktop/laptop раскладка: grids, больше информации в строке и увеличенный report preview.
 
-Local users persist in SQLite. Roles are `auditor` and `viewer`.
+Цель — не делать отдельные два frontend'а для kiosk и laptop.
 
-| Action | Auditor | Viewer |
-| --- | --- | --- |
-| Sign in / view audits, jobs, inventory, findings, reports, listen sessions | yes | yes |
-| Change own password | yes | yes |
-| Create audits, enqueue jobs, start/stop listen capture, cancel, change finding state, generate reports, edit network | yes | no |
+## Job progress
 
-Sessions are HttpOnly `SameSite=strict` cookies. The cookie stores a random
-token; SQLite stores only the SHA-256 digest. Login uses PBKDF2-HMAC-SHA256.
-LAN installs that terminate TLS (`--trust-proxy` or direct TLS) set the
-`Secure` flag; the Russian GUI warns if that cookie is used over HTTP.
+GUI периодически опрашивает durable job status.
 
-Bootstrap users are created only when the `users` table is empty and
-`WIRESCOPE_BOOTSTRAP_AUDITOR_*` / `WIRESCOPE_BOOTSTRAP_VIEWER_*` are set.
-There is no built-in default password. The appliance installer creates the
-first auditor from a mode `0600` password file; see
-[INSTALLATION.md](INSTALLATION.md).
+Если poll временно упал:
 
-After sign-in, **Сменить пароль** on the home screen (same style as **Сеть**)
-lets the current user set a new password: current, new, confirm. The API
-verifies the current hash, writes the new hash, and revokes other sessions
-for that user. The browser session that submitted the form stays signed in.
-Wrong current password returns a generic `401`. The CLI `set-password`
-command remains for lock-out recovery only.
+- показывается warning;
+- polling повторяется с backoff;
+- job не отменяется.
 
-## Progress and recovery
+Stop — отдельное действие `auditor` с confirmation dialog.
 
-The UI polls job status with backoff. A failed poll shows a warning and
-retries; it does not cancel the job. Stop is an explicit auditor action with
-a confirmation dialog.
+Активный audit id хранится в `sessionStorage`, чтобы после reload можно было вернуться к progress/summary.
 
-Active audit identity is kept in `sessionStorage` so a display refresh can
-resume the progress or summary screen. Reloading Chromium, restarting the
-kiosk process, or closing the tab does not call cancel. The API and worker
-keep running independently.
+Это локальная UI convenience, а не source of truth. Реальное состояние job лежит в SQLite на стороне backend/worker.
 
-## Observations, assessments, and findings
+## Summary, observations, assessment и findings
 
-The GUI keeps those layers on separate screens:
+Эти экраны разделены специально.
 
-- **Summary** — audit status plus the passive picture: capture NIC L3 yes/no,
-  frame count, tagged VLAN IDs actually seen, CDP/LLDP neighbors, and the
-  access-vs-trunk VLAN note;
-- **Observations** — protocol-module facts from `/api/audits/{id}/observations`;
-- **Assessment** — confidence-qualified interpretations from a completed
-  passive job result, including VLANs, neighbors, STP, and ARP;
-- **Findings** — severity-bearing rule results from `/api/audits/{id}/findings`.
+### Summary
 
-Passive sensor hits stay inside the passive result document. They are not
-shown as findings. VLAN IDs are never invented for untagged access-port
-traffic.
+Короткая картина аудита:
+
+- capture interface;
+- был ли на нём L3 address;
+- frame count;
+- реально увиденные tagged VLAN IDs;
+- LLDP/CDP neighbors;
+- segment/access-vs-trunk note;
+- состояние дальнейших стадий.
+
+### Observations
+
+Нормализованные факты protocol modules.
+
+Например, TLS session/certificate, SSH algorithms или HTTP response metadata.
+
+### Assessment
+
+Интерпретации passive evidence с confidence: VLAN hints, neighbors, STP, ARP/DHCP и т. п.
+
+### Findings
+
+Security/diagnostic rules с severity, recommendation и state.
+
+Passive sensor hit не становится finding только потому, что он существует.
+
+## VLAN display
+
+GUI следует той же модели, что и backend/report.
+
+802.1Q VLAN ID отображается как «увиденный в traffic» только если tag реально присутствовал в кадре.
+
+Если access-port передаёт untagged frames, WireScope показывает факт untagged traffic, но не придумывает VLAN ID.
+
+LLDP/CDP advertised native/voice VLAN показывается как neighbor data и не смешивается с frame tag.
+
+## «Прослушивание» / Listen & Record
+
+Это отдельный режим, не то же самое, что короткий passive capture внутри audit.
+
+Оператор задаёт:
+
+- interface;
+- optional BPF/tcpdump filter;
+- duration;
+- max PCAP size.
+
+Создаётся job:
+
+```text
+packet_capture
+```
+
+В этом режиме `dumpcap` работает promiscuous и итоговый PCAP сохраняется в evidence store.
+
+Default параметры:
+
+```text
+duration: 120 s
+max file size: 16 MiB
+```
+
+Policy maximums по текущим settings:
+
+```text
+duration: 1800 s
+max file size: 64 MiB
+filter length: 512 chars
+```
+
+Duration `0` поддерживается как capture «до Stop», при этом filesize limit остаётся safety boundary.
+
+### Что реально даёт promiscuous mode
+
+Promiscuous mode не заставляет switch прислать host'у весь traffic сегмента.
+
+Без SPAN/mirror NIC обычно увидит:
+
+- broadcast;
+- flooded traffic;
+- multicast, который реально дошёл до порта;
+- unicast на собственный MAC;
+- другой traffic, который switch по своей логике отправил на этот port.
+
+`dumpcap` запишет всё, что NIC получил, но не «всю сеть» магическим образом.
+
+### BPF filter
+
+Filter проходит отдельную нормализацию/валидацию и передаётся как один аргумент `dumpcap -f`.
+
+Shell для filter не используется.
+
+## Network screen
+
+GUI может показывать и менять host network configuration через backend `NetworkService`/appliance `netctl` boundary.
+
+При потенциально опасном изменении, которое может потерять текущий management path, backend требует дополнительное confirmation. Frontend не может просто обойти эту проверку.
 
 ## Reports
 
-HTML and JSON export use the Milestone 6 endpoints. PDF remains
-`422 pdf_not_available`. Generate is auditor-only; viewers can open an
-existing report.
+GUI умеет:
+
+- запустить report generation (`auditor`);
+- показать историю reports;
+- открыть HTML preview;
+- скачать HTML/JSON export.
+
+Viewer может читать уже существующие reports, но не генерировать новые.
+
+PDF пока возвращает `422 pdf_not_available`.
+
+## Ошибки
+
+GUI не должен превращать backend error в «ничего не найдено».
+
+Типичные варианты отображаются отдельно:
+
+- validation error;
+- worker not ready;
+- provider missing;
+- timeout;
+- cancellation;
+- partial result;
+- authorization/role error;
+- network apply confirmation/error.
+
+## Kiosk lifecycle
+
+Kiosk process независим:
+
+```text
+wirescope-api      survives Chromium restart
+wirescope-worker   survives Chromium restart
+wirescope-kiosk    may restart independently
+```
+
+Поэтому reload/restart display не отменяет активный audit.
+
+Это одно из ключевых требований GUI: экран — не executor.
+
+## Browser tests
+
+Основные GUI/API сценарии тестируются fixture-based. Optional Playwright tests помечены `browser` и skip'аются, если Playwright/Chromium недоступен.
+
+Отсутствие Chromium в headless CI не считается падением backend test suite.

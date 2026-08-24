@@ -14,13 +14,14 @@ def test_markdown_renderer_uses_canonical_report_document():
             "interface": "eth0",
         },
         "executive_summary": {
-            "headline": "Two findings require attention",
-            "summary": "The audit discovered one server and two findings.",
+            "headline": "Требуют внимания две проблемы",
+            "summary": "Аудит обнаружил один сервер и две проблемы.",
             "asset_count": 1,
             "service_count": 2,
             "finding_count": 2,
             "open_finding_count": 2,
             "highest_open_severity": "high",
+            "by_severity": {"critical": 0, "high": 1, "medium": 1, "low": 0},
         },
         "scope": {
             "confirmed": True,
@@ -65,23 +66,23 @@ def test_markdown_renderer_uses_canonical_report_document():
             {
                 "id": "finding-1",
                 "rule_id": "WS-SSH-001",
-                "title": "Weak SSH algorithm",
+                "title": "Слабый алгоритм SSH",
                 "severity": "high",
                 "confidence": "high",
                 "status": "open",
                 "asset_id": "asset-1",
                 "service_id": "service-1",
-                "description": "Legacy algorithm is offered.",
-                "rationale": "The protocol observation contains the algorithm.",
-                "recommendation": "Disable the legacy algorithm.",
+                "description": "Служба предлагает устаревший алгоритм.",
+                "rationale": "Наблюдение протокола содержит слабый алгоритм.",
+                "recommendation": "Отключите устаревший алгоритм.",
             }
         ],
         "recommendations": [
             {
                 "rule_id": "WS-SSH-001",
-                "title": "Weak SSH algorithm",
+                "title": "Слабый алгоритм SSH",
                 "severity": "high",
-                "recommendation": "Disable the legacy algorithm.",
+                "recommendation": "Отключите устаревший алгоритм.",
             }
         ],
         "evidence_references": [
@@ -97,9 +98,19 @@ def test_markdown_renderer_uses_canonical_report_document():
 
     rendered = render_markdown(document)
 
-    assert rendered.startswith("# WireScope audit report")
+    assert rendered.startswith("# Отчёт WireScope")
+    assert "## Кратко" in rendered
+    assert "## Обнаруженные проблемы" in rendered
+    assert "## План действий" in rendered
+    assert "**Статус:** завершён" in rendered
+    assert "**Профиль:** стандартный" in rendered
     assert "192.0.2.0/24" in rendered
     assert "srv-1" in rendered
-    assert "[HIGH] Weak SSH algorithm" in rendered
+    assert "[ВЫСОКАЯ] Слабый алгоритм SSH" in rendered
+    assert "**Что обнаружено:**" in rendered
+    assert "**Почему это важно:**" in rendered
+    assert "**Что рекомендуется сделать:**" in rendered
     assert "artifact-1" in rendered
-    assert "Disable the legacy algorithm" in rendered
+    assert "Отключите устаревший алгоритм" in rendered
+    assert "# WireScope audit report" not in rendered
+    assert "## Executive summary" not in rendered

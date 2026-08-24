@@ -311,6 +311,25 @@ details.advanced summary {
     word-break: break-word;
 }
 
+.section-kicker {
+    margin: 8px 0 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #929aa5;
+}
+
+.callout {
+    margin: 6px 0 8px;
+    padding: 8px 10px;
+    background: #1b2733;
+    border-left: 4px solid #2f6fed;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+}
+
 .progress-bar {
     height: 16px;
     background: #252b32;

@@ -1,6 +1,7 @@
 from engine.active_profiles import profile_for
 from engine.passive_models import ConfidenceLevel
 from engine.scope import ActiveProfile, ScopeValidator
+from findings.copy import SSH_WEAK
 from findings.models import FindingDraft, Severity
 from findings.store import FindingStore
 from inventory.service import InventoryService
@@ -49,14 +50,14 @@ def _seed(database, settings, evidence_store, audit_id):
                 rule_id="WS-SSH-WEAK-ALGORITHMS",
                 rule_version="1",
                 family="ssh",
-                title="Weak SSH algorithms are offered",
+                title=SSH_WEAK["title"],
                 severity=Severity.HIGH,
                 confidence=ConfidenceLevel.HIGH,
                 asset_id=service.asset_id,
                 service_id=service.id,
-                description="Weak algorithms were observed.",
+                description=SSH_WEAK["description"],
                 rationale="ssh_algorithms listed weak ciphers.",
-                recommendation="Disable legacy algorithms.",
+                recommendation=SSH_WEAK["recommendation"],
                 data={"weak_algorithms": {"kex": ["diffie-hellman-group1-sha1"]}},
                 observation_ids=["obs-1"],
                 evidence_artifact_ids=[],
@@ -190,7 +191,10 @@ def test_report_job_reproduces_from_persisted_data(
     )
     assert "secret-tool-output" not in html
     assert "<nmaprun>" not in html
-    assert "Weak SSH algorithms are offered" in html
+    assert SSH_WEAK["title"] in html
+    assert SSH_WEAK["recommendation"] in html
+    assert "Итоговая сводка" in html
+    assert "слабые алгоритмы SSH" in html
     assert "Пассивная оценка сегмента" in html
     assert "VLAN в кадре виден только при 802.1Q" in html
     assert document["environment"]["capture_interface"] == "eth0"

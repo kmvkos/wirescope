@@ -59,6 +59,9 @@
       "additionalProperties": false,
       "required": [
         "headline",
+        "summary_schema",
+        "summary_version",
+        "summary",
         "asset_count",
         "service_count",
         "finding_count",
@@ -76,6 +79,12 @@
       ],
       "properties": {
         "headline": { "type": "string", "minLength": 1 },
+        "summary_schema": {
+          "type": "string",
+          "const": "executive-conclusion"
+        },
+        "summary_version": { "type": "integer", "const": 1 },
+        "summary": { "type": "string", "minLength": 1 },
         "asset_count": { "type": "integer", "minimum": 0 },
         "service_count": { "type": "integer", "minimum": 0 },
         "finding_count": { "type": "integer", "minimum": 0 },

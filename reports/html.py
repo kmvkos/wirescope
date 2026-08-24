@@ -83,10 +83,15 @@ def _summary_section(report: AuditReport) -> str:
     frames = (
         _t(summary.frame_count) if summary.frame_count is not None else "—"
     )
+    narrative = "".join(
+        f"<p class=\"callout\">{_t(paragraph)}</p>\n"
+        for paragraph in _summary_paragraphs(summary.summary)
+    )
     return (
         '<section id="executive-summary">\n'
         f"<h2>{_l('executive_summary')}</h2>\n"
-        f"<p class=\"callout\">{_t(_segment_note(summary.segment_note))}</p>\n"
+        f"{narrative}"
+        f"<p class=\"hint\">{_t(_segment_note(summary.segment_note))}</p>\n"
         '<div class="stats">\n'
         f"<div class=\"stat\"><span class=\"label\">{_l('frames')}</span>"
         f"<span class=\"value\">{frames}</span></div>\n"
@@ -397,8 +402,9 @@ def _findings_section(findings: list[ReportFinding]) -> str:
                 f'<article class="finding severity-{_t(item.severity)}">'
                 f"<h3>{_t(item.title)}</h3>"
                 "<p class=\"meta\">"
-                f"{_t(item.rule_id)} · {_t(item.severity)} · "
-                f"{_t(item.status)} · {_l('confidence')} {_t(item.confidence)}"
+                f"{_t(item.rule_id)} · {_l(f'severity.{item.severity}')} · "
+                f"{_l(f'status.{item.status}')} · {_l('confidence')} "
+                f"{_l(f'confidence.{item.confidence}')}"
                 "</p>"
                 f"<p>{_t(item.description)}</p>"
                 f"<p><strong>{_l('rationale')}.</strong> {_t(item.rationale)}</p>"
@@ -433,7 +439,7 @@ def _recommendations_section(
             items.append(
                 "<li>"
                 f"<strong>{_t(item.title)}</strong> "
-                f"({_t(item.rule_id)}, {_t(item.severity)}): "
+                f"({_t(item.rule_id)}, {_l(f'severity.{item.severity}')}): "
                 f"{_t(item.recommendation)} "
                 f"— {_t(len(item.finding_ids))} {_l('finding_count')}"
                 "</li>"
@@ -531,6 +537,10 @@ def _l(key: str) -> str:
     return html.escape(_LABELS.get(key, key), quote=True)
 
 
+def _summary_paragraphs(text: str) -> list[str]:
+    return [part.strip() for part in text.split("\n\n") if part.strip()]
+
+
 def _l3_label(value: bool | None) -> str:
     if value is True:
         return _l("yes")
@@ -560,7 +570,7 @@ _LABELS = {
     "audit": "Аудит",
     "generated": "сформирован",
     "schema": "схема",
-    "executive_summary": "Краткое резюме",
+    "executive_summary": "Итоговая сводка",
     "assets": "Активы",
     "services": "Службы",
     "findings": "Находки",
@@ -656,6 +666,15 @@ _LABELS = {
     "raw_excluded": "Сырой вывод инструментов исключён",
     "truncated": "Усечено",
     "warnings": "Предупреждения",
+    "confidence.high": "высокая",
+    "confidence.medium": "средняя",
+    "confidence.low": "низкая",
+    "confidence.unknown": "неизвестно",
+    "confidence.confirmed": "подтверждено",
+    "confidence.hint": "подсказка",
+    "status.open": "открыта",
+    "status.suppressed": "подавлена",
+    "status.accepted_risk": "принятый риск",
     "severity.critical": "критическая",
     "severity.high": "высокая",
     "severity.medium": "средняя",

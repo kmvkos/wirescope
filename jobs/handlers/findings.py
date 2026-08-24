@@ -16,6 +16,9 @@ from jobs.errors import JobCancelled
 from jobs.models import JobProgress, RetentionClass
 from jobs.registry import HandlerContext, HandlerResult
 from protocol_audits.store import ProtocolObservationStore
+from reports.conclusion import build_executive_conclusion
+from reports.passive import project_passive
+from reports.sources import load_report_source
 
 
 class FindingsEvaluationHandler:
@@ -74,6 +77,7 @@ class FindingsEvaluationHandler:
             drafts=drafts,
         )
         counts = store.counts_by_severity(context.audit.id)
+        conclusion = self._executive_conclusion(context, inventory, store)
         summary = {
             "schema": "findings-summary",
             "schema_version": 1,
@@ -84,6 +88,7 @@ class FindingsEvaluationHandler:
             "findings": len(persisted),
             "by_severity": counts,
             "passive_artifact_id": evaluation.passive_artifact_id,
+            "executive_conclusion": conclusion,
         }
         document = {
             "schema": "findings-result",
@@ -118,6 +123,23 @@ class FindingsEvaluationHandler:
                 "result_reference": artifact.id,
             },
         )
+
+    @staticmethod
+    def _executive_conclusion(context, inventory, store) -> dict:
+        source = load_report_source(
+            audit=context.audit,
+            database=context.evidence_store.database,
+            inventory=inventory,
+            findings=store,
+            evidence_store=context.evidence_store,
+        )
+        passive = project_passive(
+            environment=source.environment,
+            audit_interface=source.audit_interface,
+            audit_summary=source.audit_summary,
+            passive_result=source.passive_result,
+        )
+        return build_executive_conclusion(source, passive)
 
     @staticmethod
     def _progress(

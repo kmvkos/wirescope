@@ -158,7 +158,7 @@ def test_report_html_snapshot_and_escaping():
     assert "alert(" not in html or "&quot;xss&quot;" in html
     assert "nmaprun" not in html
     assert "../" not in html
-    assert "Краткое резюме" in html
+    assert "Итоговая сводка" in html
     assert "Ссылки на доказательства" in html
     assert "Рекомендации" in html
 
@@ -552,4 +552,122 @@ def test_untagged_access_port_does_not_claim_a_vlan_id():
     assert "ID VLAN неизвестен" in html
     assert "access-or-native-like" in html
     assert "VLAN 1" not in html
+
+
+def test_executive_conclusion_is_russian_narrative():
+    report = sample_report()
+    summary = report.executive_summary
+    assert summary.summary_schema == "executive-conclusion"
+    assert summary.summary_version == 1
+    assert "слабые алгоритмы SSH" in summary.summary
+    assert "высокие — 1" in summary.summary
+    assert "Nmap не запускался" in summary.summary
+    html = render_html(report)
+    assert "Итоговая сводка" in html
+    assert summary.summary.split("\n\n")[0] in html
+
+
+def test_executive_conclusion_quiet_and_empty_inventory_is_not_all_clear():
+    report = build_audit_report(
+        sample_source(
+            audit_summary={"schema": "passive-summary", "frame_count": 0},
+            confirmed_scope=None,
+            assets=[],
+            services=[],
+            findings=[],
+            detected_sensors=[],
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    text = report.executive_summary.summary
+    assert "Сегмент тихий" in text
+    assert "Открытых находок нет" in text
+    assert "Nmap не запускался" in text
+    assert "всё чисто" not in text
+
+
+def test_executive_conclusion_hosts_without_findings_are_not_all_clear():
+    report = build_audit_report(
+        sample_source(
+            findings=[],
+            detected_sensors=["arp"],
+            audit_summary={"schema": "passive-summary", "frame_count": 25},
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    text = report.executive_summary.summary
+    assert "не «всё чисто»" in text
+    assert "активн" in text.lower()
+
+
+def test_executive_conclusion_includes_vlan_caveat_without_l3():
+    report = build_audit_report(
+        sample_source(
+            confirmed_scope=None,
+            assets=[],
+            services=[],
+            findings=[],
+            detected_sensors=["vlan"],
+            environment={
+                "hostname": "wirescope-pi",
+                "interfaces": [
+                    {
+                        "name": "eth0",
+                        "state": "UP",
+                        "mac": "02:00:00:00:00:aa",
+                        "ipv4": [],
+                        "ipv6": [],
+                    }
+                ],
+                "default_route": None,
+                "dns": [],
+            },
+            passive_result={
+                "result": {
+                    "interface": "eth0",
+                    "interface_ipv4": [],
+                    "interface_ipv6": [],
+                    "capture": {"frame_count": 40, "duration_seconds": 30},
+                    "sensors": {
+                        "vlan": {
+                            "status": "detected",
+                            "hits": 8,
+                            "summary": {
+                                "tagged_frames": 8,
+                                "vlan_frame_counts": [
+                                    {"vlan_id": 10, "frames": 5},
+                                    {"vlan_id": 20, "frames": 3},
+                                ],
+                            },
+                        },
+                        "dhcpv4": {"status": "absent", "hits": 0, "summary": {}},
+                    },
+                    "assessment": {
+                        "layer2": {
+                            "tagged_vlans_observed": [10, 20],
+                            "tagged_frame_count": 8,
+                            "untagged_traffic_observed": True,
+                        }
+                    },
+                }
+            },
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    text = report.executive_summary.summary
+    assert "VLAN 10, 20" in text
+    assert "Нет L3-адреса" in text or "нет L3-адреса" in text
+    assert "access-порт" in text
+    html = render_html(report)
+    assert "Итоговая сводка" in html
+    assert "VLAN 10, 20" in html
 

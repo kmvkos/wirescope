@@ -28,7 +28,7 @@ Schema name `audit-report`, version 1. Published JSON Schema:
 
 Sections:
 
-- executive summary (counts, capture frames, L3 on the capture NIC, tagged VLAN IDs, segment note, highest open severity, headline);
+- executive summary (counts, capture frames, L3 on the capture NIC, tagged VLAN IDs, segment note, highest open severity, headline, versioned Russian `summary` narrative);
 - environment (hostname, capture interface and whether it had an L3 address, interfaces, default route, DNS);
 - passive assessment (802.1Q tags actually observed, CDP/LLDP neighbors, STP, ARP/DHCP/mDNS/LLMNR/NBNS summaries, duration);
 - scope (confirmed snapshot plus the audit scope object);
@@ -74,6 +74,11 @@ which rejects paths outside the evidence root.
 
 Default tests stay fixture-based (`pytest -m not network`). Report generation
 never contacts a live network.
+
+The HTML report opens with **итоговая сводка**: a deterministic Russian
+narrative built from persisted counts and findings (no LLM, no invented CVEs).
+Finding catalog titles, descriptions, and recommendations in the JSON/HTML
+report are Russian; `rule_id` and JSON keys stay English.
 
 ## Silent tap / no DHCP
 

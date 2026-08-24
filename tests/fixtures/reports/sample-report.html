@@ -13,8 +13,12 @@
 <p class="meta">Аудит 11111111-1111-4000-8000-111111111111 · сформирован 2026-08-24T12:00:00Z · схема audit-report v1</p>
 </header>
 <section id="executive-summary">
-<h2>Краткое резюме</h2>
-<p class="callout">Для этого аудита пассивный захват не сохранён.</p>
+<h2>Итоговая сводка</h2>
+<p class="callout">Пассивный захват для этого аудита не сохранён. Зафиксировано 1 активный хост.</p>
+<p class="callout">Открытых находок: 1. По серьёзности: высокие — 1.</p>
+<p class="callout">Заметные экспозиции: слабые алгоритмы SSH.</p>
+<p class="callout">Nmap не запускался.</p>
+<p class="hint">Для этого аудита пассивный захват не сохранён.</p>
 <div class="stats">
 <div class="stat"><span class="label">Кадры</span><span class="value">—</span></div>
 <div class="stat"><span class="label">L3-адрес на NIC захвата</span><span class="value">да</span></div>
@@ -71,7 +75,7 @@
 </section>
 <section id="findings">
 <h2>Находки</h2>
-<article class="finding severity-high"><h3>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</h3><p class="meta">WS-SSH-WEAK-ALGORITHMS · high · open · уверенность high</p><p>Weak algorithms were observed.</p><p><strong>Обоснование.</strong> ssh_algorithms listed weak ciphers.</p><p><strong>Рекомендация.</strong> Disable legacy algorithms.</p><p class="meta">Актив asset-1 · Служба svc-1 · наблюдения 1 · доказательства 1</p><pre>{
+<article class="finding severity-high"><h3>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</h3><p class="meta">WS-SSH-WEAK-ALGORITHMS · высокая · открыта · уверенность высокая</p><p>Weak algorithms were observed.</p><p><strong>Обоснование.</strong> ssh_algorithms listed weak ciphers.</p><p><strong>Рекомендация.</strong> Disable legacy algorithms.</p><p class="meta">Актив asset-1 · Служба svc-1 · наблюдения 1 · доказательства 1</p><pre>{
   &quot;weak_algorithms&quot;: {
     &quot;kex&quot;: [
       &quot;diffie-hellman-group1-sha1&quot;
@@ -81,7 +85,7 @@
 </section>
 <section id="recommendations">
 <h2>Рекомендации</h2>
-<ol><li><strong>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</strong> (WS-SSH-WEAK-ALGORITHMS, high): Disable legacy algorithms. — 1 находка(и)</li></ol>
+<ol><li><strong>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</strong> (WS-SSH-WEAK-ALGORITHMS, высокая): Disable legacy algorithms. — 1 находка(и)</li></ol>
 </section>
 <section id="evidence">
 <h2>Ссылки на доказательства</h2>
@@ -93,7 +97,7 @@
 <ul>
 <li>Продукт: WireScope 0.1.0</li>
 <li>ID отчёта: 00000000-0000-4000-8000-000000000001</li>
-<li>Хеш источника: 14188a4103088e5472ed3137b067dc9e4530ab4857bf2d6f320fe34099f1096e</li>
+<li>Хеш источника: 929a2d59f6f66418a7cbc1be4a4ce46e223d1753780b6b2f33892daf89debd1d</li>
 <li>ID задания: 22222222-2222-4000-8000-222222222222</li>
 <li>Исполнитель: auditor</li>
 <li>Статус аудита: running</li>

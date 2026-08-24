@@ -7,6 +7,7 @@ from typing import Any
 
 from findings.models import FindingStatus, SEVERITY_RANK, Severity
 from engine.segment import tagged_vlan_headline
+from reports.conclusion import build_executive_conclusion
 from reports.models import (
     REPORT_INPUT_LIMIT,
     REPORT_SCHEMA,
@@ -55,6 +56,15 @@ def build_audit_report(
         audit_summary=source.audit_summary,
         passive_result=source.passive_result,
     )
+    conclusion = build_executive_conclusion(
+        source,
+        passive,
+        open_findings=open_findings,
+        by_severity={
+            name: sum(1 for item in open_findings if item.severity == name)
+            for name in SEVERITY_VALUES
+        },
+    )
     report = AuditReport(
         schema=REPORT_SCHEMA,
         schema_version=REPORT_SCHEMA_VERSION,
@@ -83,6 +93,9 @@ def build_audit_report(
                 tagged_vlan_ids=passive.tagged_vlan_ids,
                 untagged_traffic_observed=passive.untagged_traffic_observed,
             ),
+            summary_schema=str(conclusion["schema"]),
+            summary_version=int(conclusion["schema_version"]),
+            summary=str(conclusion["summary"]),
             asset_count=len(source.assets),
             service_count=len(source.services),
             finding_count=len(findings),

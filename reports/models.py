@@ -16,6 +16,9 @@ REPORT_SCHEMA = "audit-report"
 REPORT_SCHEMA_VERSION = 1
 REPORT_INPUT_LIMIT = 10_000
 MAX_HEADLINE = 256
+MAX_SUMMARY = 8_192
+CONCLUSION_SCHEMA = "executive-conclusion"
+CONCLUSION_SCHEMA_VERSION = 1
 
 REPORT_JSON_ARTIFACT = "audit_report_json"
 REPORT_HTML_ARTIFACT = "audit_report_html"
@@ -226,6 +229,9 @@ class ExecutiveSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     headline: str = Field(min_length=1, max_length=MAX_HEADLINE)
+    summary_schema: str = CONCLUSION_SCHEMA
+    summary_version: int = CONCLUSION_SCHEMA_VERSION
+    summary: str = Field(min_length=1, max_length=MAX_SUMMARY)
     asset_count: int
     service_count: int
     finding_count: int
@@ -338,6 +344,9 @@ __all__ = [
     "REPORT_INPUT_LIMIT",
     "REPORT_JSON_ARTIFACT",
     "REPORT_RESULT_ARTIFACT",
+    "CONCLUSION_SCHEMA",
+    "CONCLUSION_SCHEMA_VERSION",
+    "MAX_SUMMARY",
     "REPORT_SCHEMA",
     "REPORT_SCHEMA_VERSION",
     "AuditReport",

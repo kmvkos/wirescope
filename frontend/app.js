@@ -719,6 +719,7 @@ async function showSummary() {
     const inventory = await api("GET", `/api/audits/${state.auditId}/inventory`);
     const findings = await api("GET", `/api/audits/${state.auditId}/findings?limit=1`);
     const jobs = await api("GET", `/api/audits/${state.auditId}/jobs?limit=20`);
+    const reports = await api("GET", `/api/audits/${state.auditId}/reports?limit=1`);
     const sensors = Array.isArray(audit.summary && audit.summary.detected_sensors)
         ? audit.summary.detected_sensors
         : [];
@@ -780,6 +781,30 @@ async function showSummary() {
         dd.textContent = value;
         list.append(dt, dd);
     });
+    const conclusionEl = $("summary-conclusion");
+    const conclusionTitle = $("summary-conclusion-title");
+    const fromReport = reports.items && reports.items[0] && reports.items[0].summary
+        ? reports.items[0].summary.summary
+        : "";
+    const fromAudit = audit.summary && audit.summary.executive_conclusion
+        ? audit.summary.executive_conclusion.summary
+        : "";
+    const conclusionText = fromReport || fromAudit || "";
+    if (conclusionEl) {
+        if (conclusionText) {
+            conclusionEl.hidden = false;
+            conclusionEl.textContent = conclusionText;
+            if (conclusionTitle) {
+                conclusionTitle.hidden = false;
+            }
+        } else {
+            conclusionEl.hidden = true;
+            conclusionEl.textContent = "";
+            if (conclusionTitle) {
+                conclusionTitle.hidden = true;
+            }
+        }
+    }
     const note = $("summary-note");
     if (note) {
         const status = audit.summary && audit.summary.segment_status;
@@ -973,6 +998,10 @@ async function showFindings() {
                     rule: item.rule_id,
                     confidence: I18N.confidence(item.confidence),
                 })
+                + (item.description ? ` · ${item.description}` : "")
+                + (item.recommendation
+                    ? ` · ${t("findings.recommendation", { text: item.recommendation })}`
+                    : "")
             )
         );
     });

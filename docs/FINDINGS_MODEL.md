@@ -1,116 +1,247 @@
-# WireScope findings model
+# Findings в WireScope
 
-Milestone 5 adds a **findings engine**. It interprets stored observations. It
-does not start scanners, parse tool stdout, or run Nuclei, Nikto, or NSE.
+**Русский** · [English](en/FINDINGS_MODEL.md)
+
+Finding — это не сырое наблюдение scanner'а и не строка из stdout внешнего инструмента. Это уже интерпретация: правило взяло нормализованные данные, проверило условия и сформировало результат с severity, confidence, объяснением и ссылками на evidence.
+
+## Где findings находятся в pipeline
 
 ```text
-protocol_observations (M4)
-inventory services (M3)
-passive-result artifacts (M1)
+passive_result
+inventory services
+protocol_observations
         ↓
-Declarative rules (versioned, scanner-independent)
+findings/rules/
         ↓
-Correlate + deduplicate
+correlation + deduplication
         ↓
-Persist findings + evidence links
+findings
         ↓
-Optional suppress / accepted-risk audit trail
+report / GUI
 ```
 
-## Finding contract
+Findings engine сам сеть не трогает. Он не запускает Nmap, Nuclei, Nikto, NSE, `ssh-audit`, OpenSSL или другие tools.
 
-A finding is an actionable interpretation, schema version 1:
+## Observation и finding — не одно и то же
 
-- `rule_id` and `rule_version`;
-- `severity` (`critical`, `high`, `medium`, `low`, `info`);
-- `confidence` (the same enum as assessments);
-- `status` (`open`, `suppressed`, `accepted_risk`);
-- affected `asset_id` / `service_id` when the result is host-scoped;
-- description, rationale, and recommendation;
-- `observation_ids` for protocol facts;
-- `evidence_artifact_ids` for raw tool or passive-result files;
-- `dedupe_key` unique with `(audit_id, rule_id)`.
+Пример:
 
-Observations remain facts. Findings never replace them.
+```text
+Observation:
+TLS session negotiated TLSv1.0
+```
 
-## Rules
+Это факт.
 
-Rules live in `findings/rules/` and are registered in `findings/registry.py`.
-Adding a rule does not change orchestration. Rules read only:
+```text
+Finding:
+Legacy TLS protocol is enabled
+severity: high
+```
 
-- `protocol_observations` kinds such as `ssh_algorithms`, `tls_session`,
-  `tls_certificate`, `http_response`, `dns_flags`, `dns_identity`,
-  `smb_null_session`, `snmp_unauthenticated`, and `ldap_rootdse`;
-- open inventory services for insecure management protocols that M4 does not
-  probe (FTP, Telnet, TFTP, r-services);
-- stored `passive_result` sensor summaries for LLMNR, NBNS, and multiple DHCP
-  servers.
+Это интерпретация факта по конкретному правилу.
 
-They must not parse `ssh-audit`, OpenSSL, curl, dig, smbclient, snmpget, or
-ldapsearch stdout.
+Такое разделение нужно, чтобы scanner/parser не решал за rule engine, что считать проблемой, а повторная оценка могла выполняться без нового сетевого трафика.
 
-Initial families:
+## Модель finding
 
-| Rule ID | Source | Typical severity |
-| ------- | ------ | ---------------- |
-| `WS-SSH-WEAK-ALGORITHMS` | `ssh_algorithms` | high/medium |
-| `WS-TLS-LEGACY-PROTOCOL` | `tls_session.protocol` | critical–medium |
-| `WS-TLS-WEAK-CIPHER` | `tls_session.cipher` | high |
-| `WS-TLS-CERT-EXPIRED` | `tls_certificate.not_after` | high |
-| `WS-TLS-CERT-UNTRUSTED` | `tls_certificate.verify_code` | medium |
-| `WS-HTTP-MISSING-HSTS` | HTTPS `http_response` | medium |
-| `WS-HTTP-MISSING-SECURITY-HEADERS` | `http_response` headers | low |
-| `WS-HTTP-SERVER-DISCLOSURE` | `Server` / `X-Powered-By` | info |
-| `WS-SMB-NULL-SESSION` | `smb_null_session.accepted` | high |
-| `WS-SMB-SIGNING-DISABLED` | optional `signing` field | medium |
-| `WS-SMB-LEGACY-DIALECT` | optional `dialect` field | high |
-| `WS-DNS-RECURSION` | `dns_flags.recursion_available` | medium |
-| `WS-DNS-VERSION-DISCLOSED` | `dns_identity` | low |
-| `WS-SNMP-UNAUTHENTICATED` | `snmp_unauthenticated.responded` | high |
-| `WS-LDAP-ANONYMOUS-BIND` | `anonymous_bind=true` | medium |
-| `WS-MGMT-INSECURE-PROTOCOL` | inventory FTP/Telnet/… | high/medium |
+Schema version 1 хранит:
+
+- `rule_id`;
+- `rule_version`;
+- `severity`;
+- `confidence`;
+- `status`;
+- `asset_id` / `service_id`, если finding относится к конкретному объекту;
+- title/description;
+- rationale;
+- recommendation;
+- `observation_ids`;
+- `evidence_artifact_ids`;
+- `dedupe_key`.
+
+Severity:
+
+```text
+critical
+high
+medium
+low
+info
+```
+
+Confidence использует общую шкалу WireScope:
+
+```text
+confirmed
+high
+medium
+low
+hint
+unknown
+```
+
+Status:
+
+```text
+open
+suppressed
+accepted_risk
+```
+
+## Источники данных
+
+Rules сейчас читают три основных источника.
+
+### `protocol_observations`
+
+Например:
+
+- `ssh_algorithms`;
+- `tls_session`;
+- `tls_certificate`;
+- `http_response`;
+- `dns_flags`;
+- `dns_identity`;
+- `smb_null_session`;
+- `snmp_unauthenticated`;
+- `ldap_rootdse`.
+
+### Inventory
+
+Для некоторых вещей достаточно факта открытого сервиса. Например, insecure management protocol может быть определён по inventory даже без отдельного protocol module.
+
+### Passive result
+
+Пассивные findings могут использовать сохранённые sensor summaries/assessment, например LLMNR, NBNS или несколько DHCP servers.
+
+## Rule registry
+
+Rules лежат в:
+
+```text
+findings/rules/
+```
+
+и регистрируются через findings registry.
+
+Добавление нового правила не требует менять job worker или scanner orchestration.
+
+Правило должно работать с нормализованными объектами. Парсить внутри rule raw `ssh-audit`, OpenSSL, curl, dig, smbclient или другой stdout нельзя.
+
+## Текущие семейства правил
+
+| Rule | Источник | Типичная severity |
+| --- | --- | --- |
+| `WS-SSH-WEAK-ALGORITHMS` | SSH algorithms | high / medium |
+| `WS-TLS-LEGACY-PROTOCOL` | TLS protocol | critical–medium |
+| `WS-TLS-WEAK-CIPHER` | TLS cipher | high |
+| `WS-TLS-CERT-EXPIRED` | certificate date | high |
+| `WS-TLS-CERT-UNTRUSTED` | verify code | medium |
+| `WS-HTTP-MISSING-HSTS` | HTTPS response | medium |
+| `WS-HTTP-MISSING-SECURITY-HEADERS` | HTTP headers | low |
+| `WS-HTTP-SERVER-DISCLOSURE` | response headers | info |
+| `WS-SMB-NULL-SESSION` | SMB observation | high |
+| `WS-SMB-SIGNING-DISABLED` | SMB signing field | medium |
+| `WS-SMB-LEGACY-DIALECT` | SMB dialect field | high |
+| `WS-DNS-RECURSION` | DNS flags | medium |
+| `WS-DNS-VERSION-DISCLOSED` | CHAOS identity | low |
+| `WS-SNMP-UNAUTHENTICATED` | SNMP response | high |
+| `WS-LDAP-ANONYMOUS-BIND` | LDAP base DSE | medium |
+| `WS-MGMT-INSECURE-PROTOCOL` | inventory service | high / medium |
 | `WS-INFRA-LLMNR` / `WS-INFRA-NBNS` | passive sensors | medium |
-| `WS-INFRA-MULTIPLE-DHCP` | dhcpv4 summary | medium |
+| `WS-INFRA-MULTIPLE-DHCP` | DHCP summary | medium |
 
-SMB signing and legacy-dialect rules fire only when those fields exist on a
-normalized observation. M4 `smbclient -N -L` output does not currently record
-them, so absence is not a finding.
+SMB signing/dialect rules срабатывают только когда соответствующие поля действительно присутствуют в normalized observation. Текущий `smbclient -N -L` не всегда даёт эти данные, поэтому отсутствие поля не превращается в finding.
 
 ## False-positive boundaries
 
-These inputs never become security findings:
+Findings engine специально не создаёт security finding из технической ошибки provider.
 
-- `tool_unavailable`, `tool_timeout`, `tool_failed`, `cancelled`,
-  `empty_output`, `malformed_output`, `dns_unreachable`;
-- SNMP `responded=false`;
-- SMB `accepted=false` without a signing/dialect field;
-- LDAP `anonymous_bind=false`;
-- DNS `recursion_available=false`;
-- modern SSH algorithm lists and TLS 1.2/1.3 AEAD sessions with verify code 0
-  and a future `not_after`;
-- missing HSTS on plain HTTP;
-- unparseable certificate dates.
+Не являются findings сами по себе:
 
-A missing tool is not evidence that a protocol is absent.
+- `tool_unavailable`;
+- timeout;
+- `tool_failed`;
+- cancellation;
+- empty/malformed output;
+- `dns_unreachable`;
+- `snmp_unauthenticated.responded=false`;
+- SMB refusal без дополнительных signing/dialect facts;
+- `anonymous_bind=false`;
+- `recursion_available=false`;
+- нераспарсенная дата сертификата;
+- отсутствие HSTS на обычном HTTP.
 
-## Deduplication and re-evaluation
+Особенно важно:
 
-Drafts merge on `(rule_id, dedupe_key)`. Re-running the job upserts the same
-row, updates evidence and rationale, and **preserves** `suppressed` or
-`accepted_risk`. Status changes append `finding_state_events` (`actor`,
-`reason`, from/to).
+```text
+tool missing ≠ protocol absent ≠ secure configuration
+```
 
-## Job and API
+Это три разных состояния.
 
-`POST /api/audits/{id}/findings` enqueues `findings_evaluation`. The worker
-takes exclusive `audit:<id>` and group `findings` (default max 1). It does
-**not** take `interface:<name>` and does not invoke `ToolRunner`.
+## Deduplication
 
-Read APIs:
+Draft findings объединяются по стабильной паре rule/dedupe identity.
 
-- `GET /api/audits/{id}/findings` (paginated, filterable);
-- `GET /api/audits/{id}/findings/{finding_id}` (includes state events);
-- `POST .../suppress`, `.../accept-risk`, `.../reopen`.
+В БД uniqueness строится вокруг `(audit_id, rule_id, dedupe_key)`.
 
-Default tests stay fixture-based (`pytest -m not network`). Findings
-evaluation never contacts a live network.
+Повторный `findings_evaluation` обновляет тот же finding и evidence links вместо создания копии на каждый запуск.
+
+## Suppress и accepted risk
+
+Оператор может изменить состояние finding:
+
+- `open → suppressed`;
+- `open → accepted_risk`;
+- вернуть finding в `open`.
+
+Изменение состояния добавляет event с actor, reason и from/to state.
+
+При повторной evaluation существующее `suppressed` или `accepted_risk` состояние не должно исчезать только потому, что правило снова сработало.
+
+## Job
+
+Создание evaluation:
+
+```text
+POST /api/audits/{id}/findings
+```
+
+создаёт job типа:
+
+```text
+findings_evaluation
+```
+
+Job использует audit-level lock и findings resource group. Interface lock ему не нужен, потому что сеть он не использует.
+
+## API
+
+Основные endpoints:
+
+```text
+POST /api/audits/{id}/findings
+GET  /api/audits/{id}/findings
+GET  /api/audits/{id}/findings/{finding_id}
+POST /api/audits/{id}/findings/{finding_id}/suppress
+POST /api/audits/{id}/findings/{finding_id}/accept-risk
+POST /api/audits/{id}/findings/{finding_id}/reopen
+```
+
+List endpoint paginated и поддерживает фильтрацию.
+
+## Тестирование
+
+Findings evaluation полностью fixture-based и не требует live network.
+
+Обычный:
+
+```bash
+pytest
+```
+
+не должен запускать сетевые проверки ради findings engine.
+
+Это позволяет отдельно тестировать false-positive boundaries, severity, correlation и deduplication на фиксированных observations.

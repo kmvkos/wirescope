@@ -38,5 +38,7 @@ secrets/
 
 # Editor and OS metadata
 .vscode/
+packaging/kiosk.dist-root/
+
 .idea/
 .DS_Store

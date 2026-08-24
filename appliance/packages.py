@@ -5,7 +5,8 @@ never selected by default. Absence of an optional provider degrades
 capability, not installer success after the base set.
 
 Kiosk packages are an optional local-display stack (Cage or xinit plus
-Chromium), not a full desktop. They are not required on headless servers.
+Chromium, plus VMware Xorg drivers), not a full desktop. They are not
+required on headless servers.
 """
 
 from __future__ import annotations
@@ -138,7 +139,7 @@ _OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 # Optional local operator console. Not a GNOME/XFCE/KDE desktop; skip if missing.
-# Prefer Cage (single-client Wayland). Fallback: Xorg + xinit + Chromium --kiosk.
+# VMware: Xorg + vmware driver. Elsewhere: Cage, else xinit + Chromium --kiosk.
 _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
     "cage": {
         "debian": ("cage",),
@@ -164,6 +165,21 @@ _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
         "debian": ("chromium", "chromium-browser"),
         "rhel": ("chromium",),
         "suse": ("chromium",),
+    },
+    "xserver-video-vmware": {
+        "debian": ("xserver-xorg-video-vmware",),
+        "rhel": ("xorg-x11-drv-vmware",),
+        "suse": ("xf86-video-vmware",),
+    },
+    "xserver-input": {
+        "debian": ("xserver-xorg-input-all",),
+        "rhel": ("xorg-x11-drivers",),
+        "suse": ("xorg-x11-driver-input",),
+    },
+    "open-vm-tools": {
+        "debian": ("open-vm-tools",),
+        "rhel": ("open-vm-tools",),
+        "suse": ("open-vm-tools",),
     },
 }
 

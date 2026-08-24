@@ -169,11 +169,13 @@ sudo systemctl enable --now wirescope-kiosk
 systemctl --user enable --now wirescope-kiosk
 ```
 
-`--with-kiosk` installs cage (preferred) or xinit plus Chromium if missing,
-not a full desktop. Already-installed packages are skipped. `--enable-kiosk`
+`--with-kiosk` installs cage or xinit plus Chromium if missing, not a full
+desktop. VMware uses Xorg (`xserver-xorg-video-vmware`) instead of Cage.
+Already-installed packages are skipped. `--enable-kiosk`
 enables the system unit on `multi-user.target` even without a current
 `DISPLAY`. Missing Chromium leaves the unit disabled. Reboot with the VM
 console attached so tty1 shows the kiosk; SSH from the host still works.
+If the VMware console is black, SSH in and `sudo systemctl start getty@tty1`.
 Live Raspberry Pi OS Lite tests stay unused (`pytest -m live_pi` with
 `WIRESCOPE_LIVE_PI=1`).
 

@@ -4,6 +4,7 @@ Documentation=file:///opt/wirescope/docs/INSTALLATION.md
 After=wirescope-api.service getty@tty1.service systemd-user-sessions.service
 Wants=wirescope-api.service
 Conflicts=getty@tty1.service
+OnFailure=getty@tty1.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -16,7 +17,6 @@ WorkingDirectory=/opt/wirescope
 EnvironmentFile=-/etc/wirescope/wirescope.env
 Environment=HOME=/var/lib/wirescope
 Environment=XDG_RUNTIME_DIR=/run/wirescope-kiosk
-Environment=XDG_SESSION_TYPE=wayland
 Environment=WLR_LIBSEAT_BACKEND=logind
 Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
 RuntimeDirectory=wirescope-kiosk

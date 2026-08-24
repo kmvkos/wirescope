@@ -4,3 +4,6 @@ xserver-xorg
 xinit
 openbox
 chromium
+xserver-xorg-video-vmware
+xserver-xorg-input-all
+open-vm-tools

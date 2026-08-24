@@ -2,7 +2,7 @@
 set -eu
 # Local operator kiosk: Chromium against loopback. Never stop the API or worker.
 # Capture NIC addressing is independent; this GUI does not need a LAN.
-# Boot path (no desktop): Cage, else xinit + Chromium --kiosk on this VT.
+# Boot path (no desktop): Xorg+xinit on VMware; Cage elsewhere; else xinit.
 URL="${WIRESCOPE_KIOSK_URL:-http://127.0.0.1:8000/}"
 HEALTH="${WIRESCOPE_KIOSK_HEALTH:-http://127.0.0.1:8000/api/health}"
 export WIRESCOPE_KIOSK_HEALTH="$HEALTH"
@@ -61,7 +61,57 @@ if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
         sleep 2
     done
 fi
+
+# VMware SVGA: Cage/wlroots often hangs (black tty1). Prefer Xorg.
+kiosk_prefer_xorg() {
+    case "${WIRESCOPE_KIOSK_BACKEND:-}" in
+        xorg|x11) return 0 ;;
+        cage|wayland) return 1 ;;
+    esac
+    virt=""
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        virt=$(systemd-detect-virt 2>/dev/null || true)
+    fi
+    if [ "$virt" = vmware ]; then
+        return 0
+    fi
+    vendor=""
+    if [ -r /sys/class/dmi/id/sys_vendor ]; then
+        vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
+    fi
+    case "$vendor" in
+        *VMware*) return 0 ;;
+    esac
+    if command -v lspci >/dev/null 2>&1; then
+        if lspci 2>/dev/null | grep -qi 'VMware SVGA'; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+start_xinit() {
+    export WIRESCOPE_KIOSK_BIN="$BIN"
+    export WIRESCOPE_KIOSK_URL="$URL"
+    export XDG_SESSION_TYPE=x11
+    unset WAYLAND_DISPLAY || true
+    echo "wirescope-kiosk: starting xinit + Xorg + Chromium --kiosk" >&2
+    if command -v Xorg >/dev/null 2>&1; then
+        exec xinit "$here/xinitrc" -- "$(command -v Xorg)" :0 vt1 -nolisten tcp -keeptty
+    fi
+    exec xinit "$here/xinitrc" -- :0 vt1 -nolisten tcp
+}
+
+if kiosk_prefer_xorg; then
+    if command -v xinit >/dev/null 2>&1; then
+        start_xinit
+    fi
+    echo "wirescope-kiosk: VMware needs xinit/Xorg (cage skipped); install xinit" >&2
+    exit 75
+fi
 if command -v cage >/dev/null 2>&1; then
+    export XDG_SESSION_TYPE=wayland
+    export WLR_LIBSEAT_BACKEND="${WLR_LIBSEAT_BACKEND:-logind}"
     exec cage -- "$BIN" \
         --ozone-platform=wayland \
         --kiosk \
@@ -75,9 +125,7 @@ if command -v cage >/dev/null 2>&1; then
         --app="$URL"
 fi
 if command -v xinit >/dev/null 2>&1; then
-    export WIRESCOPE_KIOSK_BIN="$BIN"
-    export WIRESCOPE_KIOSK_URL="$URL"
-    exec xinit "$here/xinitrc" -- :0 vt1 -nolisten tcp
+    start_xinit
 fi
 echo "wirescope-kiosk: no compositor (install cage or xinit) and no local display" >&2
 exit 75

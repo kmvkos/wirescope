@@ -144,8 +144,8 @@ def render_getty_autologin(user: str = SERVICE_USER) -> str:
     """Optional tty1 autologin drop-in. The kiosk unit Conflicts getty@tty1."""
 
     return f"""[Service]
-# Fallback if wirescope-kiosk.service is disabled. While the kiosk is enabled
-# it Conflicts=getty@tty1.service and takes the VT as a dedicated getty.
+# Fallback if the kiosk is disabled or OnFailure= starts getty@tty1 again.
+# While the kiosk runs it Conflicts=getty@tty1.service and takes the VT.
 ExecStart=
 ExecStart=-/sbin/agetty --autologin {user} --noclear %I $TERM
 """
@@ -174,7 +174,10 @@ def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str
             "systemd-user-sessions.service"
         )
         wanted = "multi-user.target"
-        conflicts = "Conflicts=getty@tty1.service\n"
+        conflicts = (
+            "Conflicts=getty@tty1.service\n"
+            "OnFailure=getty@tty1.service\n"
+        )
         tty = (
             "PAMName=login\n"
             "TTYPath=/dev/tty1\n"
@@ -192,7 +195,6 @@ def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str
         extra_env = (
             f"Environment=HOME={paths.data_dir}\n"
             "Environment=XDG_RUNTIME_DIR=/run/wirescope-kiosk\n"
-            "Environment=XDG_SESSION_TYPE=wayland\n"
             "Environment=WLR_LIBSEAT_BACKEND=logind\n"
         )
     else:

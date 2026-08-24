@@ -13,6 +13,7 @@ from appliance.kiosk import (
     chromium_installed,
     kiosk_boot_note,
     kiosk_enable_reason,
+    kiosk_prefers_xorg,
     kiosk_recovers_without_stopping_backend,
     probe_display,
 )
@@ -46,6 +47,10 @@ def test_kiosk_script_recovers_without_stopping_audits():
     assert "while true" in KIOSK_SCRIPT
     assert "exec cage" in KIOSK_SCRIPT
     assert "exec xinit" in KIOSK_SCRIPT
+    assert "kiosk_prefer_xorg" in KIOSK_SCRIPT
+    assert "systemd-detect-virt" in KIOSK_SCRIPT
+    assert "vmware" in KIOSK_SCRIPT
+    assert "--ozone-platform=x11" in XINITRC
     assert "--window-size=480,320" in KIOSK_SCRIPT
     assert "127.0.0.1:8000" in KIOSK_SCRIPT
     assert "exit 75" in KIOSK_SCRIPT
@@ -113,6 +118,15 @@ def test_probe_display_ignores_drm_without_session(tmp_path):
     assert "tty1" in note
 
 
+def test_kiosk_prefers_xorg_on_vmware_not_on_bare_metal():
+    assert kiosk_prefers_xorg(virt="vmware") is True
+    assert kiosk_prefers_xorg(sys_vendor="VMware, Inc.") is True
+    assert kiosk_prefers_xorg(lspci="VGA compatible controller: VMware SVGA II Adapter") is True
+    assert kiosk_prefers_xorg(virt="kvm") is False
+    assert kiosk_prefers_xorg(backend="xorg") is True
+    assert kiosk_prefers_xorg(virt="vmware", backend="cage") is False
+
+
 def test_probe_display_detects_x11_socket_and_env(tmp_path):
     x11 = tmp_path / "X11"
     x11.mkdir()
@@ -158,6 +172,9 @@ def test_kiosk_packages_are_minimal_not_a_desktop():
     assert "xinit" in selected.kiosk
     assert "xserver-xorg" in selected.kiosk
     assert "openbox" in selected.kiosk
+    assert "xserver-xorg-video-vmware" in selected.kiosk
+    assert "xserver-xorg-input-all" in selected.kiosk
+    assert "open-vm-tools" in selected.kiosk
     assert "labwc" not in selected.kiosk
     combined = " ".join(selected.all_selected)
     assert "gnome" not in combined
@@ -175,12 +192,15 @@ def test_system_kiosk_unit_starts_on_tty1_after_api():
     assert "After=wirescope-api.service getty@tty1.service systemd-user-sessions.service" in kiosk
     assert "WantedBy=multi-user.target" in kiosk
     assert "Conflicts=getty@tty1.service" in kiosk
+    assert "OnFailure=getty@tty1.service" in kiosk
     assert "TTYPath=/dev/tty1" in kiosk
     assert "PAMName=login" in kiosk
     assert "graphical.target" not in kiosk
     assert "graphical-session.target" not in kiosk
     assert "ConditionPathExists=" not in kiosk
     assert "Environment=DISPLAY=:0" not in kiosk
+    assert "Environment=XDG_SESSION_TYPE=wayland" not in kiosk
+    assert "Environment=XDG_RUNTIME_DIR=/run/wirescope-kiosk" in kiosk
     assert "WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/" in kiosk
     assert "appliance wait-ready" in kiosk
     assert "RestartPreventExitStatus=75" in kiosk
@@ -206,6 +226,7 @@ def test_user_kiosk_unit_starts_after_graphical_login():
     assert "User=" not in kiosk
     assert "TTYPath=/dev/tty1" not in kiosk
     assert "Conflicts=getty@tty1.service" not in kiosk
+    assert "OnFailure=getty@tty1.service" not in kiosk
     assert "ConditionPathExists=/tmp/.X11-unix/X0" not in kiosk
     assert "appliance wait-ready" in kiosk
     assert "PartOf=wirescope-worker" not in kiosk

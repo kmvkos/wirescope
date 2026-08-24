@@ -292,6 +292,7 @@ def test_with_kiosk_installs_minimal_display_packages(tmp_path):
     assert "127.0.0.1:8000" in kiosk_unit
     assert "WantedBy=multi-user.target" in kiosk_unit
     assert "Conflicts=getty@tty1.service" in kiosk_unit
+    assert "OnFailure=getty@tty1.service" in kiosk_unit
     assert any("kiosk" in step.lower() for step in report.steps)
 
 
@@ -304,6 +305,9 @@ def test_with_kiosk_skips_already_installed_packages(tmp_path):
             "xinit",
             "openbox",
             "chromium",
+            "xserver-xorg-video-vmware",
+            "xserver-xorg-input-all",
+            "open-vm-tools",
             "bind9-dnsutils",
             "smbclient",
             "snmp",
@@ -326,6 +330,9 @@ def test_with_kiosk_installs_only_missing_packages(tmp_path):
             "xinit",
             "xserver-xorg",
             "openbox",
+            "xserver-xorg-video-vmware",
+            "xserver-xorg-input-all",
+            "open-vm-tools",
             "bind9-dnsutils",
             "smbclient",
             "snmp",
@@ -384,6 +391,7 @@ def test_enable_kiosk_without_display_enables_system_boot_unit(tmp_path):
     )
     assert "WantedBy=multi-user.target" in kiosk_unit
     assert "Conflicts=getty@tty1.service" in kiosk_unit
+    assert "OnFailure=getty@tty1.service" in kiosk_unit
     dropin = host.read_text(
         config.paths.systemd_dir / "getty@tty1.service.d" / "wirescope-autologin.conf"
     )

@@ -32,6 +32,6 @@ exec "$BIN" \
     --disable-session-crashed-bubble \
     --disable-restore-session-state \
     --check-for-update-interval=31536000 \
-    --ozone-platform-hint=auto \
+    --ozone-platform=x11 \
     --window-size=480,320 \
     --app="$URL"

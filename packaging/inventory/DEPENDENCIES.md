@@ -96,6 +96,9 @@ Python: `>=3.11`
 - xinit
 - openbox
 - chromium
+- xserver-xorg-video-vmware
+- xserver-xorg-input-all
+- open-vm-tools
 
 ## Gated scanners never installed by default
 

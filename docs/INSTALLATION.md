@@ -63,8 +63,10 @@ Boot sequence (Debian/Ubuntu server, no desktop):
 2. Optional `getty@tty1` autologin drop-in (idle while the kiosk runs)
 3. `wirescope-api.service` and `wirescope-worker.service`
 4. `wirescope-kiosk.service` `After=wirescope-api.service`, `WantedBy=multi-user.target`
-5. The kiosk unit `Conflicts=getty@tty1.service` and uses `TTYPath=/dev/tty1`
-6. `kiosk.sh` starts **Cage + Chromium**, or **xinit + Chromium `--kiosk --app=http://127.0.0.1:8000/`**
+5. The kiosk unit `Conflicts=getty@tty1.service` and uses `TTYPath=/dev/tty1`.
+   `OnFailure=getty@tty1.service` returns a text login if the kiosk cannot start.
+6. `kiosk.sh` starts **xinit + Xorg + Chromium `--kiosk`** on VMware (not Cage),
+   or **Cage + Chromium** on other hardware, else xinit
 7. Operator logs into WireScope as `auditor`
 
 ```bash
@@ -83,12 +85,14 @@ sudo /opt/wirescope/packaging/install.sh \
   --user-kiosk
 ```
 
-`--with-kiosk` installs a **minimal** stack: `cage` (preferred) or
-`xserver-xorg`/`xinit`/`openbox`, plus `chromium` (or `chromium-browser`).
-Not a GNOME/XFCE/KDE desktop. Headless servers that will never attach a
-console can omit `--with-kiosk`. `--enable-kiosk` still enables the system
-unit when Chromium is present, even if this VM has no monitor yet. Missing
-Chromium is a skip (same idea as Playwright), not an installer failure.
+`--with-kiosk` installs a **minimal** stack: `cage` or `xserver-xorg`/`xinit`/`openbox`,
+plus `chromium` (or `chromium-browser`). On VMware it also pulls
+`xserver-xorg-video-vmware`, `xserver-xorg-input-all`, and `open-vm-tools`,
+and the kiosk uses **Xorg rather than Cage**. Not a GNOME/XFCE/KDE desktop.
+Headless servers that will never attach a console can omit `--with-kiosk`.
+`--enable-kiosk` still enables the system unit when Chromium is present,
+even if this VM has no monitor yet. Missing Chromium is a skip (same idea
+as Playwright), not an installer failure.
 
 `--user-install` does not install OS packages; install Chromium and Cage or
 xinit as root (`--with-kiosk`) or via the distro, then enable the user unit
@@ -385,6 +389,13 @@ sudo journalctl -u wirescope-api -u wirescope-worker -e
 5. После успеха перезагрузите ВМ с подключённой **консолью** (не только SSH).
    На tty1 откроется Chromium; в GUI войдите как `auditor`.
 6. SSH с хоста для админки работает; киоск занимает только локальный экран.
+7. Если консоль VMware **чёрная** (нет login и нет Chromium): киоск занял
+   tty1 и не смог открыть экран. По SSH:
+
+   `sudo systemctl start getty@tty1`
+
+   На консоли должен появиться login. Затем
+   `sudo systemctl status wirescope-kiosk` и журнал.
 
 ## Production paths
 

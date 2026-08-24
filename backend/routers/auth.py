@@ -67,9 +67,13 @@ def _set_session_cookie(
 @router.post("/auth/login", response_model=SessionUserResponse)
 def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     services: AppServices = Depends(get_services),
 ) -> SessionUserResponse:
+    # Username is useful operational metadata; passwords and request bodies are
+    # never copied into the operational audit log.
+    request.state.audit_actor = payload.username
     try:
         user = services.auth.authenticate(payload.username, payload.password)
     except AuthError as exc:
@@ -77,6 +81,8 @@ def login(
             status_code=401,
             detail={"code": exc.code, "message": exc.message},
         ) from exc
+    request.state.audit_actor = user.username
+    request.state.audit_role = user.role.value
     token = services.auth.create_session(user)
     _set_session_cookie(response, token, services)
     return _session_payload(user, services)
@@ -89,6 +95,10 @@ def logout(
     services: AppServices = Depends(get_services),
 ) -> None:
     token = request.cookies.get(services.settings.session_cookie_name)
+    current = services.auth.resolve_token(token)
+    if current is not None:
+        request.state.audit_actor = current.username
+        request.state.audit_role = current.role.value
     services.auth.revoke_token(token)
     response.delete_cookie(
         key=services.settings.session_cookie_name,

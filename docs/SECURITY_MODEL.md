@@ -2,43 +2,36 @@
 
 **Русский** · [English](en/SECURITY_MODEL.md)
 
-WireScope сам выполняет сетевые проверки, поэтому его security model строится вокруг конкретных границ: кто принимает ввод, кто запускает внешние процессы, где находятся повышенные привилегии и какие цели разрешено проверять.
+WireScope сам выполняет сетевые проверки, поэтому его security model строится вокруг конкретных границ: кто принимает ввод, кто запускает внешние процессы, где находятся повышенные привилегии, какие цели разрешено проверять и как сохраняются действия оператора.
 
 ## Базовые правила
 
 - API и worker работают без root;
 - packet-capture capabilities есть только у `dumpcap`;
-- active discovery не запускается без подтверждённого оператором scope;
+- active discovery не запускается без operator-confirmed scope;
 - пользователь не передаёт произвольные Nmap/tool flags;
-- внешние команды запускаются argv-массивами, без shell;
-- raw evidence выдаётся по зарегистрированным artifact ID, а не по filesystem path;
-- mutating API требует роль `auditor`;
-- стандартный appliance слушает `0.0.0.0:8000`, чтобы GUI был доступен через любой настроенный физический или Wi‑Fi интерфейс устройства.
+- внешние команды запускаются argv-массивами без shell;
+- raw evidence выдаётся по зарегистрированным artifact ID, а не filesystem path;
+- mutating API требует `auditor`;
+- normal appliance listener — `0.0.0.0:8000`;
+- operational log не хранит password/request body/session token;
+- raw-evidence cleanup требует явного confirmation.
 
 ## Trust boundaries
 
 ### HTTP/API
 
-FastAPI отвечает за аутентификацию, role checks и валидацию интерфейсов, scope, адресов, портов, фильтров и параметров job. Пользовательская строка не передаётся напрямую в shell или scanner CLI.
+FastAPI отвечает за authentication, role checks и validation interfaces/scope/addresses/ports/filters/job parameters. Пользовательская строка не передаётся напрямую в shell/scanner CLI.
 
 ### Worker
 
-Worker выполняет только зарегистрированные job types. Network-sensitive jobs:
-
-- `passive_discovery`;
-- `packet_capture`;
-- `active_discovery`;
-- `protocol_audit`.
-
-`findings_evaluation` и `report_generation` работают только с уже сохранёнными данными.
+Worker выполняет только зарегистрированные job types. Network-sensitive jobs: `passive_discovery`, `packet_capture`, `active_discovery`, `protocol_audit`. Findings/report jobs работают только с persisted data.
 
 ### External tools
 
-`ToolRunner` запускает argument arrays. `shell=True` не используется. Providers сами строят разрешённый argv; unrestricted «extra flags» через HTTP API отсутствуют.
+`ToolRunner` запускает argument arrays. `shell=True` не используется. Providers сами строят допустимый argv; unrestricted extra flags через HTTP отсутствуют.
 
 ## Least privilege
-
-Нормальная схема system install:
 
 ```text
 wirescope-api            wirescope-worker
@@ -52,106 +45,84 @@ uid=wirescope            uid=wirescope
  cap_net_admin,cap_net_raw=eip
 ```
 
-Python, Uvicorn и worker не должны иметь `CAP_NET_RAW` или `CAP_NET_ADMIN`.
-
-```bash
-getcap /usr/bin/dumpcap
-stat -c '%U:%G %a' /usr/bin/dumpcap
-sudo -u wirescope /usr/bin/dumpcap -D
-getcap /opt/wirescope/.venv/bin/python || true
-```
-
-Повышенные права вынесены в узкий capture provider вместо запуска всего backend от root.
+Python/Uvicorn/worker не должны иметь `CAP_NET_RAW` или `CAP_NET_ADMIN`. Повышенные права вынесены в узкий packet-capture boundary.
 
 ## Active discovery
 
-Перед Nmap создаётся immutable confirmed-scope snapshot. Worker повторно проверяет scope и маршрут непосредственно перед запуском scanner.
+Перед Nmap сохраняется immutable confirmed-scope snapshot. Worker повторно проверяет scope и route непосредственно перед scanner execution.
 
-Запрещены:
-
-- `0.0.0.0/0`;
-- `::/0`;
-- multicast ranges;
-- бесконтрольное разворачивание больших IPv6-префиксов;
-- raw user-supplied Nmap flags.
-
-WireScope не повышает привилегии Nmap. Если raw sockets недоступны, provider использует допустимый fallback и фиксирует недоступные возможности. NSE, `-sC`, `vuln`, brute, exploit и DoS scripts в default discovery path не используются.
-
-Подробнее: [SCANNING_MODEL.md](SCANNING_MODEL.md).
+Запрещены unspecified/multicast targets, бесконтрольное разворачивание IPv6 и raw user-supplied Nmap flags. WireScope не повышает Nmap. NSE/`-sC`, vuln/brute/exploit/DoS scripts не входят в default discovery path.
 
 ## Protocol audits и capabilities
 
-Протокольный модуль запускается только если найден подходящий inventory service и его адрес остаётся внутри authorized scope.
+Protocol module запускается только для подходящего inventory service внутри authorized scope. Default modules не перебирают credentials/community strings.
 
-Текущие default modules не перебирают credentials или community strings. Missing optional binary фиксируется как недоступная capability / `tool_unavailable`, а не как «проверка пройдена».
+Missing binary фиксируется как unavailable capability / `tool_unavailable`, а не как «проверка пройдена».
 
-`GET /api/v1/capabilities` показывает оператору реально доступные инструменты. Для readiness обязательны базовые capture/decode dependencies; отсутствие отдельного optional provider, например `ssh-audit` или `smbclient`, не делает весь appliance неготовым.
+```text
+GET /api/v1/capabilities
+```
+
+Core readiness и optional provider availability разделены.
 
 ## Authentication и роли
 
-Локальные роли:
-
-| Действие | `auditor` | `viewer` |
+| Действие | Auditor | Viewer |
 | --- | --- | --- |
-| Просмотр audits/jobs/inventory/findings/reports | да | да |
-| Dashboard / diff / capabilities / evidence | да | да |
-| Смена собственного пароля | да | да |
-| Создание audit | да | нет |
-| Запуск/отмена jobs | да | нет |
-| Listen/Record | да | нет |
-| Изменение network config | да | нет |
-| Изменение finding state | да | нет |
-| Генерация report | да | нет |
+| Читать audits/inventory/findings/reports | да | да |
+| Dashboard/diff/evidence | да | да |
+| Сменить свой пароль | да | да |
+| Создать audit / запустить job | да | нет |
+| Cancel/retry terminal job | да | нет |
+| Изменить network config | да | нет |
+| Изменить finding state | да | нет |
+| Diagnostics/audit log/maintenance | да | нет |
 
-Session token случайный. Браузер получает HttpOnly cookie, SQLite хранит SHA-256 digest токена. `SameSite=strict`; `Secure` включается при direct TLS или trusted proxy. Пароли хешируются PBKDF2-HMAC-SHA256. Встроенного постоянного default password нет.
+Session token случайный. Browser получает HttpOnly cookie, SQLite хранит SHA-256 token digest. `SameSite=strict`; `Secure` включается для direct TLS/trusted proxy. Password hashes используют PBKDF2-HMAC-SHA256.
+
+## Operational audit log
+
+Значимые mutating requests и login attempts сохраняются в `operational_events`.
+
+Запись содержит:
+
+- UTC timestamp;
+- actor/role;
+- stable action name;
+- normalized API path;
+- HTTP status;
+- client IP;
+- audit id, если его можно получить из path.
+
+**Не сохраняются:** request body, password, session cookie/token, provider stdout/stderr.
+
+Operational log отличается от job events: job events описывают execution history, operational log — действия пользователя с appliance.
+
+Журнал доступен только auditor:
+
+```text
+GET /api/v1/audit-log
+```
+
+Ошибка записи operational event не должна ломать сам operator request; состояние database/migrations отдельно видно через diagnostics.
 
 ## Web listener, firewall и TLS
 
-### Default appliance policy
-
-WireScope предназначен быть отдельным сетевым прибором, к которому оператор подключается через тот интерфейс, который доступен в текущем сегменте. Поэтому application settings, installer и upgrade path по умолчанию используют:
+WireScope — сетевой appliance, GUI которого должен быть доступен через любой настроенный Ethernet/Wi‑Fi interface. Поэтому application settings, argparse, installer и upgrade path по умолчанию используют:
 
 ```text
 0.0.0.0:8000
 ```
 
-Это означает «слушать все локальные IPv4-интерфейсы», а не «открыть WireScope в Интернет». Реальная достижимость определяется адресацией, маршрутизацией, VLAN и firewall хоста/сети.
+Это означает listen на локальных IPv4 interfaces, а не автоматическую Internet exposure. Реальная достижимость определяется сетью/firewall.
 
-Локальный kiosk по-прежнему открывает:
-
-```text
-http://127.0.0.1:8000/
-```
-
-потому что loopback является одним из локальных путей к тому же listener.
-
-### Ограниченный deployment
-
-Если конкретной установке нужен только loopback, это задаётся явно:
-
-```bash
-sudo ./packaging/install.sh --bind-host 127.0.0.1
-```
-
-При необходимости можно ограничить TCP/8000 firewall'ом, включить direct TLS или поставить reverse proxy. Installer сам firewall не переписывает.
-
-Direct TLS пример:
-
-```bash
-sudo ./packaging/install.sh \
-  --bind-host 0.0.0.0 \
-  --bind-port 8443 \
-  --tls-cert /etc/wirescope/tls/cert.pem \
-  --tls-key /etc/wirescope/tls/key.pem
-```
-
-`GET /api/v1/capabilities` отображает текущие `bind_host`, `bind_port`, TLS и trust-proxy state, чтобы фактический deployment был виден оператору.
+Local kiosk открывает `127.0.0.1:8000`. Loopback-only deployment можно задать явно через `--bind-host 127.0.0.1`. Direct TLS/reverse proxy/firewall остаются deployment controls.
 
 ## Evidence
 
-PCAP и raw provider output могут содержать чувствительные данные. Клиент не выбирает путь файла; WireScope создаёт UUID-based artifact и хранит metadata в SQLite.
+PCAP/raw provider output могут содержать чувствительные данные. Клиент не выбирает path; WireScope регистрирует UUID artifact metadata в SQLite.
 
-Запись evidence выполняется через temporary file → flush/fsync → atomic rename → SHA-256 → metadata registration.
+Evidence write: temporary file → flush/fsync → atomic rename → SHA-256 → metadata registration.
 
 Обычные permissions:
 
@@ -160,58 +131,69 @@ directories: 0700
 files:       0600
 ```
 
-Artifact download audit-scoped:
+Artifact access audit-scoped:
 
 ```text
 GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
-Backend проверяет принадлежность artifact указанному audit. Raw PCAP обычного passive audit по умолчанию не сохраняется надолго (`passive_retain_capture=false`); в Listen/Record PCAP является целевым evidence artifact.
+Backend проверяет принадлежность artifact указанному audit.
+
+## Retention и cleanup
+
+Normalized inventory/findings/reports автоматически не удаляются. Aged temporary/debug/raw evidence попадает в cleanup candidates.
+
+Raw cleanup использует двухшаговый contract:
+
+```text
+preview: confirm=false
+apply:   confirm=true
+```
+
+PCAP/Nmap XML/protocol raw output удаляются только после явного auditor confirmation. Cleanup удаляет и file, и metadata row. Это защищает от незаметной потери evidence.
 
 ## SQLite и durability
 
-SQLite содержит audits, jobs/events, confirmed scopes, inventory, findings, report metadata, local users/sessions и evidence references.
+SQLite хранит audits, jobs/events, confirmed scopes, inventory, findings, reports, users/sessions, operational events и artifact references.
 
-Runtime policy:
+Runtime policy: WAL, foreign keys, busy timeout, short transactions, `synchronous=FULL` по умолчанию. Рабочую БД не следует размещать на NFS.
 
-- WAL;
-- foreign keys;
-- busy timeout;
-- короткие транзакции;
-- `synchronous=FULL` по умолчанию.
+## Resource locking, cancellation и retry
 
-Рабочую БД не следует размещать на NFS.
-
-## Resource locking, cancellation и restart
-
-Locks находятся в SQLite. `interface:<name>` не даёт одновременно выполнять конфликтующие capture/active операции на одном интерфейсе; отдельные resource groups ограничивают concurrency.
-
-Cancellation является persistent state. Worker завершает subprocess group и переводит job в `cancelled`.
+Locks находятся в SQLite. Cancellation persistent: worker завершает subprocess group и переводит job в `cancelled`.
 
 После restart worker:
 
-- `queued` остаются queued;
-- старые `running` становятся `interrupted` с `application_restart`;
-- locks освобождаются;
-- автоматического resume/retry network scanner jobs нет.
+- queued остаются queued;
+- running становятся interrupted;
+- stale locks освобождаются.
 
-Restart Chromium/kiosk не влияет на durable jobs.
+Automatic network retry отсутствует. Auditor может явно retry `failed/interrupted/cancelled` stage. Retry создаёт новую job и сохраняет terminal source history неизменной.
 
 ## Network configuration helper
 
-Изменение сетевой конфигурации проходит через отдельный `netctl` privilege boundary. API не становится root и не выполняет произвольный `sudo` command. Потенциально разрывающее management path изменение требует server-side confirmation.
+Network changes идут через отдельный `netctl` privilege boundary. API не становится root и не выполняет произвольный sudo command. Потенциально разрывающее management path изменение требует server-side confirmation.
 
-## API docs и логи
+## Diagnostics
 
-Swagger/OpenAPI/ReDoc можно отключить через:
+Auditor-only diagnostics собирает safe operational state:
 
 ```text
-WIRESCOPE_DOCS_ENABLED=false
+GET /api/v1/diagnostics
+GET /api/v1/diagnostics/export
 ```
 
-`/api/health` и `/api/ready` остаются публичными для проверки состояния appliance.
+В snapshot есть platform/version, listener, capabilities, SQLite quick-check, migration/worker state, disk/evidence usage, retention и recent operational events. Secrets и raw provider contents в export не включаются.
 
-HTTP-клиент получает typed safe errors без Python traceback. Worker пишет structured operational logs. Отдельной неизменяемой security audit-log таблицы пока нет.
+## Backup / restore
+
+Backup содержит SQLite и при необходимости evidence, поэтому защищать его нужно так же, как основную data directory. SQLite snapshot создаётся через backup API. Restore проверяет `PRAGMA integrity_check` перед заменой рабочей database.
+
+## API docs и errors
+
+Swagger/OpenAPI/ReDoc можно отключить через `WIRESCOPE_DOCS_ENABLED=false`. `/health` и `/ready` остаются публичными.
+
+HTTP-клиент получает typed safe errors без Python traceback.
 
 ## Checklist перед эксплуатацией
 
@@ -219,7 +201,10 @@ HTTP-клиент получает typed safe errors без Python traceback. Wo
 - Python без network capabilities;
 - `dumpcap` не setuid и имеет ожидаемые capabilities;
 - `/etc/wirescope` и `/var/lib/wirescope` не world-readable;
-- initial admin password сохранён и временный файл удалён;
-- выбранная firewall/TLS policy соответствует конкретному сегменту;
+- initial admin password защищён/временный файл удалён;
+- listener/firewall/TLS policy соответствует сегменту;
 - scope caps не увеличены без причины;
-- backup защищён так же, как основная БД/evidence.
+- diagnostics показывает SQLite `ok`, worker ready и достаточное место;
+- backup защищён так же, как database/evidence.
+
+Формальный release checklist: [RELEASE_READINESS.md](RELEASE_READINESS.md).

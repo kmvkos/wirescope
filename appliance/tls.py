@@ -74,7 +74,7 @@ def lan_warnings(
         )
     if public and not tls_enabled and not trust_proxy:
         warnings.append(
-            "API is listening on all interfaces over HTTP; apply firewall or TLS controls when required by the deployment"
+            "API bind is public HTTP on all interfaces; apply firewall or TLS controls when required by the deployment"
         )
     if tls_enabled and not public and not trust_proxy:
         warnings.append(

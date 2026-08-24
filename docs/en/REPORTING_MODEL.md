@@ -2,11 +2,7 @@
 
 [Русский](../REPORTING_MODEL.md) · **English**
 
-A WireScope report is built from data that has already been persisted by the audit. Report generation does not re-run Nmap, protocol modules, or passive capture.
-
-That distinction matters: a report should be a reproducible view of audit state, not another hidden scanning stage.
-
-## Data flow
+A WireScope report is built only from persisted audit state. Report generation does not re-run Nmap, protocol modules, or passive capture.
 
 ```text
 audit metadata
@@ -18,15 +14,16 @@ audit metadata
 + findings
 + artifact metadata
         ↓
-report view model
-schema: audit-report v1
+audit-report v1
         ↓
-HTML + JSON
-        ↓
-EvidenceStore + reports history
+JSON
+├── self-contained HTML
+└── Markdown
 ```
 
-Published JSON Schema:
+JSON `audit-report` v1 remains the canonical document. HTML and Markdown are views over the same persisted state.
+
+Schema:
 
 ```text
 reports/schema/audit-report-v1.json
@@ -36,115 +33,81 @@ reports/schema/audit-report-v1.json
 
 ### Executive summary
 
-The summary includes the main counts and a compact narrative:
+Includes:
 
 - asset/service/finding counts;
-- passive capture frame count;
-- whether the capture NIC had an L3 address;
-- 802.1Q VLAN IDs actually seen in frames;
-- segment note;
+- open findings;
 - highest open severity;
-- headline/summary.
+- headline and short summary;
+- basic passive metrics.
 
-The current Russian narrative is deterministic. It is produced from persisted data and does not use an LLM to invent prose or CVEs.
+Narrative text is deterministic and derived from persisted data. An LLM is not used to invent CVEs or missing facts.
 
-### Environment
+### Environment and scope
 
-- hostname;
-- capture interface;
-- L3 presence;
-- discovered interfaces;
-- default route;
-- DNS.
+The report records the environment snapshot, capture interface, and confirmed active scope. Missing L3 connectivity does not invalidate a passive-only report.
 
-### Passive assessment
+### Passive data
 
-- duration and frame count;
-- observed 802.1Q tags;
-- LLDP/CDP neighbors;
-- STP;
-- ARP;
-- DHCP;
-- mDNS/LLMNR/NBNS summaries;
-- assessment conclusions and confidence.
+Includes frame count, visibility/segment notes, 802.1Q tags actually observed, LLDP/CDP, STP, ARP/DHCP, and other normalized passive observations.
 
-### Scope
-
-The audit scope and the confirmed active-scan snapshot are both represented.
+Untagged traffic does not receive an invented VLAN ID. LLDP/CDP native or voice VLAN values remain neighbor metadata.
 
 ### Inventory
 
-Persisted assets and services.
+Assets and services come from persisted inventory together with available vendor, OS, and device-class hints.
 
 ### Findings
 
-The report includes open findings as well as `suppressed` and `accepted_risk` findings so that operator decisions are not lost.
-
-Recommendations are derived from open findings.
+Open, suppressed, and accepted-risk findings are retained so exported reports preserve operator decisions. Recommendations are derived from current findings.
 
 ### Evidence references
 
-The primary report does not embed raw PCAP/XML/stdout.
-
-Evidence is referenced by metadata:
+Raw PCAP/XML/stdout is not embedded in the main report. Evidence metadata includes:
 
 - artifact id;
-- type;
+- artifact type;
 - content type;
 - size;
 - SHA-256.
 
-Internal filesystem `relative_path` values are not exported in the public JSON model.
+Internal filesystem `relative_path` values are not exposed in the public report.
 
 ## Generation
 
 ```text
-POST /api/audits/{id}/reports
+POST /api/v1/audits/{id}/reports
 ```
 
-enqueues:
-
-```text
-report_generation
-```
+enqueues a durable `report_generation` job.
 
 The worker:
 
-1. loads audit, inventory, findings, and artifact metadata;
+1. loads persisted audit state;
 2. builds `audit-report` v1;
-3. validates JSON against the published schema;
+3. validates the document;
 4. renders self-contained HTML;
-5. escapes all interpolated values;
-6. writes JSON and HTML through `EvidenceStore`;
-7. inserts a report-history row;
-8. records a `source_hash`.
+5. writes JSON and HTML through `EvidenceStore`;
+6. inserts a report-history row;
+7. records `source_hash`.
 
-The report job uses an audit-level lock and the `report` resource group. It does not take an interface lock because it does not access the network.
+Report generation does not need an interface lock because it does not touch the network.
 
 ## `source_hash`
 
-`source_hash` represents the persisted input state rather than incidental fields of one rendering run.
+`source_hash` reflects persisted source state rather than report id, generation timestamp, or job id.
 
-If inventory, findings, scope, and evidence are unchanged, repeated generation should produce the same source hash even if these values change:
-
-- report id;
-- generation timestamp;
-- job id;
-- runtime metadata.
-
-This makes it possible to tell whether two reports were actually generated from different audit content.
+If inventory, findings, scope, and evidence are unchanged, repeated generation should retain the same source hash.
 
 ## Export API
 
-Main endpoints:
-
 ```text
-POST /api/audits/{id}/reports
-GET  /api/audits/{id}/reports
-GET  /api/audits/{id}/reports/{report_id}
-GET  /api/audits/{id}/reports/{report_id}/export?format=json
-GET  /api/audits/{id}/reports/{report_id}/export?format=html
+GET /api/v1/audits/{id}/reports/{report_id}/export?format=json
+GET /api/v1/audits/{id}/reports/{report_id}/export?format=html
+GET /api/v1/audits/{id}/reports/{report_id}/export?format=markdown
 ```
+
+`format=md` is accepted as an alias for Markdown.
 
 PDF is not implemented yet:
 
@@ -152,86 +115,55 @@ PDF is not implemented yet:
 format=pdf → 422 pdf_not_available
 ```
 
-Export resolves only artifact IDs already registered on the report row. `EvidenceStore.path_for` verifies that the resolved file remains below the configured evidence root.
-
 ## HTML
 
-The HTML export is self-contained. It does not need the frontend bundle or follow-up API calls to display the report body.
-
-Dynamic values are escaped before rendering so network-derived content such as hostnames, HTTP titles, or certificate subjects cannot turn into HTML/JavaScript injection inside the report.
+HTML is self-contained and requires neither the frontend bundle nor follow-up API calls to display the report body. Dynamic values are escaped so network-derived hostnames, HTTP titles, certificate subjects, and similar data cannot become HTML/JavaScript injection.
 
 ## JSON
 
-JSON is the machine-readable representation of the same audit state.
+JSON is the stable machine-readable `audit-report` v1 and the source of truth for other export formats.
 
-Stable keys and rule IDs remain English. Human-facing finding titles, descriptions, and recommendations may be Russian because the current operator UI and primary human report are aimed at Russian-speaking operators.
+Schema keys and rule IDs remain stable. Human-facing titles, descriptions, and recommendations may be Russian.
 
-## Silent tap and unaddressed interfaces
+## Markdown
 
-A passive report can still be useful when the capture interface has no IPv4/IPv6 address.
+Markdown is rendered from the persisted JSON report and does not create another scanner stage.
 
-`dumpcap` does not require an L3 address, so the report may still contain:
+It includes:
 
-- frame count;
-- quiet/active segment indication;
-- actual 802.1Q tags;
-- LLDP/CDP;
-- STP;
-- ARP;
-- DHCP;
-- mDNS/LLMNR/NBNS.
+- audit metadata;
+- executive summary;
+- scope;
+- passive summary;
+- assets;
+- services;
+- findings;
+- recommendations;
+- evidence references.
 
-### Access-port VLANs
+It is intended for Git, issue trackers, wiki/Confluence-style systems, and manual inclusion in technical documentation.
 
-If a switch access port sends untagged frames, WireScope cannot honestly derive the VLAN ID from those frames alone.
+## Evidence access
 
-The report therefore does not claim:
+Evidence may be inspected separately from report exports through audit-scoped routes:
 
 ```text
-VLAN 10 detected
+GET /api/v1/audits/{audit_id}/findings/{finding_id}/evidence
+GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
-unless `10` was actually present as an 802.1Q tag or reported separately as a neighbor fact.
-
-Untagged traffic is still analyzed; the VLAN ID simply remains unknown.
-
-An LLDP/CDP advertised native/voice VLAN is neighbor metadata, not proof that frames in the capture carried that 802.1Q tag. The report keeps those concepts separate.
-
-## Active data in reports
-
-Nmap-derived inventory appears only when active discovery really ran and persisted results.
-
-If there is no usable L3 path, a passive-only audit remains valid. Reporting does not fabricate missing active data.
+The backend verifies that an artifact belongs to the requested audit before returning it. Artifact responses include `X-WireScope-SHA256`.
 
 ## Report history
 
-Re-running report generation appends history rather than overwriting the previous export.
-
-This is useful after:
-
-- findings re-evaluation;
-- moving a finding to accepted risk;
-- inventory changes;
-- new evidence artifacts;
-- any need to compare with an earlier export.
+A new generation appends history rather than overwriting the previous report. This supports comparisons after findings re-evaluation, accepted-risk changes, inventory changes, or new evidence.
 
 ## Testing
 
-Reporting is fixture-based.
-
-Tests cover:
-
-- no live-network dependency;
-- no scanner invocation during report generation;
-- JSON Schema validation;
-- HTML escaping;
-- evidence path boundaries;
-- stable source hashing.
-
-A normal `pytest` run therefore does not contact a live network just to generate reports.
+Reporting tests are fixture-based and do not require a live network. They cover schema validation, HTML escaping, evidence path boundaries, source-hash stability, and Markdown rendering.
 
 ## Current limitations
 
 - PDF export is not available;
-- the human report does not yet have a fully localized multi-language template system; the primary narrative is Russian;
-- the report references raw evidence by artifact ID/hash rather than attempting to embed every raw artifact into one file.
+- there is no separate multi-language human-report template system yet;
+- raw evidence remains referenced by artifact id/hash instead of being embedded into one giant file.

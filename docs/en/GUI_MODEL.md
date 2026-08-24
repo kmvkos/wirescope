@@ -16,7 +16,7 @@ http://127.0.0.1:8000/
 
 A normal appliance installation listens on `0.0.0.0:8000`, so a remote operator may open the GUI through any configured WireScope interface address.
 
-## Frontend stack
+## Frontend and visual layer
 
 The frontend intentionally remains build-free:
 
@@ -25,13 +25,36 @@ frontend/
 ├── index.html
 ├── app.js
 ├── i18n.js
-├── style.css
+├── style.css          # compatibility/base layout
+├── modern.css         # current responsive presentation layer
 ├── enhancements.js
 ├── enhancements.css
 └── operations.js
 ```
 
 `app.js` contains the primary wizard. `enhancements.js` adds dashboard/diff/evidence/Markdown functionality. `operations.js` separately adds lifecycle controls for auditors.
+
+`modern.css` is loaded after the base stylesheet and changes presentation without replacing the established DOM ids, API contracts, or durable audit workflow.
+
+### Responsive behavior
+
+The same frontend supports two practical modes:
+
+- small kiosk/touch display — large touch targets, compact cards, vertical scrolling, low visual noise;
+- laptop/desktop browser — wider work area, denser grids, and more context on screen.
+
+Primary breakpoints are:
+
+```text
+≤560 px     kiosk / small touchscreen
+≥900 px     desktop / laptop browser
+```
+
+### Frontend refresh after upgrade
+
+The root page is served with `Cache-Control: no-store`. CSS/JS URLs also receive a version query string so Chromium does not silently keep stale frontend assets after an appliance update.
+
+After a successful `packaging/upgrade.sh`, an active `wirescope-kiosk.service` is restarted automatically. API/worker jobs remain durable and are not cancelled by this browser restart.
 
 ## Main audit flow
 
@@ -128,24 +151,15 @@ POST /api/v1/jobs/{job_id}/retry
 POST /api/v1/maintenance/cleanup
 ```
 
-It shows:
+It shows runtime readiness, SQLite `quick_check`, worker/core tools, free disk space, evidence-store size, retention policy/candidates, retryable jobs, and recent operational events.
 
-- runtime ready/not-ready;
-- SQLite `quick_check`;
-- worker/core-tool state;
-- free disk space;
-- evidence-store usage;
-- retention policy and cleanup candidates;
-- failed/interrupted/cancelled jobs for the selected audit;
-- recent operational events.
-
-Cleanup is deliberately two-step. **Preview cleanup** sends `confirm=false`. Actual raw-evidence deletion requires a browser confirmation and `confirm=true`.
+Cleanup is deliberately two-step: preview uses `confirm=false`, while actual raw-evidence deletion requires explicit confirmation and `confirm=true`.
 
 Retry creates a new durable job and keeps the terminal source job immutable.
 
 ## Device classification
 
-The UI renders the classification produced by inventory:
+The UI renders classification produced by inventory:
 
 ```text
 server-like
@@ -182,15 +196,6 @@ After login, the backend issues an HttpOnly cookie. SQLite stores only a SHA-256
 
 The active audit id in `sessionStorage` is a UI convenience for reload recovery. Backend/SQLite remains authoritative.
 
-## Summary / observations / assessment / findings
-
-- **Summary** — compact audit/pipeline state;
-- **Observations** — normalized sensor/protocol facts;
-- **Assessment** — confidence-rated passive interpretation;
-- **Findings** — rule-engine conclusions with severity/recommendation/state.
-
-A passive sensor hit does not automatically become a finding.
-
 ## VLAN display
 
 A VLAN ID is shown as observed only when an 802.1Q tag was present. Untagged access traffic does not receive an invented VLAN ID. LLDP/CDP native or voice VLAN remains neighbor metadata.
@@ -205,7 +210,11 @@ Network configuration goes through backend `NetworkService` and the `netctl` pri
 
 ## Reports
 
-The GUI opens HTML and exports JSON/Markdown. The Markdown control is added by `enhancements.js` and uses the canonical `/api/v1` export route. PDF returns `422 pdf_not_available` and does not block v1.0.
+The GUI opens a human-readable Russian HTML report and exports canonical JSON or Russian Markdown. The current HTML presentation is responsive and print-friendly; see [REPORTING_MODEL.md](REPORTING_MODEL.md).
+
+Older persisted reports also receive the current HTML presentation when opened because the export is rendered from their canonical JSON. No new network audit is required.
+
+PDF still returns `422 pdf_not_available` and is not a v1.0 blocker.
 
 ## Error handling and recovery
 
@@ -223,6 +232,6 @@ The screen is a client, not the executor.
 
 ## Testing
 
-Fixture/API tests cover roles and workflow. Static regression tests verify enhancement-module loading, audit-scoped evidence, Markdown export, and the operations lifecycle UI. Optional Playwright tests retain the `browser` marker. CI runs compileall and the default pytest suite.
+Fixture/API tests cover roles and workflow. Static regression tests verify the modern theme, cache-busting, kiosk refresh after upgrade, enhancement-module loading, audit-scoped evidence, Markdown export, and the operations lifecycle UI. Optional Playwright tests retain the `browser` marker. CI runs compileall and the default pytest suite.
 
 The release checklist is in [RELEASE_READINESS.md](RELEASE_READINESS.md).

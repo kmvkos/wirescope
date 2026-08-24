@@ -16,6 +16,15 @@ class ProfileConfigError(ValueError):
     pass
 
 
+def _validate_ports(*, tcp_ports: str | None, udp_ports: tuple[int, ...]) -> None:
+    if len(udp_ports) > 256:
+        raise ValueError("udp_ports exceeds the 256-port profile limit")
+    if any(port < 1 or port > 65_535 for port in udp_ports):
+        raise ValueError("udp_ports contains an invalid port")
+    if tcp_ports not in {None, "1-65535"}:
+        raise ValueError("tcp_ports accepts only the bounded full-range value 1-65535")
+
+
 class ActiveScanProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -33,12 +42,7 @@ class ActiveScanProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_ports(self) -> "ActiveScanProfile":
-        if len(self.udp_ports) > 256:
-            raise ValueError("udp_ports exceeds the 256-port profile limit")
-        if any(port < 1 or port > 65_535 for port in self.udp_ports):
-            raise ValueError("udp_ports contains an invalid port")
-        if self.tcp_ports not in {None, "1-65535"}:
-            raise ValueError("tcp_ports accepts only the bounded full-range value 1-65535")
+        _validate_ports(tcp_ports=self.tcp_ports, udp_ports=self.udp_ports)
         return self
 
 
@@ -54,6 +58,11 @@ class _ProfileDocument(BaseModel):
     os_detection: bool = False
     run_tcp_scan: bool = True
     run_udp_scan: bool = False
+
+    @model_validator(mode="after")
+    def validate_ports(self) -> "_ProfileDocument":
+        _validate_ports(tcp_ports=self.tcp_ports, udp_ports=self.udp_ports)
+        return self
 
 
 _DEFAULTS = {
@@ -130,19 +139,27 @@ def profile_for(profile: ActiveProfile, settings: Settings) -> ActiveScanProfile
         ActiveProfile.STANDARD: settings.nmap_standard_timeout_seconds,
         ActiveProfile.DEEP: settings.nmap_deep_timeout_seconds,
     }
-    return ActiveScanProfile(
-        name=profile,
-        timeout_seconds=timeout_by_profile[profile],
-        **document.model_dump(),
-    )
+    try:
+        return ActiveScanProfile(
+            name=profile,
+            timeout_seconds=timeout_by_profile[profile],
+            **document.model_dump(),
+        )
+    except Exception as exc:
+        raise ProfileConfigError(f"Invalid {profile.value} scan profile: {exc}") from exc
 
 
 def profile_catalog(settings: Settings) -> dict[str, dict]:
     documents = _load_documents(settings)
+    timeout_by_name = {
+        ActiveProfile.DISCOVERY.value: settings.nmap_discovery_timeout_seconds,
+        ActiveProfile.STANDARD.value: settings.nmap_standard_timeout_seconds,
+        ActiveProfile.DEEP.value: settings.nmap_deep_timeout_seconds,
+    }
     return {
         name: {
             **document.model_dump(mode="json"),
-            "timeout_seconds": profile_for(ActiveProfile(name), settings).timeout_seconds,
+            "timeout_seconds": timeout_by_name[name],
         }
         for name, document in documents.items()
     }

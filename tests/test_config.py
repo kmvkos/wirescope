@@ -15,6 +15,8 @@ def test_settings_default_to_source_checkout(monkeypatch):
         "WIRESCOPE_EVIDENCE_DIR",
         "WIRESCOPE_RUNTIME_DIR",
         "WIRESCOPE_DOCS_ENABLED",
+        "WIRESCOPE_BIND_HOST",
+        "WIRESCOPE_BIND_PORT",
         "WIRESCOPE_ALLOWED_INTERFACES",
         "WIRESCOPE_ALLOW_LOOPBACK",
         "WIRESCOPE_REQUIRE_INTERFACE_UP",
@@ -37,6 +39,8 @@ def test_settings_default_to_source_checkout(monkeypatch):
         == settings.project_root / "data" / "runtime" / "captures"
     )
     assert settings.docs_enabled is True
+    assert settings.bind_host == "127.0.0.1"
+    assert settings.bind_port == 8000
     assert settings.allowed_interfaces == ()
     assert settings.allow_loopback is False
     assert settings.require_interface_up is True
@@ -116,6 +120,16 @@ def test_settings_reject_partial_bootstrap_credentials(monkeypatch):
     get_settings.cache_clear()
 
     with pytest.raises(ValueError, match="bootstrap auditor"):
+        get_settings()
+
+    get_settings.cache_clear()
+
+
+def test_settings_reject_invalid_bind_port(monkeypatch):
+    monkeypatch.setenv("WIRESCOPE_BIND_PORT", "0")
+    get_settings.cache_clear()
+
+    with pytest.raises(ValueError, match="bind_port"):
         get_settings()
 
     get_settings.cache_clear()

@@ -22,7 +22,13 @@ PUBLIC_BIND_HOSTS = frozenset({"0.0.0.0", "::"})
 
 
 def proxy_sample_dir(project_root: Path) -> Path:
-    return project_root / "packaging" / "proxy"
+    candidate = project_root / "packaging" / "proxy"
+    if candidate.is_dir():
+        return candidate
+    # Tests and embedded tooling may use a synthetic install root. The proxy
+    # examples are package resources, so fall back to the checkout containing
+    # this module instead of coupling them to /opt/wirescope.
+    return Path(__file__).resolve().parents[1] / "packaging" / "proxy"
 
 
 def tls_pair_complete(certfile: str, keyfile: str) -> bool:
@@ -64,11 +70,11 @@ def lan_warnings(
     public = bind_host in PUBLIC_BIND_HOSTS
     if trust_proxy and public:
         warnings.append(
-            "trust_proxy with a public bind_host; keep the API on 127.0.0.1 and expose only the proxy"
+            "trust_proxy with a public bind_host; keep the API on 127.0.0.1 when only the proxy should be exposed"
         )
     if public and not tls_enabled and not trust_proxy:
         warnings.append(
-            "API bind address is public HTTP; prefer a reverse proxy or --tls-cert/--tls-key"
+            "API is listening on all interfaces over HTTP; apply firewall or TLS controls when required by the deployment"
         )
     if tls_enabled and not public and not trust_proxy:
         warnings.append(
@@ -76,7 +82,7 @@ def lan_warnings(
         )
     if public:
         warnings.append(
-            "restrict the published TLS port with nftables, ufw, or firewalld; see packaging/proxy/"
+            "review host firewall exposure for the WireScope API; examples are available in packaging/proxy/"
         )
     return tuple(warnings)
 

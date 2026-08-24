@@ -26,7 +26,7 @@ SyslogIdentifier=wirescope-api
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/wirescope /etc/wirescope /etc/network /etc/NetworkManager /etc/systemd/network
+ReadWritePaths=/var/lib/wirescope /etc/wirescope -/etc/network -/etc/NetworkManager -/etc/systemd/network
 
 [Install]
 WantedBy=multi-user.target

@@ -212,9 +212,18 @@ function isNetworkError(error) {
     );
 }
 
+function isSecureCookieOverHttp(health) {
+    return Boolean(health && health.cookie_secure && !window.isSecureContext);
+}
+
 function displayError(error) {
     if (isNetworkError(error)) {
-        return t("error.tlsOrNetwork");
+        if (location.protocol === "https:") {
+            return t("error.tlsOrNetwork");
+        }
+        return t("error.apiUnreachable", {
+            detail: String(error.message || "connection refused"),
+        });
     }
     return I18N.apiError(error);
 }
@@ -222,7 +231,7 @@ function displayError(error) {
 async function refreshHealth() {
     try {
         const health = await api("GET", "/api/status");
-        if (health && health.cookie_secure && !window.isSecureContext) {
+        if (isSecureCookieOverHttp(health)) {
             setStatus("offline", t("status.error"));
             setError("login-error", t("error.secureCookieOverHttp"));
             return;
@@ -230,9 +239,7 @@ async function refreshHealth() {
         setStatus("online", t("status.ready"));
     } catch (error) {
         setStatus("offline", t("status.error"));
-        if (isNetworkError(error)) {
-            setError("login-error", t("error.tlsOrNetwork"));
-        }
+        setError("login-error", displayError(error));
     }
 }
 

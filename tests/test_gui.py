@@ -84,7 +84,11 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "job.dumpcapPermission" in i18n
     assert "службе не хватает группы wireshark" in i18n
     assert "error.tlsOrNetwork" in i18n
+    assert "error.apiUnreachable" in i18n
     assert "cookie_secure" in script
+    assert "isSecureCookieOverHttp" in script
+    assert 't("error.apiUnreachable"' in script
+    assert 'location.protocol === "https:"' in script
     assert "Захват завершён без кадров" in i18n
     assert "Итоговая сводка" in i18n
     assert "VLAN в кадре виден только при 802.1Q" in i18n
@@ -109,8 +113,10 @@ def test_i18n_russian_default_matches_english_fallback_keys():
     assert "scope.hint" in russian
     assert "error.invalid_credentials" in russian
     assert "error.tlsOrNetwork" in russian
+    assert "error.apiUnreachable" in russian
     assert "cookie Secure не работает по HTTP" in i18n
     assert "error.secureCookieOverHttp" in russian
+    assert "соединение отклонено" in i18n
     assert "login.noMgmtNetwork" in russian
     assert "Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск" in i18n
 

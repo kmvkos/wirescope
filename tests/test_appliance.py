@@ -149,6 +149,7 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     assert "python -m backend" in files["wirescope-api.service"]
     assert "NoNewPrivileges=" not in files["wirescope-api.service"]
     assert "/etc/network" in files["wirescope-api.service"]
+    assert "-/etc/NetworkManager" in files["wirescope-api.service"]
     assert "NoNewPrivileges" not in files["wirescope-worker.service"]
     assert "python -m jobs.worker" in files["wirescope-worker.service"]
     assert "After=wirescope-api.service getty@tty1.service systemd-user-sessions.service" in files["wirescope-kiosk.service"]

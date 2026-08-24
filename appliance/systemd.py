@@ -58,11 +58,14 @@ def render_api_unit(paths: InstallPaths, *, user_session: bool = False) -> str:
             f"Group={paths.service_group}\n"
             "SupplementaryGroups=wireshark\n"
         )
+        # Prefix optional netctl trees with '-': a missing path (Debian
+        # without NetworkManager) makes systemd fail with 226/NAMESPACE.
         hardening = (
             "PrivateTmp=true\n"
             "ProtectHome=true\n"
             "ProtectSystem=full\n"
-            f"ReadWritePaths={paths.data_dir} /etc/wirescope /etc/network /etc/NetworkManager /etc/systemd/network\n"
+            f"ReadWritePaths={paths.data_dir} /etc/wirescope "
+            "-/etc/network -/etc/NetworkManager -/etc/systemd/network\n"
         )
         wanted = "multi-user.target"
     return f"""[Unit]

@@ -8,6 +8,7 @@ from appliance.host import (
     opensuse_amd64_platform,
 )
 from appliance.install import InstallConfig, InstallError, install
+from appliance.kiosk import DisplayProbe
 from appliance.packages import REQUIRED_PACKAGES
 from appliance.paths import InstallPaths
 
@@ -248,5 +249,139 @@ def test_direct_tls_install_writes_cert_paths_not_pem(tmp_path):
     assert "User=wirescope" in api_unit
     assert "BEGIN " not in api_unit
     assert "AmbientCapabilities=" not in api_unit
+
+
+def _headless() -> DisplayProbe:
+    return DisplayProbe(
+        attached=False,
+        display="",
+        wayland_display="",
+        x11_socket=False,
+        drm=True,
+        reason="DRM device present but no graphical session",
+    )
+
+
+def _attached() -> DisplayProbe:
+    return DisplayProbe(
+        attached=True,
+        display=":0",
+        wayland_display="",
+        x11_socket=True,
+        drm=True,
+        reason="DISPLAY=:0",
+    )
+
+
+def test_with_kiosk_installs_minimal_display_packages(tmp_path):
+    host = _host()
+    config = _config(tmp_path, install_kiosk=True, start_services=False)
+    report = install(config, host)
+    apt = [item for item in host.commands if item and item[0] == "apt-get"]
+    assert apt
+    assert "chromium" in apt[0]
+    assert "openbox" in apt[0]
+    assert "labwc" in apt[0]
+    assert "gnome" not in " ".join(apt[0])
+    kiosk_unit = host.read_text(
+        config.paths.systemd_dir / "wirescope-kiosk.service"
+    )
+    assert "127.0.0.1:8000" in kiosk_unit
+    assert any("kiosk" in step.lower() for step in report.steps)
+
+
+def test_enable_kiosk_without_display_leaves_unit_disabled(tmp_path):
+    host = _host()
+    host.binaries["chromium"] = "/usr/bin/chromium"
+    config = _config(
+        tmp_path,
+        enable_kiosk=True,
+        display=_headless(),
+    )
+    report = install(config, host)
+    kiosk_enabled = [
+        item
+        for item in host.commands
+        if item[:3] == ("systemctl", "enable", "--now")
+        and "wirescope-kiosk.service" in item
+    ]
+    assert kiosk_enabled == []
+    assert "wirescope-kiosk.service" not in report.started
+    assert any("no local display" in item for item in report.warnings)
+    assert host.exists(config.paths.systemd_dir / "wirescope-kiosk.service")
+
+
+def test_enable_kiosk_with_display_starts_unit(tmp_path):
+    host = _host()
+    host.binaries["chromium"] = "/usr/bin/chromium"
+    config = _config(
+        tmp_path,
+        enable_kiosk=True,
+        display=_attached(),
+    )
+    report = install(config, host)
+    kiosk_enabled = [
+        item
+        for item in host.commands
+        if item[:3] == ("systemctl", "enable", "--now")
+        and "wirescope-kiosk.service" in item
+    ]
+    assert kiosk_enabled
+    assert "wirescope-kiosk.service" in report.started
+
+
+def test_user_kiosk_without_display_stays_disabled(tmp_path):
+    host = _host()
+    host.euid = 1000
+    host.users["wirescope"] = "wirescope"
+    host.groups["wirescope"] = {"wirescope"}
+    host.groups["wireshark"] = {"wirescope"}
+    host.binaries["chromium"] = "/usr/bin/chromium"
+    config = _config(
+        tmp_path,
+        user_session=True,
+        user_kiosk=True,
+        start_services=True,
+        display=_headless(),
+    )
+    report = install(config, host)
+    kiosk_enabled = [
+        item
+        for item in host.commands
+        if "wirescope-kiosk.service" in item and "enable" in item
+    ]
+    assert kiosk_enabled == []
+    assert report.started == ["wirescope-api.service", "wirescope-worker.service"]
+    assert any("no local display" in item for item in report.warnings)
+    kiosk_unit = host.read_text(
+        config.paths.systemd_dir / "wirescope-kiosk.service"
+    )
+    assert "WantedBy=graphical-session.target" in kiosk_unit
+
+
+def test_user_kiosk_with_console_enables_user_unit(tmp_path):
+    host = _host()
+    host.euid = 1000
+    host.users["wirescope"] = "wirescope"
+    host.groups["wirescope"] = {"wirescope"}
+    host.groups["wireshark"] = {"wirescope"}
+    host.binaries["chromium"] = "/usr/bin/chromium"
+    config = _config(
+        tmp_path,
+        user_session=True,
+        user_kiosk=True,
+        start_services=True,
+        display=_attached(),
+    )
+    report = install(config, host)
+    kiosk_enabled = [
+        item
+        for item in host.commands
+        if item[:4] == ("systemctl", "--user", "enable", "--now")
+        and "wirescope-kiosk.service" in item
+    ]
+    assert kiosk_enabled
+    assert "wirescope-kiosk.service" in report.started
+    assert "wirescope-api.service" in report.started
 
 

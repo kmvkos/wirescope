@@ -144,8 +144,11 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     assert "NoNewPrivileges=true" in files["wirescope-api.service"]
     assert "NoNewPrivileges" not in files["wirescope-worker.service"]
     assert "python -m jobs.worker" in files["wirescope-worker.service"]
-    assert "After=wirescope-api.service" in files["wirescope-kiosk.service"]
+    assert "After=wirescope-api.service graphical.target" in files["wirescope-kiosk.service"]
     assert "PartOf=wirescope-worker" not in files["wirescope-kiosk.service"]
+    assert "WantedBy=graphical.target" in files["wirescope-kiosk.service"]
+    assert "appliance wait-ready" in files["wirescope-kiosk.service"]
+    assert "PrivateTmp=" not in files["wirescope-kiosk.service"]
     assert "StartLimitBurst=5" in files["wirescope-api.service"]
     assert "SupplementaryGroups=wireshark" in files["wirescope-api.service"]
     assert "SupplementaryGroups=wireshark" in files["wirescope-worker.service"]
@@ -179,6 +182,9 @@ def test_user_session_units_rejoin_wireshark_without_logout():
     assert "python -m backend" in api
     assert "python -m jobs.worker" in worker
     assert "WantedBy=default.target" in api
+    kiosk = files["wirescope-kiosk.service"]
+    assert "WantedBy=graphical-session.target" in kiosk
+    assert "PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY" in kiosk
 
 
 def test_packaged_units_match_renderer():
@@ -191,6 +197,7 @@ def test_packaged_units_match_renderer():
 def test_kiosk_script_recovers_without_stopping_audits():
     assert kiosk_recovers_without_stopping_backend(KIOSK_SCRIPT)
     assert "--window-size=480,320" in KIOSK_SCRIPT
+    assert "127.0.0.1:8000" in KIOSK_SCRIPT
 
 
 def test_reboot_recovery_policy_is_explicit():

@@ -86,7 +86,9 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "id=\"summary-conclusion\"" in html
     assert "id=\"summary-vlan-note\"" in html
     assert "required" not in html.split('id="scope-targets"')[1].split("</textarea>")[0]
-    assert "Наблюдатель не может запускать аудиты" in i18n
+    assert "Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск" in i18n
+    assert "login.noMgmtNetwork" in i18n
+    assert 'data-i18n="login.noMgmtNetwork"' in html
     assert 'const locale = "ru"' in i18n
     assert 'role="alertdialog"' in html
     assert 'id="stop-audit-button"' in html
@@ -103,6 +105,8 @@ def test_i18n_russian_default_matches_english_fallback_keys():
     assert "error.tlsOrNetwork" in russian
     assert "cookie Secure не работает по HTTP" in i18n
     assert "error.secureCookieOverHttp" in russian
+    assert "login.noMgmtNetwork" in russian
+    assert "Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск" in i18n
 
 
 def test_root_is_public_and_static_assets_load(api_context):

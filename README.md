@@ -171,9 +171,11 @@ Nmap не получает дополнительные права от WireScop
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance
 
 sudo ./packaging/install.sh \
   --generate-admin-password \
@@ -182,7 +184,7 @@ sudo ./packaging/install.sh \
   --enable-kiosk
 ```
 
-Почему клон выше выполняется без `sudo`: `sudo git clone` использует SSH-ключи root, а не текущего пользователя.
+Почему клон выполняется без `sudo`: `sudo git clone` использует SSH-ключи root, а не текущего пользователя. Checkout также делается до переноса в `/opt`, чтобы не создавать лишних проблем с ownership и Git `safe.directory`.
 
 Установщик работает **из checkout** и не копирует проект в другое место. Не удаляйте и не переименовывайте каталог после установки: systemd units ссылаются на него.
 

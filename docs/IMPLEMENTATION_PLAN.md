@@ -568,8 +568,10 @@ Implementation evidence:
 
 ## Milestone 8 — Generic Linux appliance
 
-Primary target: unprivileged API + worker + browser GUI on a common Linux
-server or VM. Raspberry Pi kiosk hardware is a later extra, not a gate.
+Primary target: unprivileged API + worker + local operator GUI on a common
+Linux server or VM. Autonomous kiosk (local display, loopback) and remote
+browser (LAN/TLS) are equally valid. Raspberry Pi hardware is optional;
+Raspberry Pi OS is not required.
 
 ### Installer
 
@@ -591,17 +593,23 @@ server or VM. Raspberry Pi kiosk hardware is a later extra, not a gate.
 - worker unit;
 - `SupplementaryGroups=wireshark` on system units; `sg wireshark` on user
   units so dumpcap works without a new login;
-- optional kiosk unit kept as a later extra, not enabled by default;
+- local operator kiosk (`wirescope-kiosk`): Chromium to `http://127.0.0.1:8000/`
+  after the API is ready; `WantedBy=graphical.target` or
+  `graphical-session.target`; not enabled on headless hosts; restarting it
+  does not cancel audits;
 - dependency ordering and health checks;
 - controlled restart limits;
 - log retention;
 - no secrets embedded in unit files.
 
-### Optional later extra (Raspberry Pi / local display)
+### Local operator kiosk (generic Linux)
 
-Chromium kiosk, 480×320, Pi OS Lite, and touch validation are **not**
-acceptance criteria. Keep `packaging/kiosk/` labeled as optional. Opt-in
-`pytest -m live_pi` stays unused.
+Chromium kiosk on the appliance display is a first-class autonomous mode:
+bind stays loopback, no management network. `--with-kiosk` installs a
+minimal openbox/labwc + Chromium stack, not a full desktop. `--user-kiosk`
+enables the user unit after graphical login. Headless VMs install the unit
+disabled. Raspberry Pi hardware, Pi OS Lite, 480×320 touch validation, and
+`pytest -m live_pi` remain optional extras of the same installer.
 
 ### Security and release
 
@@ -616,14 +624,15 @@ acceptance criteria. Keep `packaging/kiosk/` labeled as optional. Opt-in
 Acceptance criteria:
 
 - a clean generic Linux install (Debian/Ubuntu, and at least one RPM family
-  in fixtures) reaches the WireScope login screen in a local or LAN browser;
+  in fixtures) reaches the WireScope login screen in a **local kiosk or
+  local/LAN browser**;
 - backend and capture run with documented least privilege;
 - reboot during a queued/running audit has defined recovery behavior;
 - default tests pass with `pytest -m not network` (`live_pi` unused).
 
 Debian AMD64 VM is the first verification gate. Fedora/RHEL/openSUSE package
-names and package-manager detection are covered by fixtures. Raspberry Pi OS
-Lite HDMI kiosk remains an optional later extra of the same installer.
+names and package-manager detection are covered by fixtures. Raspberry Pi
+hardware remains optional; Raspberry Pi OS is not required.
 
 ---
 

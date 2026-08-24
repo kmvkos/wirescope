@@ -20,7 +20,7 @@
 
 Authentication is local SQLite users with roles `auditor` and `viewer`.
 Sessions use HttpOnly cookies; mutating routes require `auditor`. Health and
-readiness stay public so a local or LAN browser can show appliance state
+readiness stay public so a local kiosk or LAN browser can show appliance state
 before login.
 
 ## Bind address, TLS, and firewall
@@ -146,5 +146,4 @@ eligible. Resource locks and stale worker records are cleared transactionally.
 Startup cleanup only removes controlled temporary/orphan files. It never
 deletes registered audit evidence without explicit retention policy.
 
-Restarting the browser or the optional kiosk extra does not stop the API or
-worker.
+Restarting the browser or the local kiosk does not stop the API or worker.

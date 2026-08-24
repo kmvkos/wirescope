@@ -5,7 +5,9 @@
 WireScope is a portable network discovery, diagnostics, and security audit
 appliance. Its production target is an unprivileged backend, worker, and
 browser GUI on generic Linux (Debian/Ubuntu and RPM families) on amd64 or
-arm64. Raspberry Pi OS kiosk hardware is a later extra.
+arm64. The operator console is a local display (kiosk to `127.0.0.1:8000`)
+or a remote browser over LAN/TLS. Raspberry Pi hardware is optional;
+Raspberry Pi OS is not required.
 
 WireScope treats command-line tools as evidence providers. Users interact with
 the application API and UI, not with raw `tshark`, Nmap, or shell output.
@@ -514,8 +516,9 @@ wirescope-api                       wirescope-worker
 The API creates metadata and never owns execution lifetime. The worker process
 starts a configurable bounded thread pool (default one), claims queued jobs,
 and invokes registered handlers. This keeps SQLite and appliance operation
-simple while preserving a future process split. An optional local kiosk
-remains a third, independent process and is not required.
+simple while preserving a future process split. A local kiosk is a third,
+independent process: Chromium against loopback after the API is ready. It is
+optional on headless servers.
 
 Only one healthy worker supervisor process may hold the supervisor lease.
 Configured concurrency is therefore not multiplied accidentally by launching
@@ -586,12 +589,13 @@ The appliance process boundary is:
 
 - WireScope API;
 - WireScope worker;
-- local or LAN browser (optional kiosk extra is not required).
+- local operator kiosk or browser (loopback), or a remote browser over LAN/TLS.
 
 The backend binds to `127.0.0.1:8000` by default (`WIRESCOPE_BIND_HOST` /
-`WIRESCOPE_BIND_PORT`). Listening on `0.0.0.0` is an explicit VM/LAN choice.
-The preferred LAN path keeps the API on loopback and terminates TLS on Caddy
-or nginx (`--trust-proxy`). Optional direct TLS uses
+`WIRESCOPE_BIND_PORT`). Autonomous audits do not need a management network:
+the GUI runs on this computer. Listening on `0.0.0.0` is an explicit VM/LAN
+choice. The preferred LAN path keeps the API on loopback and terminates TLS
+on Caddy or nginx (`--trust-proxy`). Optional direct TLS uses
 `WIRESCOPE_TLS_CERTFILE` / `WIRESCOPE_TLS_KEYFILE` without running the
 backend as root. Production documentation routes are disabled from the
 appliance environment file.
@@ -606,7 +610,7 @@ appliance environment file.
 - terminal-job retry records and a manual retry API are not implemented;
 - tshark field compatibility is tested against 4.4 fixtures and still requires
   release testing against each distro's package version;
-- Raspberry Pi OS Lite kiosk hardware remains an optional later extra.
+- Raspberry Pi OS Lite HDMI kiosk hardware remains optional (same installer).
 
 These limitations are scheduled explicitly in
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).

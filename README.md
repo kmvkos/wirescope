@@ -3,8 +3,10 @@
 WireScope is a portable network discovery, diagnostics, and security audit
 appliance. The production target is an unprivileged API + worker + browser
 GUI on **generic Linux** (Debian/Ubuntu and RPM families such as Fedora,
-RHEL/Rocky, and openSUSE) on amd64 or arm64. Raspberry Pi kiosk hardware is
-a later extra, not a required install stage.
+RHEL/Rocky, and openSUSE) on amd64 or arm64. The operator console is a local
+display kiosk (`http://127.0.0.1:8000/`, no management network) or a remote
+browser over LAN/TLS. Raspberry Pi hardware is optional; Raspberry Pi OS is
+not required.
 
 The current `0.1.0` codebase is an early prototype being stabilized in
 milestones. It can inspect the host network environment, capture through
@@ -34,7 +36,7 @@ is in `packaging/` and `appliance/`.
 - `auth/` — local operator users, password hashes, and sessions.
 - `frontend/` — operator GUI (Russian) for the audit workflow.
 - `appliance/` — generic Linux installer, dumpcap verification, backup.
-- `packaging/` — install scripts, systemd units, optional kiosk extra.
+- `packaging/` — install scripts, systemd units, local operator kiosk.
 - `config/` — centralized application paths and runtime settings.
 - `tests/` — tests that do not require live packet capture.
 

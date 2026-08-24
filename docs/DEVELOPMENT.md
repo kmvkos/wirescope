@@ -64,7 +64,8 @@ do not scan the live network. Live Nmap or protocol probes require an
 explicit `WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation
 and report generation never contact a network. Optional Playwright kiosk
 tests (`@pytest.mark.browser`) skip when Playwright or Chromium is not
-installed.
+installed. The appliance kiosk extra does the same: missing Chromium is a
+skip, not a CI failure.
 
 Create the first local operators only when the user table is empty:
 

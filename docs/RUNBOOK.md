@@ -2,7 +2,8 @@
 
 Day-2 operations for the generic Linux appliance (Debian/Ubuntu, Fedora/RHEL,
 openSUSE). Commands are the same on each family; package names differ only
-during install. Raspberry Pi kiosk hardware is an optional later extra.
+during install. Raspberry Pi hardware is optional; Raspberry Pi OS is not
+required.
 
 ## Service health
 
@@ -35,8 +36,10 @@ On `--user-install`, use `systemctl --user` and `journalctl --user`.
 
 ## Sign in
 
-1. On the appliance: `http://127.0.0.1:8000/`. From another PC:
-   `https://<host>/` through Caddy or nginx (see `packaging/proxy/README.md`).
+1. On this computer: `http://127.0.0.1:8000/` (kiosk or local browser).
+   Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
+   From another PC: `https://<host>/` through Caddy or nginx (see
+   `packaging/proxy/README.md`).
 2. Use the auditor username (`auditor` unless overridden).
 3. Use the password from `/etc/wirescope/initial-admin.txt` or the operator
    password file supplied to the installer.
@@ -71,7 +74,7 @@ nft/ufw/firewalld.
 | `queued` | still `queued`, eligible to be claimed |
 | `cancelled` | remains cancelled |
 
-The GUI polls durable jobs. Reloading the browser, restarting an optional
+The GUI polls durable jobs. Reloading the browser, restarting the local
 kiosk, or bouncing `wirescope-api` does not cancel worker jobs. Only an
 auditor Stop action or process-level worker restart of a *running* job
 changes execution.
@@ -147,21 +150,23 @@ install/upgrade is idempotent.
 
 Do not assume `alembic downgrade` is safe.
 
-## Optional kiosk (Raspberry Pi later extra)
+## Local operator kiosk
 
-Not required. Keep using a normal browser on generic Linux.
+Autonomous mode: Chromium on the appliance display, loopback only. Capture
+NIC addressing is independent. Restarting the kiosk does not stop API or
+worker.
 
 ```bash
 sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk
-sudo systemctl status wirescope-kiosk
+# or, after graphical login on a VM:
+systemctl --user enable --now wirescope-kiosk
+sudo systemctl status wirescope-kiosk          # system unit
+systemctl --user status wirescope-kiosk        # user unit
 ```
 
-The optional extra loops Chromium against `http://127.0.0.1:8000/`. If
-Chromium exits, the unit restarts the browser only. It does not restart or
-stop the API or worker.
-
-Live Raspberry Pi OS Lite, touch, and ARM64-on-device smoke tests are
-opt-in and unused (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1` on the Pi).
+`--with-kiosk` installs openbox or labwc plus Chromium, not a full desktop.
+Headless hosts leave the unit installed but disabled. Live Raspberry Pi OS
+Lite tests stay unused (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1`).
 
 ## Dependency inventory
 

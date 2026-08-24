@@ -3,9 +3,10 @@
 Milestone 7 adds the local operator interface. Auditors complete an audit
 from the browser; they do not use a shell. Viewers can inspect results but
 cannot start or cancel work. The GUI is a client of the durable API and
-never owns job lifetime. Production deployment is a generic Linux appliance
-with a local or LAN browser; a 480×320 kiosk layout is a compact extra, not
-an install gate.
+never owns job lifetime. Production deployment is a generic Linux appliance.
+Operators use a **local display kiosk** (loopback, no management network) or a
+LAN browser. A 480×320 layout is the compact kiosk baseline. Raspberry Pi
+hardware is optional; Raspberry Pi OS is not required.
 
 ```text
 login
@@ -26,7 +27,8 @@ unnecessary: the workflow is a linear wizard plus read-only result screens.
 
 ## Layout
 
-The default layout targets a 480×320 landscape kiosk:
+The default layout targets a 480×320 landscape kiosk (local operator
+console). Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
 
 - single column;
 - 44px minimum touch targets;

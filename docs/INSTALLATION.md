@@ -2,8 +2,12 @@
 
 This document is the appliance installer for a **generic Linux** server or VM
 (Debian/Ubuntu and RPM families such as Fedora, RHEL/Rocky, and openSUSE).
-The same installer can later be used on Raspberry Pi OS; that path is an
-optional extra, not a required stage.
+Raspberry Pi hardware is optional; Raspberry Pi OS is not required.
+
+Operators collect a report in either of two equally valid modes:
+
+- **Автономный (киоск):** local display on this computer, no management network
+- **Удалённый браузер:** LAN/TLS from another PC (reverse proxy)
 
 The operator GUI is Russian. This file stays English; see the short Russian
 note below.
@@ -26,13 +30,73 @@ note below.
 8. Install `wirescope-api` and `wirescope-worker` systemd units.
 9. Apply SQLite migrations.
 10. Create the first auditor from a mode `0600` password file, or generate one.
-11. Enable and start API + worker. Open the GUI in any browser at the
-    configured bind address. Chromium kiosk is a later extra and is not
-    enabled unless you pass `--with-kiosk --enable-kiosk`.
+11. Enable and start API + worker. Open the local GUI at
+    `http://127.0.0.1:8000/` on this computer (kiosk or any local browser),
+    or use a remote browser over LAN/TLS. Chromium kiosk packages are
+    optional (`--with-kiosk`); `--enable-kiosk` / `--user-kiosk` start the
+    kiosk only when a display and Chromium are present.
 
 Upgrade is the same command (`packaging/upgrade.sh`). It reuses the service
 account, keeps an existing env file, re-verifies dumpcap, upgrades the venv,
 and migrates SQLite.
+
+## Operator access modes
+
+Two equally valid ways to collect a report. Capture-NIC addressing is
+independent: that interface may have **no IP and no DHCP**. The operator
+still uses the local GUI.
+
+### Автономный (киоск): local display, no management network
+
+Bind stays `127.0.0.1:8000`. After boot and graphical login, systemd starts
+a browser kiosk to `http://127.0.0.1:8000/` once `wirescope-api` answers
+`/api/health`. You do not open a browser from the hypervisor over LAN.
+
+Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
+
+```bash
+# System unit (graphical.target, attached display / autologin appliance)
+sudo /opt/wirescope/packaging/install.sh \
+  --project-root /opt/wirescope \
+  --generate-admin-password \
+  --bind-host 127.0.0.1 \
+  --with-kiosk --enable-kiosk
+
+# User unit after graphical login (Debian VM console, lingering optional)
+/opt/wirescope/packaging/install.sh \
+  --user-install \
+  --generate-admin-password \
+  --bind-host 127.0.0.1 \
+  --user-kiosk
+```
+
+`--with-kiosk` installs a **minimal** stack (`xserver-xorg`/`xinit`,
+`openbox` or `labwc`, `unclutter`, `chromium`), not a GNOME/KDE desktop.
+Headless servers omit `--with-kiosk`. `--user-install` does not install OS
+packages; install Chromium and a compositor as root (`--with-kiosk`) or via
+the distro, then enable the user unit.
+
+If this host has no `DISPLAY` / Wayland session, the installer writes
+`wirescope-kiosk.service` and **leaves it disabled**. On a VM with a console
+(VMware Workstation GUI, virt-manager, HDMI):
+
+```bash
+sudo loginctl enable-linger "$USER"   # optional: user manager at boot
+systemctl --user daemon-reload
+systemctl --user enable --now wirescope-kiosk
+```
+
+The kiosk unit waits for the API, binds the browser to loopback, and does
+not stop the worker if Chromium restarts. System kiosk uses
+`WantedBy=graphical.target` and starts only when `/tmp/.X11-unix/X0` exists.
+User kiosk uses `WantedBy=graphical-session.target`.
+
+Raspberry Pi kiosk hardware remains optional. Do not require Raspberry Pi OS.
+
+### Удалённый браузер: LAN / TLS
+
+Use a browser on another PC. Preferred path: API stays on loopback, Caddy or
+nginx terminates TLS (`--trust-proxy`). Details follow.
 
 ## Bind address and LAN TLS
 
@@ -115,7 +179,10 @@ sudo /opt/wirescope/packaging/install.sh \
 
 From another PC on this VM: install with `--trust-proxy --bind-host 127.0.0.1`,
 enable Caddy or nginx from `/etc/wirescope/proxy/`, open
-`https://<this-host>/`. Local GUI remains `http://127.0.0.1:8000/`.
+`https://<this-host>/`. Local GUI remains `http://127.0.0.1:8000/` (kiosk or
+any browser on this computer). This VM may be headless: the kiosk unit is
+installed with `--user-kiosk` but stays disabled until a graphical console
+exists (`systemctl --user enable --now wirescope-kiosk`).
 
 If this host has no passwordless root, install into the operator's user systemd
 session (dumpcap capabilities still need root once):
@@ -222,7 +289,10 @@ Useful flags:
 - `--skip-pip` — reuse the existing venv
 - `--no-start` — write units but do not `systemctl enable --now`
 - `--no-optional-providers` — base capture/decode tools only
-- `--with-kiosk` / `--enable-kiosk` — optional local Chromium extra
+- `--with-kiosk` — optional local-display packages (openbox/labwc + Chromium,
+  not a full desktop)
+- `--enable-kiosk` — enable the system kiosk if a display and Chromium exist
+- `--user-kiosk` — enable the user kiosk after graphical login (loopback GUI)
 - `--auditor-password-file /root/auditor.pass` — mode `0600` file instead of generating
 - `--overwrite-env` — replace `/etc/wirescope/wirescope.env`
 - `--bind-host` / `--bind-port` — API listen address (default loopback)
@@ -241,8 +311,8 @@ curl -sS http://127.0.0.1:8000/api/ready
 # from another PC after Caddy/nginx:
 # curl -sS https://<host>/api/health
 
-# GUI
-xdg-open http://127.0.0.1:8000/   # local
+# GUI on this computer (autonomous kiosk / local browser)
+xdg-open http://127.0.0.1:8000/
 # from another PC: https://<host>/
 ```
 
@@ -260,11 +330,12 @@ sudo journalctl -u wirescope-api -u wirescope-worker -e
 ## Заметка для оператора
 
 Графический интерфейс WireScope на русском языке. Эта инструкция — на
-английском. С другого ПК откройте `https://<хост>/` через Caddy/nginx
-(`--trust-proxy`). Локально: `http://127.0.0.1:8000/`. Если cookie не
-сохраняется, страница должна быть HTTPS, а не HTTP. Войдите как `auditor`.
-Если захват пакетов недоступен, проверьте группу `wireshark` и перезапустите
-службы: `systemctl restart wirescope-api wirescope-worker` или
+английском. **Сеть до вашего ПК не нужна: откройте GUI на этом компьютере /
+киоск** (`http://127.0.0.1:8000/`). С другого ПК откройте `https://<хост>/`
+через Caddy/nginx (`--trust-proxy`). Если cookie не сохраняется, страница
+должна быть HTTPS, а не HTTP. Войдите как `auditor`. Если захват пакетов
+недоступен, проверьте группу `wireshark` и перезапустите службы:
+`systemctl restart wirescope-api wirescope-worker` или
 `systemctl --user restart wirescope-api wirescope-worker`.
 
 ## Production paths
@@ -328,7 +399,7 @@ block dumpcap file capabilities. The API unit may use `NoNewPrivileges`.
 1. migration / first-admin bootstrap (installer)
 2. `wirescope-worker`
 3. `wirescope-api`
-4. optional browser client (independent of API and worker)
+4. local kiosk or browser client (independent of API and worker; loopback)
 
 The worker performs restart recovery before accepting queued work. Reloading
 the GUI must not terminate audits.
@@ -369,17 +440,16 @@ Rollback guidance:
 Alembic migrations in this project are forward-only in normal operation.
 Keep the pre-upgrade SQLite copy until the new revision is confirmed.
 
-## Optional kiosk (Raspberry Pi later extra)
+## Local operator kiosk
 
-Not required for generic Linux. Use a normal browser against the API.
-
-```bash
-sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk
-```
-
-`packaging/kiosk/` is a Chromium/X11 extra for a local display. Live
-Raspberry Pi OS Lite, touch, and on-device ARM64 smoke tests remain unused
+First-class autonomous mode: Chromium on the appliance display against
+`http://127.0.0.1:8000/`. See [Operator access modes](#operator-access-modes).
+Raspberry Pi hardware is optional; Raspberry Pi OS is not required. Live
+Pi OS Lite, touch, and on-device ARM64 smoke tests remain unused
 (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1` on Pi hardware only).
+
+Headless CI and servers omit Chromium; Playwright/kiosk browser tests skip
+when Chromium is missing.
 
 ## Release checksums
 

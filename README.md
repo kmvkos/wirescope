@@ -10,8 +10,9 @@ milestones. It can inspect the host network environment, capture through
 durable jobs, run authorized active discovery into an asset/service inventory,
 and enqueue service-aware protocol audits. The findings engine consumes those
 stored observations and can persist suppress/accepted-risk state. Reporting
-exports HTML and JSON from persisted audit data. Authentication and appliance
-deployment are planned work and are not complete.
+exports HTML and JSON from persisted audit data. The local operator GUI
+covers the full audit workflow with auditor/viewer sessions. Raspberry Pi
+appliance packaging remains planned work.
 
 ## Current components
 
@@ -27,12 +28,14 @@ deployment are planned work and are not complete.
 - `protocol_audits/` — inventory-driven protocol modules and observations.
 - `findings/` — declarative rules that turn observations into findings.
 - `reports/` — versioned HTML/JSON audit reports from persisted data.
-- `frontend/` — minimal environment dashboard.
+- `auth/` — local operator users, password hashes, and sessions.
+- `frontend/` — kiosk operator GUI for the audit workflow.
 - `config/` — centralized application paths and runtime settings.
 - `tests/` — tests that do not require live packet capture.
 
 See [Architecture](docs/ARCHITECTURE.md) for current boundaries and
 [Implementation plan](docs/IMPLEMENTATION_PLAN.md) for the milestone roadmap.
+Operator GUI behavior is in [GUI model](docs/GUI_MODEL.md).
 Operational details are in [Development](docs/DEVELOPMENT.md),
 [Installation](docs/INSTALLATION.md), and
 [Security model](docs/SECURITY_MODEL.md).
@@ -68,14 +71,18 @@ Run the API and worker as separate development processes:
 .venv/bin/python -m jobs.worker
 ```
 
-Start passive work through the job-oriented API:
+Start the GUI at `http://127.0.0.1:8000/` or use the job-oriented API. Sign
+in first (bootstrap users are created only when the user table is empty):
 
 ```bash
-curl http://127.0.0.1:8000/api/interfaces
-curl -X POST http://127.0.0.1:8000/api/audits \
+curl -c /tmp/ws.cookies -X POST http://127.0.0.1:8000/api/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"auditor","password":"choose-a-long-password"}'
+curl -b /tmp/ws.cookies http://127.0.0.1:8000/api/interfaces
+curl -b /tmp/ws.cookies -X POST http://127.0.0.1:8000/api/audits \
   -H 'content-type: application/json' \
   -d '{"profile":"passive","interface":"eth0","scope":{}}'
-curl -X POST http://127.0.0.1:8000/api/audits/AUDIT_ID/passive \
+curl -b /tmp/ws.cookies -X POST http://127.0.0.1:8000/api/audits/AUDIT_ID/passive \
   -H 'content-type: application/json' \
   -d '{"duration_seconds":30}'
 ```
@@ -86,7 +93,7 @@ Run tests:
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
   parsers persistence protocol_audits findings reports providers sensors \
-  storage tests
+  storage auth tests
 .venv/bin/pip check
 ```
 
@@ -157,3 +164,13 @@ through the `wireshark` group. See
   names.
 - `WIRESCOPE_DOCS_ENABLED` — enables FastAPI OpenAPI, Swagger, and ReDoc
   routes; defaults to true for development.
+- `WIRESCOPE_SESSION_COOKIE_NAME` — session cookie name; defaults to
+  `wirescope_session`.
+- `WIRESCOPE_SESSION_TTL_SECONDS` — session lifetime; defaults to 43200
+  (12 hours).
+- `WIRESCOPE_SESSION_COOKIE_SECURE` — set the Secure cookie flag; defaults
+  to false for local HTTP kiosk use.
+- `WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME` / `_PASSWORD` and
+  `WIRESCOPE_BOOTSTRAP_VIEWER_USERNAME` / `_PASSWORD` — create the first
+  local users only when the user table is empty. There is no default
+  password.

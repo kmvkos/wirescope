@@ -51,10 +51,28 @@ The intended appliance units are:
 1. migration/bootstrap operation;
 2. `wirescope-worker`;
 3. `wirescope-api`;
-4. kiosk/UI later.
+4. kiosk/browser client (independent of API and worker).
 
 The worker and API share SQLite and evidence roots but have independent
 lifetimes. The worker performs restart recovery before accepting queued work.
+The kiosk/browser is a third process: reload or kiosk recovery must not
+terminate audits.
+
+## Local operators
+
+Milestone 7 stores auditor and viewer accounts in SQLite. When the `users`
+table is empty, the API can create the first accounts from environment
+variables:
+
+```bash
+WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME=auditor
+WIRESCOPE_BOOTSTRAP_AUDITOR_PASSWORD=...
+WIRESCOPE_BOOTSTRAP_VIEWER_USERNAME=viewer
+WIRESCOPE_BOOTSTRAP_VIEWER_PASSWORD=...
+```
+
+Do not bake default passwords into the application. Secure first-admin
+creation in the installer remains Milestone 8.
 
 ## Power loss
 

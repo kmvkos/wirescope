@@ -51,7 +51,7 @@ parser runs.
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
   parsers persistence protocol_audits findings reports providers sensors \
-  storage tests
+  storage auth tests
 .venv/bin/pip check
 .venv/bin/python -m scripts.benchmark_persistence
 .venv/bin/python -m scripts.benchmark_inventory
@@ -59,10 +59,25 @@ parser runs.
 
 Tests use a temporary migrated SQLite database and temporary evidence root.
 The default `pytest` invocation excludes `@pytest.mark.network`. Passive,
-active, protocol-audit, findings, and reporting end-to-end tests use fixtures
-and do not scan the live network. Live Nmap or protocol probes require an
+active, protocol-audit, findings, reporting, and GUI tests use fixtures and
+do not scan the live network. Live Nmap or protocol probes require an
 explicit `WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation
-and report generation never contact a network.
+and report generation never contact a network. Optional Playwright kiosk
+tests (`@pytest.mark.browser`) skip when Playwright or Chromium is not
+installed.
+
+Create the first local operators only when the user table is empty:
+
+```bash
+export WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME=auditor
+export WIRESCOPE_BOOTSTRAP_AUDITOR_PASSWORD='choose-a-long-password'
+export WIRESCOPE_BOOTSTRAP_VIEWER_USERNAME=viewer
+export WIRESCOPE_BOOTSTRAP_VIEWER_PASSWORD='choose-a-long-password'
+```
+
+Restarting the API process bootstraps those accounts once. There is no
+default password. The kiosk/UI is a browser client; stopping it does not
+cancel worker jobs.
 
 ## Durable handler contract
 

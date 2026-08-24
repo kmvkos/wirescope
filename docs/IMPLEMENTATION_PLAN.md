@@ -516,6 +516,8 @@ Implementation evidence:
 
 ## Milestone 7 — Full GUI
 
+Status: implemented on `milestone-7-gui`. See [GUI_MODEL.md](GUI_MODEL.md).
+
 Implement the workflow:
 
 ```text
@@ -548,6 +550,18 @@ Acceptance criteria:
 - an auditor completes an audit without shell access;
 - viewer cannot start or cancel audits;
 - kiosk recovery does not affect a running backend job.
+
+Implementation evidence:
+
+- Alembic revision `b7d25e9a1c31` adds `users` and `sessions`;
+- roles are `auditor` and `viewer`; sessions are HttpOnly cookies with
+  hashed tokens;
+- vanilla frontend wizard covers login through report at a 480×320 kiosk
+  baseline, with a denser laptop layout above 900px;
+- the UI polls jobs with backoff and never cancels on display reload;
+- viewers receive `403 forbidden_role` on mutating routes;
+- default pytest stays fixture-based (`pytest -m not network`); Playwright
+  kiosk-viewport tests skip when Chromium is unavailable.
 
 ---
 

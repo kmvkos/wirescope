@@ -15,9 +15,11 @@
   arrays only; user-supplied tool flags are rejected.
 - SQLite and evidence roots are writable only by the WireScope service user.
 
-Authentication and authorization are not implemented yet. Keep the API bound
-to loopback or another trusted local boundary; do not expose state-changing
-endpoints to an untrusted network.
+Authentication is local SQLite users with roles `auditor` and `viewer`.
+Sessions use HttpOnly cookies; mutating routes require `auditor`. Health and
+readiness stay public so a kiosk can show appliance state before login. Bind
+the API to loopback or another trusted local boundary until Milestone 8 adds
+remote transport controls. Do not expose the API to an untrusted network.
 
 ## Job safety
 
@@ -57,8 +59,9 @@ transactions permit one API and one controlled worker process without holding
 locks during scans.
 
 The database contains user-selected scope, target/interface values, event
-history, structured errors, and references to evidence. File permissions and
-backup handling must protect it as audit data.
+history, structured errors, references to evidence, local operator accounts,
+and hashed session tokens. File permissions and backup handling must protect
+it as audit data.
 
 ## Recovery
 

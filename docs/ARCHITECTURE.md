@@ -34,9 +34,10 @@ The stabilized prototype remains a small modular monolith:
 
 ```text
 frontend/
-    │ HTTP
+    │ HTTP + session cookie
     ▼
 backend/app.py
+    ├── auth/
     ├── engine/environment.py
     ├── engine/interfaces.py
     ├── engine/scope.py
@@ -166,17 +167,26 @@ suppress/accepted-risk audit trail.
 snapshots, and artifact metadata. HTML and JSON are written through the
 evidence store. Raw provider output is referenced by id and hash only.
 
+`auth/` is the Milestone 7 local identity package. Users have role
+`auditor` or `viewer`. Sessions are random tokens stored as SHA-256
+digests. The API requires a session for operational routes; viewers may
+read but cannot start or cancel work.
+
 ### `frontend/`
 
-The current vanilla frontend displays service status and environment details.
-It does not yet implement the passive scan workflow. UI expansion follows
-backend contracts incrementally and must remain usable at 480×320.
+The vanilla operator GUI implements the audit wizard and result screens at a
+480×320 kiosk baseline, with a denser laptop layout above 900px. It polls
+durable jobs and never cancels work on display restart. See
+[GUI_MODEL.md](GUI_MODEL.md).
 
 ## Current HTTP surface
 
 - `GET /api/status`
 - `GET /api/health`
 - `GET /api/ready`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 - `GET /api/environment`
 - `GET /api/interfaces`
 - `POST /api/audits`
@@ -469,7 +479,9 @@ Current tables:
   observation and evidence links;
 - `finding_state_events` — suppress / accepted-risk / reopen audit trail;
 - `reports` — generated report history, source hash, and HTML/JSON artifact
-  references.
+  references;
+- `users` — local operator accounts and roles;
+- `sessions` — hashed session tokens and expiry.
 
 SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
 `synchronous=FULL` by default for appliance power-loss durability. Scanner work
@@ -571,9 +583,7 @@ and listening interfaces are explicit deployment settings.
 
 ## Known transitional debt
 
-- authentication and authorization are absent;
-- frontend supports environment display only;
-- reporting HTML/JSON exist, but PDF export and the full GUI workflow do not;
+- PDF export is still unavailable (`422 pdf_not_available`);
 - structured logs include audit/job context in the worker, but there is no
   separate security audit-log table yet;
 - retention cleanup is conservative and does not yet delete completed audits

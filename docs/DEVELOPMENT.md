@@ -50,7 +50,8 @@ parser runs.
 ```bash
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
-  parsers persistence protocol_audits findings providers sensors storage tests
+  parsers persistence protocol_audits findings reports providers sensors \
+  storage tests
 .venv/bin/pip check
 .venv/bin/python -m scripts.benchmark_persistence
 .venv/bin/python -m scripts.benchmark_inventory
@@ -58,10 +59,10 @@ parser runs.
 
 Tests use a temporary migrated SQLite database and temporary evidence root.
 The default `pytest` invocation excludes `@pytest.mark.network`. Passive,
-active, protocol-audit, and findings end-to-end tests use fixtures and do not
-scan the live network. Live Nmap or protocol probes require an explicit
-`WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation never
-contacts a network.
+active, protocol-audit, findings, and reporting end-to-end tests use fixtures
+and do not scan the live network. Live Nmap or protocol probes require an
+explicit `WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation
+and report generation never contact a network.
 
 ## Durable handler contract
 

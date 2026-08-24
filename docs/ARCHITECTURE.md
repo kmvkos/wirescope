@@ -45,7 +45,8 @@ backend/app.py
     ├── engine/passive.py
     ├── inventory/
     ├── protocol_audits/
-    └── findings/
+    ├── findings/
+    └── reports/
 ```
 
 ### `backend/`
@@ -136,7 +137,7 @@ persists audits, jobs, progress, events, worker heartbeats, and resource locks
 through short SQLAlchemy sessions. `JobWorker` claims queued work atomically
 and dispatches it through `HandlerRegistry`; handlers never appear in an
 `if/elif` chain. `passive_discovery`, `active_discovery`, `protocol_audit`, and
-`findings_evaluation` are registered handlers.
+`findings_evaluation`, and `report_generation` are registered handlers.
 
 `EvidenceStore` writes generated files under a controlled root using a
 temporary suffix, `fsync`, and atomic replacement. SQLite stores only metadata,
@@ -159,6 +160,11 @@ findings.
 artifacts. `FindingsEvaluationHandler` does not invoke scanners or parse
 stdout. Findings persist with severity, confidence, evidence links, and a
 suppress/accepted-risk audit trail.
+
+`reports/` is the Milestone 6 reporting package. It builds a versioned
+`audit-report` view from persisted audits, inventory, findings, environment
+snapshots, and artifact metadata. HTML and JSON are written through the
+evidence store. Raw provider output is referenced by id and hash only.
 
 ### `frontend/`
 
@@ -190,6 +196,10 @@ backend contracts incrementally and must remain usable at 480×320.
 - `POST /api/audits/{audit_id}/findings/{finding_id}/suppress`
 - `POST /api/audits/{audit_id}/findings/{finding_id}/accept-risk`
 - `POST /api/audits/{audit_id}/findings/{finding_id}/reopen`
+- `POST /api/audits/{audit_id}/reports`
+- `GET /api/audits/{audit_id}/reports`
+- `GET /api/audits/{audit_id}/reports/{report_id}`
+- `GET /api/audits/{audit_id}/reports/{report_id}/export`
 - `GET /api/audits/{audit_id}/jobs`
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs`
@@ -273,6 +283,18 @@ A finding records an actionable security or diagnostic result:
 - status (`open`, `suppressed`, `accepted_risk`) with an audit trail.
 
 See [FINDINGS_MODEL.md](FINDINGS_MODEL.md).
+
+### Report
+
+A report is a versioned export of persisted audit data:
+
+- schema `audit-report` version 1;
+- executive summary, environment, scope, assets, services, findings,
+  recommendations, evidence references, and audit metadata;
+- HTML and JSON artifacts stored under the evidence root;
+- generation history with a content `source_hash`.
+
+See [REPORTING_MODEL.md](REPORTING_MODEL.md).
 
 ### Tool result
 
@@ -445,7 +467,9 @@ Current tables:
   bounded JSON data, and evidence artifact references;
 - `findings` — versioned rule results with severity, confidence, status,
   observation and evidence links;
-- `finding_state_events` — suppress / accepted-risk / reopen audit trail.
+- `finding_state_events` — suppress / accepted-risk / reopen audit trail;
+- `reports` — generated report history, source hash, and HTML/JSON artifact
+  references.
 
 SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
 `synchronous=FULL` by default for appliance power-loss durability. Scanner work
@@ -549,6 +573,7 @@ and listening interfaces are explicit deployment settings.
 
 - authentication and authorization are absent;
 - frontend supports environment display only;
+- reporting HTML/JSON exist, but PDF export and the full GUI workflow do not;
 - structured logs include audit/job context in the worker, but there is no
   separate security audit-log table yet;
 - retention cleanup is conservative and does not yet delete completed audits

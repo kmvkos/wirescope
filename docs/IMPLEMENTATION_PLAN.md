@@ -479,6 +479,9 @@ Implementation evidence:
 
 ## Milestone 6 — Reporting
 
+Status: implemented on `milestone-6-reporting`. See
+[REPORTING_MODEL.md](REPORTING_MODEL.md).
+
 - define a versioned report view model;
 - generate self-contained HTML;
 - generate normalized JSON export;
@@ -496,6 +499,18 @@ Acceptance criteria:
 - HTML is readable on laptop and local display;
 - JSON validates against the published schema;
 - exports cannot read or write outside controlled paths.
+
+Implementation evidence:
+
+- Alembic revision `a6c14f8d9e20` adds `reports` history;
+- `reports/` builds schema `audit-report` v1 from persisted audits, inventory,
+  findings, environment snapshots, and artifact metadata;
+- published schema lives at `reports/schema/audit-report-v1.json`;
+- job type `report_generation` takes `audit:<id>` plus group `report`
+  (max 1) and does not take `interface:<name>` or invoke scanners;
+- API lists report history and exports HTML/JSON through the evidence store;
+- PDF remains unavailable (`422 pdf_not_available`);
+- default pytest stays fixture-based (`pytest -m not network`).
 
 ---
 

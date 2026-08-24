@@ -2,250 +2,100 @@
 
 [Русский](../IMPLEMENTATION_PLAN.md) · **English**
 
-This file records project history and the current roadmap. Documentation for **how WireScope behaves today** lives in [ARCHITECTURE.md](ARCHITECTURE.md), [SCANNING_MODEL.md](SCANNING_MODEL.md), [SECURITY_MODEL.md](SECURITY_MODEL.md), and the other subsystem guides.
+This document records the major architectural stages and the current roadmap. Current behavior is documented in [ARCHITECTURE.md](ARCHITECTURE.md), appliance lifecycle in [OPERATIONS.md](OPERATIONS.md), and the first stable release boundary in [RELEASE_READINESS.md](RELEASE_READINESS.md).
 
-## Current status
-
-WireScope has gone through eight major development stages.
+## Project status
 
 ```text
 M0  prototype stabilization               complete
 M1  passive foundation                    complete
-M2  jobs + persistence                    complete
+M2  durable jobs + persistence            complete
 M3  active discovery                      complete
 M4  service-aware protocol audits         complete
 M5  findings engine                       complete
 M6  reporting                             complete
 M7  operator GUI + local auth             complete
-M8  generic Linux appliance               active
+M8  generic Linux appliance               implementation complete
+M9  hardening + lifecycle                 implementation complete / release validation pending
+
+                                      ↓
+                             v1.0.0-rc1 release gate
 ```
 
-M0–M7 are implemented and used by the current branch. M8 already contains most appliance functionality — installer, systemd integration, kiosk mode, backup/restore, distro detection, network helper, and deployment hardening — but it should not be considered fully closed until cross-distribution release verification and the remaining operational work are complete.
+The current goal is **not to add scanners indefinitely**. It is to validate the existing appliance as a release candidate.
 
-Current working branch:
-
-```text
-milestone-8-appliance
-```
-
-## Project-wide rules
-
-A few constraints apply regardless of milestone:
+## Non-negotiable project rules
 
 - Python 3.11+;
-- generic Linux on `amd64` and `arm64`;
-- backend and worker do not run as root;
-- provider execution does not use `shell=True`;
+- generic Linux on `amd64`/`arm64`;
+- API and worker remain unprivileged;
+- external tools use argv arrays and no `shell=True`;
 - packet-capture privileges belong only to `dumpcap`;
-- active scanning stays inside explicitly confirmed scope;
-- raw evidence remains separate from normalized data;
-- live-network tests are opt-in;
-- provider/parser failure is not interpreted as protocol absence;
-- new providers and parsers require fixture/unit/API coverage;
-- runtime behavior changes must be reflected in the relevant subsystem documentation.
+- active scans stay inside operator-confirmed scope;
+- raw evidence stays separate from normalized data;
+- provider/parser failure never means protocol absence;
+- runtime behavior requires tests and documentation;
+- default pytest must not accidentally use a live network.
 
 ---
 
-# M0 — Prototype stabilization — complete
+# M0 — Stabilize — complete
 
-The first stage was not about adding features. It turned the early prototype into a codebase that could be developed safely.
-
-Work included:
-
-- fixing syntax and import errors;
-- removing obvious duplicate/dead code;
-- centralizing filesystem paths in settings;
-- adding `pyproject.toml`;
-- creating a reproducible virtualenv/dependency setup;
-- adding initial API/settings/environment/sensor tests;
-- documenting current and target architecture;
-- defining the development roadmap.
-
-The practical result was a repeatable baseline rather than a project tied to the incidental state of one VM.
+The prototype became a reproducible Python codebase: centralized settings, `pyproject.toml`, virtualenv/dependency setup, initial API/environment/sensor tests, architecture boundaries, and a roadmap.
 
 ---
 
 # M1 — Passive foundation — complete
 
-M1 replaced the early passive scanner with a bounded, repeatable pipeline.
-
-## Tool runner
-
-A common controlled runner was introduced with:
-
-- argv arrays instead of shell command strings;
-- timeout support;
-- cancellation;
-- exit code/stdout/stderr capture;
-- tool-version metadata;
-- structured error categories;
-- bounded output.
-
-## Interface policy
-
-Interfaces are discovered and validated before a capture provider receives the interface name. Unknown, loopback, or policy-denied interfaces are not forwarded directly to `dumpcap`.
-
-## Capture/decode pipeline
-
-The current shape was established here:
+A bounded passive pipeline was established:
 
 ```text
-interface
-   ↓
-dumpcap → bounded PCAP
-   ↓
+validated interface
+      ↓
+dumpcap → PCAP
+      ↓
 tshark -T ek
-   ↓
+      ↓
 PacketRecord
-   ↓
-passive sensors
-   ↓
+      ↓
+sensors
+      ↓
 assessment
 ```
 
-A live passive audit uses one `dumpcap` and one `tshark`, rather than one tshark process per protocol sensor.
-
-## Sensors
-
-The passive set includes:
-
-- Ethernet/MAC;
-- VLAN/QinQ;
-- ARP;
-- DHCPv4;
-- LLDP/CDP;
-- STP;
-- IPv6 RA/ND;
-- DHCPv6;
-- mDNS;
-- LLMNR;
-- NBNS;
-- SSDP.
-
-## Assessment
-
-The confidence model and the “do not claim more than the evidence supports” rule were introduced here.
-
-Examples:
-
-- ARP `/24` grouping is only a hint;
-- untagged traffic is not assigned an invented VLAN ID;
-- LLDP/CDP PVID is not treated as an 802.1Q tag observed in the capture.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md).
+Coverage includes Ethernet/MAC, VLAN/QinQ, ARP, DHCPv4/v6, LLDP/CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS, SSDP, and confidence-aware assessment.
 
 ---
 
-# M2 — Durable jobs and persistence — complete
+# M2 — Durable jobs + persistence — complete
 
-M2 removed process-local job state and made audit workflows resilient to API/browser restarts.
+Process-local state was replaced by SQLite as the system of record.
 
-## SQLite
+Added:
 
-SQLAlchemy 2, Alembic, and appliance-local SQLite were added.
-
-The database uses:
-
-- WAL;
-- foreign keys;
-- busy timeout;
-- short transactions;
-- `synchronous=FULL` by default.
-
-## Job model
-
-Durable states became:
-
-```text
-queued
-running
-completed
-failed
-cancelled
-interrupted
-```
-
-Job metadata, progress, events, cancellation requests, and result references are persisted.
-
-## API / worker split
-
-The production process model became:
-
-```text
-wirescope-api
-wirescope-worker
-```
-
-The API enqueues work. The worker claims and executes it.
-
-The GUI and API request that created a job no longer own its lifetime.
-
-## Recovery and locks
-
-This stage added:
-
+- SQLAlchemy/Alembic;
+- WAL/foreign keys/busy timeout;
+- `queued/running/completed/failed/cancelled/interrupted`;
+- API/worker split;
+- job events;
 - worker heartbeat;
-- supervisor lease;
-- restart recovery;
 - resource locks;
-- atomic artifact storage;
-- startup cleanup of temporary/orphan files.
-
-A job left running after a worker crash becomes `interrupted`; queued jobs remain queued.
+- restart recovery;
+- atomic artifact storage.
 
 ---
 
 # M3 — Active discovery — complete
 
-M3 added controlled Nmap discovery and persistent asset/service inventory.
+WireScope gained confirmed active scope and a controlled Nmap provider.
 
-## Authorized scope
+Before execution it validates/canonicalizes targets, enforces scope caps, rejects unspecified/multicast targets, revalidates interface/route, and persists an immutable confirmed-scope snapshot.
 
-Observed network hints were explicitly separated from permission to scan.
-
-Before Nmap runs:
-
-- targets are canonicalized with `ipaddress`;
-- size caps are enforced;
-- unspecified/multicast targets are rejected;
-- interface policy is checked;
-- the real route is validated;
-- an immutable confirmed-scope snapshot is stored.
-
-## Nmap provider
-
-A single Nmap execution path was introduced with XML evidence and normalized parsing.
-
-Profiles:
-
-- Discovery;
-- Standard;
-- Deep.
-
-The backend is not granted raw-socket privileges just for Nmap. Without them, the provider uses TCP connect fallback.
-
-NSE, `-sC`, vuln, brute, exploit, and DoS scripts are not part of active discovery.
-
-## Inventory
-
-M3 added:
-
-- assets;
-- addresses;
-- names with provenance;
-- services;
-- OS/device hints;
-- passive/active correlation.
-
-Correlation uses exact MAC first, then exact IP. Conflicting identity evidence is recorded instead of silently merged.
-
-See [SCANNING_MODEL.md](SCANNING_MODEL.md).
+Nmap XML is evidence; assets/services are normalized inventory. Identity correlation prefers MAC then IP and preserves conflicts rather than aggressively merging devices.
 
 ---
 
 # M4 — Service-aware protocol audits — complete
-
-After ordinary inventory, WireScope gained targeted checks for discovered services.
 
 Current modules:
 
@@ -259,368 +109,188 @@ Current modules:
 | SNMP | `snmpget` |
 | LDAP | `ldapsearch` |
 
-Each module declares:
-
-- service predicates;
-- safety class;
-- required binary;
-- argv builder;
-- parser;
-- normalized observations;
-- timeout;
-- fixtures.
-
-A module does not run merely because its binary is installed. A matching service must exist in inventory, and the target address must remain inside authorized scope.
-
-Credential guessing, SNMP community brute force, and aggressive default scanners were intentionally excluded.
-
-`testssl.sh`, Nikto, and Nuclei remain `never-default` stubs.
+A module runs only for a matching discovered service inside authorized scope. Credential guessing and aggressive vulnerability scanners are not default behavior.
 
 ---
 
-# M5 — Findings engine — complete
-
-M5 separated security interpretation from scanner/provider output.
+# M5 — Findings — complete
 
 ```text
-observations
-     ↓
+normalized observations
+        ↓
 versioned rules
-     ↓
+        ↓
 findings
 ```
 
-Rules consume normalized data and do not parse raw tool stdout.
-
-The model added:
-
-- severity;
-- confidence;
-- recommendations;
-- evidence links;
-- deduplication;
-- `suppressed`;
-- `accepted_risk`;
-- finding state history.
-
-Initial rule families cover SSH, TLS, HTTP, SMB, DNS, SNMP, LDAP, insecure management protocols, and selected infrastructure observations.
-
-See [FINDINGS_MODEL.md](FINDINGS_MODEL.md).
+Findings gained severity, confidence, evidence links, recommendations, deduplication, and state history such as suppressed/accepted-risk.
 
 ---
 
 # M6 — Reporting — complete
 
-M6 introduced reproducible audit reporting from persisted state.
-
-Schema:
+Canonical report contract:
 
 ```text
 audit-report v1
 ```
 
-Exports:
-
-- self-contained HTML;
-- normalized JSON.
-
-Report generation does not invoke scanners and does not resolve caller-supplied filesystem paths.
-
-The report model includes:
-
-- executive summary;
-- environment;
-- passive assessment;
-- scope;
-- inventory;
-- findings;
-- recommendations;
-- evidence metadata;
-- generation history;
-- `source_hash`.
-
-PDF was deliberately deferred until the HTML/report contract stabilized and remains unimplemented.
-
-See [REPORTING_MODEL.md](REPORTING_MODEL.md).
+JSON and self-contained HTML were introduced first; Markdown was later added over the same persisted contract. Report generation does not contact the network.
 
 ---
 
-# M7 — GUI and local authentication — complete
+# M7 — GUI + local auth — complete
 
-M7 made WireScope usable without shell access for the ordinary operator workflow.
-
-Main flow:
+The product became browser-first:
 
 ```text
-login
-→ new audit
-→ interface/network/scope
-→ profile
-→ passive/active/protocol jobs
-→ summary
-→ assets/observations/assessment/findings
-→ report
+login → audit wizard → progress → inventory/findings → report
 ```
 
-This stage added:
-
-- `auditor` and `viewer` roles;
-- local SQLite users;
-- session cookies;
-- password changes;
-- backend role enforcement;
-- 480×320 kiosk layout;
-- denser laptop layout;
-- durable polling and page-reload recovery;
-- separate observations/assessment/findings screens.
-
-The same GUI foundation later gained:
-
-- appliance network settings;
-- **Listen / Record** with retained PCAP;
-- BPF filter support;
-- capture progress and download.
-
-See [GUI_MODEL.md](GUI_MODEL.md).
+Added auditor/viewer roles, local sessions, kiosk layout, durable polling, network screen, Listen/Record, and password change.
 
 ---
 
-# M8 — Generic Linux appliance — active
+# M8 — Generic Linux appliance — implementation complete
 
-M8 is the current stage. Its purpose is not to add another scanner, but to turn the existing application into a Linux appliance that can be installed, operated, upgraded, and recovered predictably.
+M8 turned the Python project into an installable appliance.
 
-## Already implemented
+Implemented:
 
-### Generic Linux installer
+- apt/dnf/yum/zypper detection;
+- amd64/arm64;
+- system and user install;
+- service account;
+- `/opt/wirescope`, `/etc/wirescope`, `/var/lib/wirescope` layout;
+- dumpcap least privilege;
+- API/worker/kiosk systemd units;
+- tty1 Chromium kiosk without a full desktop;
+- network helper;
+- backup/restore;
+- upgrade path;
+- direct TLS/reverse-proxy helpers;
+- dependency inventory/checksums;
+- `0.0.0.0:8000` as the normal appliance listener.
 
-The installer detects:
+Cross-distro and real-hardware checks are release validation rather than a reason to keep M8 permanently open.
 
-- `apt`;
-- `dnf`;
-- `yum`;
-- `zypper`;
-- `amd64`;
-- `arm64`.
+---
 
-No Raspberry Pi-specific OS is required.
+# M9 — Hardening & lifecycle — implementation complete
 
-Both system install and `--user-install` are supported.
+M9 is the final mandatory code milestone before RC1.
 
-### Service account and paths
+## API structure
 
-A system install uses the unprivileged `wirescope` account and separates:
+The former large `backend/app.py` was decomposed into domain routers. `/api/v1` is canonical; `/api` remains a temporary compatibility alias.
+
+## Operator insights
+
+Added runtime capabilities, declarative active profiles, dashboard/pipeline, passive/active correlation view, stronger device classification, audit diff, audit-scoped evidence, and Markdown export.
+
+## Operational audit log
+
+`operational_events` records significant operator mutations and login attempts without storing request bodies or secrets.
+
+## Recovery
+
+Manual retry for failed/interrupted/cancelled jobs creates a new durable job. Terminal history stays immutable; recovery operates at stage level.
+
+## Lifecycle / retention
+
+The lifecycle service provides SQLite quick-check, disk/evidence usage, retention candidates, preview-first cleanup, explicit raw-evidence deletion, and preservation of normalized audit history.
+
+## Diagnostics
+
+Auditors get a single diagnostic snapshot and JSON export before needing SSH.
+
+## Operations UI
+
+`frontend/operations.js` exposes health, disk usage, retention, operational events, and retry controls without expanding the primary wizard.
+
+## CI
+
+GitHub Actions compiles Python and runs the default pytest suite. Regression coverage now includes API versioning, profiles, insights, evidence, Markdown, bind policy, lifecycle/retry/diagnostics, and frontend integration.
+
+---
+
+# v1.0 RC1 — release gate
+
+**RC1 is the next milestone, but it is not another feature milestone.** It cannot be closed by a GitHub commit alone.
+
+Required live path:
 
 ```text
-Git checkout      /opt/wirescope        recommended
-configuration     /etc/wirescope
-mutable data      /var/lib/wirescope
+backup
+  ↓
+git update + packaging/upgrade.sh
+  ↓
+migrations current
+  ↓
+API + worker ready
+  ↓
+remote GUI through appliance IP
+  ↓
+passive audit
+  ↓
+Standard audit on authorized scope
+  ↓
+assets/services/findings/evidence
+  ↓
+HTML/JSON/Markdown
+  ↓
+second audit + diff
+  ↓
+worker interruption + retry
+  ↓
+retention preview
+  ↓
+diagnostics / operational log
 ```
 
-### `dumpcap` least privilege
+Full gate: [RELEASE_READINESS.md](RELEASE_READINESS.md).
 
-The installer configures `dumpcap`, the `wireshark` group, and file capabilities without granting those capabilities to the Python interpreter/backend.
-
-### systemd
-
-Separate units exist for:
-
-- API;
-- worker;
-- optional kiosk.
-
-System units use `SupplementaryGroups=wireshark`. User units use `sg wireshark`.
-
-### Kiosk
-
-The autonomous mode works without a full desktop environment.
-
-The system kiosk:
-
-- owns `tty1`;
-- waits for API health;
-- opens Chromium;
-- uses Cage or Xorg/xinit;
-- uses the Xorg path on VMware;
-- can restart without cancelling jobs.
-
-### Local and remote operator modes
-
-Supported deployment styles include:
-
-- loopback kiosk;
-- local browser;
-- Caddy/nginx reverse proxy;
-- direct Uvicorn TLS;
-- explicit LAN bind.
-
-### Backup / restore
-
-The appliance CLI can back up and restore SQLite plus evidence.
-
-### Upgrade
-
-`packaging/upgrade.sh` supports re-running installation logic while preserving data/configuration and applying migrations.
-
-### Host/network support
-
-The appliance layer now includes:
-
-- host/distribution detection;
-- dependency inventory;
-- network-control helper;
-- readiness/verification helpers;
-- self-signed TLS helper;
-- release checksums;
-- proxy/firewall examples.
-
-### Listen / Record
-
-The M8-era GUI/runtime also includes a separate `packet_capture` workflow with promiscuous `dumpcap`, optional BPF filtering, duration/file-size limits, and retained PCAP evidence.
-
-## Work remaining before M8 is considered complete
-
-### 1. Cross-distribution release verification
-
-Fixture-based detection exists, but stable release qualification should include real smoke installs on at least:
-
-- Debian/Ubuntu;
-- one Fedora/RHEL/Rocky system;
-- openSUSE as a separate target if practical;
-- `amd64` and at least one real `arm64` host.
-
-Verification should cover the full path rather than just installer exit status:
+After it passes:
 
 ```text
-install
-→ migration
-→ worker ready
-→ login
-→ passive fixture/live capture smoke
-→ active discovery smoke
-→ report
-→ reboot
-→ recovery
+v1.0.0-rc1
 ```
 
-### 2. tshark compatibility matrix
-
-Parser fixtures target a verified tshark 4.x family, but distribution packages may expose field-layout/version differences.
-
-Before release, document a compatibility matrix and run smoke tests against the package versions shipped by supported distributions.
-
-### 3. Retention policy
-
-Startup maintenance already removes controlled temporary/orphan files, but there is no full policy-driven deletion of completed audits and registered evidence.
-
-A future retention design needs explicit rules for:
-
-- audit metadata lifetime;
-- PCAP/raw evidence lifetime;
-- report retention;
-- safe delete transactions;
-- operator override/export-before-delete.
-
-### 4. Security audit log
-
-Operational structured logs, finding state events, and job events already exist, but there is no dedicated security audit-log table for sensitive actions.
-
-Potential events include:
-
-- login failures;
-- password changes/resets;
-- network configuration changes;
-- scope confirmations;
-- finding state changes;
-- report exports;
-- privileged helper failures.
-
-### 5. Explicit retry workflow
-
-Terminal jobs are not retried automatically, which is the correct safe default.
-
-A future **manual retry** should create a new job linked explicitly to the previous attempt rather than mutating the old terminal job back to running.
-
-### 6. API route decomposition
-
-`backend/app.py` has become large. The runtime architecture still works, but future maintenance will benefit from splitting HTTP routes into router modules and narrower domain-facing dependencies.
-
-This is refactoring debt, not a current functional blocker.
-
-### 7. Optional Raspberry Pi hardware validation
-
-Raspberry Pi is no longer the primary platform, but real ARM64/Pi kiosk smoke testing remains useful as an optional release target:
-
-- display/touch;
-- Chromium kiosk;
-- dumpcap;
-- thermal/resource behavior;
-- reboot recovery.
-
-It must not turn Raspberry Pi OS back into a requirement for the whole project.
+After several real audits with no release-blocking install, persistence, scope-control, or reporting defects, the project can move to `v1.0.0`.
 
 ---
 
-# After M8
+# Post-1.0 roadmap
 
-The next milestone number is intentionally not fixed yet. Once the appliance layer is stable, new features should be chosen from real audit use cases rather than by adding scanners for feature-count alone.
+These items are useful but **do not block the first stable release**.
 
-Possible directions include:
+## Protocol coverage
 
-## More protocol coverage
+Candidates include FTP, SMTP, RDP, Redis, PostgreSQL/MySQL/MSSQL, MongoDB, Elasticsearch, MQTT, UPnP, IPMI, NTP, TFTP, Telnet, VNC, Docker API, and Kubernetes API.
 
-Potential modules:
+Each requires a safe observation contract before finding rules.
 
-- FTP;
-- SMTP;
-- RDP;
-- Redis;
-- PostgreSQL;
-- MySQL/MariaDB;
-- MSSQL;
-- MongoDB;
-- Elasticsearch;
-- MQTT;
-- UPnP;
-- IPMI;
-- NTP;
-- TFTP;
-- Telnet;
-- VNC;
-- Docker API;
-- Kubernetes API.
+## Reports
 
-Each should start with a safe observation contract before finding rules are added.
+- PDF renderer over `audit-report v1`;
+- additional exports only when real workflows require them.
 
-## PDF
+## Network intelligence
 
-PDF should be added only on top of the stable HTML/report model. A PDF renderer must not become a new network-data source or a separate truth model.
+- topology graph;
+- deeper historical identity tracking;
+- CVE enrichment;
+- scheduled/baseline audits.
 
-## Authenticated audits
+## Engineering
 
-WireScope currently works mostly without credentials. Authenticated SSH/LDAP/AD/SMB/API checks would require a separate credential-storage and security model before provider implementation.
+- further frontend decomposition;
+- eventual removal of `/api/*` alias;
+- broader distro/architecture CI matrix;
+- a credential security model if authenticated checks are introduced.
 
-## Better asset identity
+## Definition of done for future runtime changes
 
-Current correlation is deliberately conservative. A richer future identity model is possible, but weak heuristic signals should not silently merge hosts.
+A change is complete when it has implementation, migration if required, unit/fixture/API coverage, explicit failure behavior, timeout/cancellation for external tools, no secrets in logs/units, updated documentation, and green default CI.
 
-## Export/API versioning
-
-As external integrations appear, public API contracts will need explicit versioning in addition to report-schema versioning.
-
----
-
-# Definition of done for new runtime work
-
-New behavior should normally include:
-
-- implementation;
-- migration if schema changes;
-- unit/fixture/API tests;
-- explicit failure behavior;
-- cancellation/timeout when external tools are involved;
-- no secrets in logs or unit files;
-- updates to the relevant documentation;
-- no accidental live-network work in default pytest;
-- reviewable commits without runtime artifacts.
-
-The guiding rule remains simple: WireScope should do exactly what it tells the operator it is doing, and lack of evidence should never be silently promoted into a confident conclusion.
+The enduring rule is simple: WireScope must do what it tells the operator it is doing and must never turn missing evidence into an overconfident conclusion.

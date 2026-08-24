@@ -1,6 +1,20 @@
-# WireScope development
+# Разработка WireScope
 
-## Setup
+**Русский** · [English](en/DEVELOPMENT.md)
+
+Этот документ — короткий рабочий гайд для локальной разработки. Production installation описана отдельно в [INSTALLATION.md](INSTALLATION.md).
+
+## Требования
+
+- Python 3.11+;
+- Linux;
+- для реального passive capture — `dumpcap` и `tshark`;
+- для active discovery — Nmap;
+- дополнительные protocol tools нужны только для соответствующих модулей.
+
+Большая часть тестов работает на fixtures и не требует установленных scanners.
+
+## Создание окружения
 
 ```bash
 python3 -m venv .venv
@@ -9,66 +23,152 @@ python3 -m venv .venv
 .venv/bin/alembic upgrade head
 ```
 
-The application never creates production tables with
-`Base.metadata.create_all()`. Apply Alembic migrations before starting either
-process.
+Production tables создаются Alembic migrations. `Base.metadata.create_all()` не является способом инициализации рабочей базы.
 
-## Development process model
+## Локальный запуск
 
-Use two terminals:
+API и worker запускаются отдельно.
+
+Терминал 1:
 
 ```bash
-.venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000
+.venv/bin/uvicorn backend.app:app \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+Терминал 2:
+
+```bash
 .venv/bin/python -m jobs.worker
 ```
 
-The API only enqueues durable jobs. The worker performs startup recovery,
-maintenance, claiming, execution, progress, and cancellation. Stopping the API
-does not remove job metadata or stop a separately running worker.
+Открыть GUI:
 
-Only one worker supervisor process is allowed. Concurrency is supplied by its
-bounded worker thread pool.
+```text
+http://127.0.0.1:8000/
+```
 
-## Schema changes
+API создаёт jobs, но сам их не исполняет. Worker отвечает за startup recovery, claiming, handlers, progress и cancellation.
 
-1. Update `persistence/models.py`.
-2. Generate a revision against an empty or migrated development database:
+Остановка API не удаляет jobs из SQLite и не останавливает отдельно работающий worker.
 
-   ```bash
-   .venv/bin/alembic revision --autogenerate -m 'describe change'
-   ```
+## Worker model
 
-3. Review generated constraints, indexes, downgrade order, and SQLite
-   compatibility.
-4. Test both `alembic upgrade head` on an empty database and application use.
+Одновременно должен работать один supervisor process. Внутренняя concurrency задаётся bounded thread pool через settings.
 
-Do not hold a SQLAlchemy session or transaction while a scanner, capture, or
-parser runs.
+Не нужно запускать несколько `python -m jobs.worker`, чтобы «ускорить» обработку: это нарушает предполагаемую appliance process model и supervisor lease.
 
-## Verification
+## Job handler
+
+Новый долгий workflow оформляется как handler и регистрируется в `HandlerRegistry`.
+
+Handler получает контролируемый runtime context, включая:
+
+- immutable audit/job data;
+- settings;
+- cancellation token;
+- evidence store;
+- progress callback;
+- нужные domain services/providers.
+
+Handler не должен возвращать мегабайты raw data в job row. Большие результаты идут в `EvidenceStore`, а job сохраняет compact result reference/summary.
+
+Progress events создаются по meaningful stages, а не на каждый packet/host/строку stdout.
+
+## External tools
+
+Общие правила:
+
+- argv arrays;
+- без `shell=True`;
+- timeout;
+- process-group cancellation;
+- bounded output;
+- structured error categories;
+- raw output при необходимости сохраняется как evidence.
+
+User input не должен превращаться в произвольные scanner flags.
+
+## Изменение database schema
+
+1. Изменить SQLAlchemy models в `persistence/models.py`.
+2. Создать migration:
+
+```bash
+.venv/bin/alembic revision \
+  --autogenerate \
+  -m 'describe change'
+```
+
+3. Проверить сгенерированный файл руками.
+4. Особое внимание:
+   - constraints;
+   - indexes;
+   - SQLite compatibility;
+   - upgrade order;
+   - downgrade, если он вообще заявлен как рабочий.
+5. Проверить upgrade на новой БД и на БД предыдущей revision.
+
+Scanner/capture/parser никогда не должен выполняться внутри открытой SQLAlchemy transaction/session дольше, чем необходимо для короткой DB-операции.
+
+## Тесты
+
+Обычный прогон:
 
 ```bash
 .venv/bin/pytest
-.venv/bin/python -m compileall -q backend config engine inventory jobs \
-  parsers persistence protocol_audits findings reports providers sensors \
-  storage auth appliance tests
+```
+
+В `pyproject.toml` default marker expression исключает:
+
+```text
+network
+live_pi
+```
+
+То есть стандартные тесты не должны сканировать реальную сеть.
+
+### Основные marker'ы
+
+- `network` — opt-in live network;
+- `integration` — более широкий pipeline, но не обязательно live network;
+- `browser` — optional Playwright/Chromium;
+- `live_pi` — Raspberry Pi hardware-specific проверки.
+
+Для реальных network tests должен быть явно задан scope, например через `WIRESCOPE_LIVE_SCOPE`, и тест запускается с `-m network`.
+
+Findings/reporting tests сеть не используют вообще.
+
+## Проверка import/syntax
+
+```bash
+.venv/bin/python -m compileall -q \
+  backend config engine inventory jobs parsers persistence \
+  protocol_audits findings reports providers sensors storage \
+  auth appliance tests
+```
+
+Dependency consistency:
+
+```bash
 .venv/bin/pip check
+```
+
+## Benchmarks
+
+В репозитории есть lightweight benchmarks для persistence/inventory:
+
+```bash
 .venv/bin/python -m scripts.benchmark_persistence
 .venv/bin/python -m scripts.benchmark_inventory
 ```
 
-Tests use a temporary migrated SQLite database and temporary evidence root.
-The default `pytest` invocation excludes `@pytest.mark.network`. Passive,
-active, protocol-audit, findings, reporting, listen/record, and GUI tests use
-fixtures and do not scan the live network. Live Nmap or protocol probes require an
-explicit `WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation
-and report generation never contact a network. Optional Playwright kiosk
-tests (`@pytest.mark.browser`) skip when Playwright or Chromium is not
-installed. The appliance kiosk extra does the same: missing Chromium is a
-skip, not a CI failure. The system kiosk is a boot unit on tty1 (Cage or
-xinit), not a desktop session.
+Это regression indicators, а не обещание конкретной производительности на любом железе.
 
-Create the first local operators only when the user table is empty:
+## Bootstrap пользователей в development
+
+Только для development можно создать первых пользователей через environment variables, если таблица `users` ещё пустая:
 
 ```bash
 export WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME=auditor
@@ -77,20 +177,77 @@ export WIRESCOPE_BOOTSTRAP_VIEWER_USERNAME=viewer
 export WIRESCOPE_BOOTSTRAP_VIEWER_PASSWORD='choose-a-long-password'
 ```
 
-Restarting the API process bootstraps those accounts once. There is no
-default password. The kiosk/UI is a browser client; stopping it does not
-cancel worker jobs.
+После startup accounts создаются один раз.
 
-## Durable handler contract
+В production эти секреты не должны попадать в systemd units. Appliance installer использует password file/bootstrap flow из [INSTALLATION.md](INSTALLATION.md).
 
-Register handlers in `HandlerRegistry`. A handler receives:
+## Frontend
 
-- immutable audit/job records;
-- settings;
-- a cooperative cancellation token;
-- an atomic evidence store;
-- a progress callback.
+Отдельной build-системы нет.
 
-Handlers return only a compact result reference and audit summary. Large
-documents belong in the evidence store. Emit progress only at meaningful
-stages; never insert one event per packet.
+Frontend files:
+
+```text
+frontend/index.html
+frontend/app.js
+frontend/i18n.js
+frontend/style.css
+```
+
+Изменения UI проверяются как минимум на:
+
+- 480×320 kiosk layout;
+- desktop width ≥ 900px;
+- auditor/viewer role behavior;
+- reload во время running job;
+- error/partial/cancelled states.
+
+Optional browser tests skip'аются, если Chromium/Playwright не установлен.
+
+## Passive fixtures
+
+Passive parser/sensor tests должны использовать сохранённые PCAP/normalized fixtures, а не требовать live capture.
+
+Новый sensor/provider должен иметь fixtures минимум для:
+
+- normal success;
+- отсутствие нужного protocol evidence;
+- malformed input;
+- provider/parser failure, если применимо.
+
+Ошибка parser не должна тестироваться как `detected=false`; ожидаемый контракт — `partial` или `error`.
+
+## Protocol module
+
+Новый module должен определить:
+
+- predicates;
+- tool;
+- safety class;
+- argv builder;
+- parser;
+- observation kinds;
+- timeout;
+- fixtures.
+
+Module parser не должен писать в SQLite напрямую. Persistence выполняется orchestration/store layer.
+
+## Finding rule
+
+Finding rule работает только с normalized data и evidence references.
+
+Нельзя добавлять в finding rule парсинг raw stdout scanner'а. Если rule не хватает поля — сначала поле должно появиться в normalized observation contract.
+
+## Документация при изменениях
+
+Если меняется behavior, обновлять нужно документ того слоя, который реально изменился:
+
+- scope/Nmap/protocol module → `SCANNING_MODEL.md`;
+- privilege/auth/evidence → `SECURITY_MODEL.md`;
+- persistence/process boundaries → `ARCHITECTURE.md`;
+- finding rule semantics → `FINDINGS_MODEL.md`;
+- report schema → `REPORTING_MODEL.md`;
+- UI workflow → `GUI_MODEL.md`;
+- installation/systemd → `INSTALLATION.md` и `RUNBOOK.md`.
+
+Не стоит использовать `IMPLEMENTATION_PLAN.md` как единственное место, где описано уже существующее runtime behavior.

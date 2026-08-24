@@ -28,8 +28,10 @@ groups through a cooperative token.
 Only one healthy worker supervisor may run. Database-backed resource locks
 prevent simultaneous passive captures on one interface, serialize active
 discovery against that same interface, enforce global capture/Nmap limits,
-and serialize protocol audits per audit (`audit:<id>` plus the
-`protocol_audit` group).
+serialize protocol audits per audit (`audit:<id>` plus the `protocol_audit`
+group), and serialize findings evaluation per audit (`audit:<id>` plus the
+`findings` group). Findings evaluation does not take `interface:<name>` and
+does not invoke scanners.
 
 API errors contain typed safe fields. Python tracebacks remain in structured
 debug logs and are not returned as HTTP responses.

@@ -8,9 +8,9 @@ The current `0.1.0` codebase is an early prototype being stabilized in
 milestones. It can inspect the host network environment, capture through
 `dumpcap`, decode one normalized stream for fourteen passive sensors, persist
 durable jobs, run authorized active discovery into an asset/service inventory,
-and enqueue service-aware protocol audits. Findings, reporting,
-authentication, and appliance deployment are planned work and are not
-complete.
+and enqueue service-aware protocol audits. The findings engine consumes those
+stored observations. Reporting, authentication, and appliance deployment are
+planned work and are not complete.
 
 ## Current components
 
@@ -24,6 +24,7 @@ complete.
 - `sensors/` — passive protocol sensors.
 - `inventory/` — authorized scope, assets, services, and correlation.
 - `protocol_audits/` — inventory-driven protocol modules and observations.
+- `findings/` — declarative rules that turn observations into findings.
 - `frontend/` — minimal environment dashboard.
 - `config/` — centralized application paths and runtime settings.
 - `tests/` — tests that do not require live packet capture.
@@ -82,7 +83,7 @@ Run tests:
 ```bash
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
-  parsers persistence protocol_audits providers sensors storage tests
+  parsers persistence protocol_audits findings providers sensors storage tests
 .venv/bin/pip check
 ```
 
@@ -120,6 +121,8 @@ through the `wireshark` group. See
 - `WIRESCOPE_MAX_ACTIVE_DISCOVERY_JOBS` — concurrent Nmap pipelines; defaults
   to one.
 - `WIRESCOPE_MAX_PROTOCOL_AUDIT_JOBS` — concurrent protocol-audit jobs;
+  defaults to one.
+- `WIRESCOPE_MAX_FINDINGS_JOBS` — concurrent findings-evaluation jobs;
   defaults to one.
 - `WIRESCOPE_PROTOCOL_AUDIT_CONCURRENCY` — in-job module parallelism; defaults
   to one and cannot exceed four.

@@ -434,6 +434,9 @@ Acceptance criteria:
 
 ## Milestone 5 — Findings engine
 
+Status: implemented on `milestone-5-findings-engine`. See
+[FINDINGS_MODEL.md](FINDINGS_MODEL.md).
+
 - define versioned finding and severity models;
 - create declarative rules independent of scanners;
 - correlate multiple observations and evidence sources;
@@ -460,6 +463,17 @@ Acceptance criteria:
 - findings never depend on parsing raw stdout directly;
 - every finding links to normalized observations and raw evidence;
 - rules produce deterministic results from fixtures.
+
+Implementation evidence:
+
+- Alembic revision `f5a91c3e7b04` adds `findings` and `finding_state_events`;
+- `findings/rules/` is a registry of declarative rules over
+  `protocol_observations`, inventory services, and stored passive-result
+  artifacts;
+- job type `findings_evaluation` takes `audit:<id>` plus group `findings`
+  (max 1) and does not take `interface:<name>` or invoke scanners;
+- API lists, gets, suppresses, accepts risk, and reopens findings;
+- default pytest stays fixture-based (`-m not network`).
 
 ---
 

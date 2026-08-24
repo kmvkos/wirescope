@@ -293,10 +293,14 @@ Re-processing upserts on
 `(audit, asset, service, module, kind, dedupe_key)` and updates `last_seen`
 instead of duplicating rows.
 
-### What Milestone 5 should consume
+### What Milestone 5 consumes
 
-Findings rules should read `protocol_observations` kinds such as
+Findings rules read `protocol_observations` kinds such as
 `ssh_algorithms`, `tls_session`, `tls_certificate`, `http_response`,
 `dns_flags`, `smb_null_session`, `snmp_unauthenticated`, and `ldap_rootdse`.
 They must not parse raw `ssh-audit` or OpenSSL stdout. A missing tool is not
 evidence that a protocol is absent.
+
+Milestone 5 is implemented. See [FINDINGS_MODEL.md](FINDINGS_MODEL.md). The
+findings job does not take `interface:<name>` and does not invoke protocol
+tools.

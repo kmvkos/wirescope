@@ -44,7 +44,8 @@ backend/app.py
     ├── jobs/  +  persistence/  +  storage/
     ├── engine/passive.py
     ├── inventory/
-    └── protocol_audits/
+    ├── protocol_audits/
+    └── findings/
 ```
 
 ### `backend/`
@@ -134,8 +135,8 @@ The `/24` grouping is a hint and is not treated as a discovered subnet mask.
 persists audits, jobs, progress, events, worker heartbeats, and resource locks
 through short SQLAlchemy sessions. `JobWorker` claims queued work atomically
 and dispatches it through `HandlerRegistry`; handlers never appear in an
-`if/elif` chain. `passive_discovery`, `active_discovery`, and
-`protocol_audit` are registered handlers.
+`if/elif` chain. `passive_discovery`, `active_discovery`, `protocol_audit`, and
+`findings_evaluation` are registered handlers.
 
 `EvidenceStore` writes generated files under a controlled root using a
 temporary suffix, `fsync`, and atomic replacement. SQLite stores only metadata,
@@ -152,6 +153,12 @@ and a parser that emits normalized observations. `ProtocolAuditHandler`
 dispatches modules only when inventory services match. Raw tool output is an
 evidence artifact; `protocol_observations` rows are bounded JSON facts, not
 findings.
+
+`findings/` is the Milestone 5 rule package. Declarative rules consume
+`protocol_observations`, inventory services, and stored passive-result
+artifacts. `FindingsEvaluationHandler` does not invoke scanners or parse
+stdout. Findings persist with severity, confidence, evidence links, and a
+suppress/accepted-risk audit trail.
 
 ### `frontend/`
 
@@ -177,6 +184,12 @@ backend contracts incrementally and must remain usable at 480×320.
 - `GET /api/audits/{audit_id}/services`
 - `GET /api/audits/{audit_id}/inventory`
 - `GET /api/audits/{audit_id}/observations`
+- `POST /api/audits/{audit_id}/findings`
+- `GET /api/audits/{audit_id}/findings`
+- `GET /api/audits/{audit_id}/findings/{finding_id}`
+- `POST /api/audits/{audit_id}/findings/{finding_id}/suppress`
+- `POST /api/audits/{audit_id}/findings/{finding_id}/accept-risk`
+- `POST /api/audits/{audit_id}/findings/{finding_id}/reopen`
 - `GET /api/audits/{audit_id}/jobs`
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs`
@@ -254,10 +267,12 @@ A finding records an actionable security or diagnostic result:
 - title and rule identifier;
 - severity (`critical`, `high`, `medium`, `low`, `info`);
 - affected asset and service;
-- description;
-- evidence references;
-- recommendation;
-- rule and schema version.
+- description, rationale, and recommendation;
+- observation and evidence references;
+- rule and schema version;
+- status (`open`, `suppressed`, `accepted_risk`) with an audit trail.
+
+See [FINDINGS_MODEL.md](FINDINGS_MODEL.md).
 
 ### Tool result
 
@@ -427,7 +442,10 @@ Current tables:
 - `assets`, `asset_addresses`, `asset_names`, `services`,
   `asset_observations` — inventory with provenance;
 - `protocol_observations` — idempotent protocol facts with confidence,
-  bounded JSON data, and evidence artifact references.
+  bounded JSON data, and evidence artifact references;
+- `findings` — versioned rule results with severity, confidence, status,
+  observation and evidence links;
+- `finding_state_events` — suppress / accepted-risk / reopen audit trail.
 
 SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
 `synchronous=FULL` by default for appliance power-loss durability. Scanner work
@@ -531,8 +549,6 @@ and listening interfaces are explicit deployment settings.
 
 - authentication and authorization are absent;
 - frontend supports environment display only;
-- protocol observations are inventory enrichment, not findings; the findings
-  engine remains Milestone 5;
 - structured logs include audit/job context in the worker, but there is no
   separate security audit-log table yet;
 - retention cleanup is conservative and does not yet delete completed audits

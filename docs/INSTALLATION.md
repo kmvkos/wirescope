@@ -35,16 +35,18 @@ WireScope можно использовать двумя способами:
 
 ### SSH
 
-Если SSH-ключ лежит у обычного пользователя, клонируйте без `sudo`:
+Если SSH-ключ лежит у обычного пользователя, клонируйте и переключайте ветку без `sudo`, а уже затем переносите checkout в `/opt`:
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance
 ```
 
-`sudo git clone ...` использовал бы SSH-ключи root, а не текущего пользователя.
+Так Git использует ключи текущего пользователя и не возникает лишних проблем с ownership/`safe.directory`.
 
 Если у root уже настроен доступ к GitHub, можно клонировать сразу:
 
@@ -58,9 +60,11 @@ sudo git checkout milestone-8-appliance
 
 ```bash
 git clone https://github.com/kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance
 ```
 
 Для приватного репозитория GitHub нужен токен/credential helper; пароль аккаунта вместо токена не используется.
@@ -277,7 +281,7 @@ Installer сам **не запускает Caddy/nginx и не переписы�
 ### Self-signed TLS для лаборатории
 
 ```bash
-sudo python3 -m appliance tls-selfsigned \
+sudo /opt/wirescope/.venv/bin/python -m appliance tls-selfsigned \
   --output-dir /etc/wirescope/tls \
   --common-name wirescope.example
 ```
@@ -436,7 +440,8 @@ sudo ./packaging/install.sh \
 sudo systemctl status wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
-sudo python3 -m appliance verify --project-root /opt/wirescope
+sudo /opt/wirescope/.venv/bin/python -m appliance verify \
+  --project-root /opt/wirescope
 ```
 
 `/api/health` говорит, что API жив.
@@ -615,7 +620,7 @@ SQLite работает с WAL, foreign keys, короткими транзак�
 ## Release checksums
 
 ```bash
-python3 -m appliance checksums \
+/opt/wirescope/.venv/bin/python -m appliance checksums \
   --project-root /opt/wirescope \
   --output /opt/wirescope/packaging/SHA256SUMS
 

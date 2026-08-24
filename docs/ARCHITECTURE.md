@@ -1,538 +1,338 @@
-# WireScope architecture
+# Архитектура WireScope
 
-## Purpose
+**Русский** · [English](en/ARCHITECTURE.md)
 
-WireScope is a portable network discovery, diagnostics, and security audit
-appliance. Its production target is an unprivileged backend, worker, and
-browser GUI on generic Linux (Debian/Ubuntu and RPM families) on amd64 or
-arm64. The operator console is a local display (kiosk to `127.0.0.1:8000`)
-or a remote browser over LAN/TLS. Raspberry Pi hardware is optional;
-Raspberry Pi OS is not required.
+Этот документ описывает то, как WireScope устроен **сейчас**. История перехода от прототипа к текущей схеме вынесена в [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-WireScope treats command-line tools as evidence providers. Users interact with
-the application API and UI, not with raw `tshark`, Nmap, or shell output.
+## Общая идея
 
-## Architectural principles
+WireScope — локальный сетевой аудитор. Он рассчитан на один Linux-хост или ВМ и поэтому намеренно не тянет за собой Redis, Celery, PostgreSQL и отдельные микросервисы.
 
-1. Sensors and scanners report observations and evidence; assessment and
-   finding rules make interpretations.
-2. Long-running work is represented by durable, cancellable jobs.
-3. Network interfaces and audit scope are validated by the backend.
-4. External tools run through one controlled runner without `shell=True`.
-5. Raw evidence is retained separately from normalized application data.
-6. The backend runs unprivileged. Packet capture privileges belong only to a
-   narrowly configured capture provider such as `dumpcap`.
-7. SQLite is the appliance-local system of record. Redis, Celery, and other
-   distributed infrastructure are not required for a single device.
-8. APIs have explicit, versioned Pydantic contracts before UI workflows depend
-   on them.
-9. Architecture-independent Python is preferred; OS packages must be
-   available on common Linux amd64/arm64 families (apt and at least one RPM
-   manager).
-10. A missing tool or tool failure is an error observation, never equivalent
-    to a protocol not being detected.
-
-## Current architecture
-
-The stabilized prototype remains a small modular monolith:
+Основная схема такая:
 
 ```text
-frontend/
-    │ HTTP + session cookie
-    ▼
-backend/app.py
-    ├── auth/
-    ├── engine/environment.py
-    ├── engine/interfaces.py
-    ├── engine/scope.py
-    ├── engine/routes.py
-    ├── jobs/  +  persistence/  +  storage/
-    ├── engine/passive.py
-    ├── inventory/
-    ├── protocol_audits/
-    ├── findings/
-    └── reports/
+браузер / локальный Chromium kiosk
+                │
+                │ HTTP + session cookie
+                ▼
+          FastAPI backend
+                │
+       ┌────────┼─────────────┐
+       │        │             │
+      auth   audits/jobs   read APIs
+                │
+                ▼
+             SQLite
+                ▲
+                │
+        wirescope-worker
+                │
+   ┌────────────┼───────────────────────────┐
+   │            │           │               │
+passive      active      protocol        findings /
+capture      discovery    audits          reports
+   │            │           │
+   ▼            ▼           ▼
+dumpcap/      Nmap       ssh-audit, openssl,
+tshark                  curl, dig, smbclient,
+                         snmpget, ldapsearch
+                │
+                ▼
+          evidence store
 ```
+
+Это **модульный монолит**: границы проходят по Python-модулям, сервисам и моделям данных, а не по сети.
+
+API и worker разделены на два процесса. Они работают с одной SQLite-базой и одним контролируемым каталогом evidence. GUI — третий, полностью независимый клиент: обычный браузер или Chromium в kiosk-режиме.
+
+## Основные правила архитектуры
+
+В проекте есть несколько принципов, от которых зависит большая часть реализации.
+
+1. **Наблюдение и вывод — разные вещи.** Сенсор или scanner сначала сохраняет факт. Assessment и finding уже интерпретируют этот факт.
+2. **Долгие операции — только через durable jobs.** Перезапуск браузера не должен убивать Nmap или захват трафика.
+3. **Scope проверяется сервером.** Увиденный адрес или маршрут сам по себе не становится разрешением на сканирование.
+4. **Внешние инструменты запускаются без shell.** Команды строятся как argv-массивы; `shell=True` на этом пути не используется.
+5. **Исходные данные отделены от нормализованных.** PCAP, XML и stdout/stderr лежат в evidence store, а не большими BLOB в SQLite.
+6. **Backend и worker непривилегированные.** Packet-capture capabilities принадлежат `dumpcap`, а не Python-процессу.
+7. **Ошибка инструмента не означает отсутствие протокола.** `tool_missing`, timeout или parser error сохраняются как ошибка/неполный результат, а не превращаются в `detected=false`.
+8. **Один appliance — одна локальная база.** SQLite здесь не компромисс «на первое время», а осознанный выбор для автономного устройства.
+
+## Каталоги и ответственность модулей
 
 ### `backend/`
 
-`backend/app.py` owns the FastAPI application, static frontend delivery, and
-the current HTTP routes. It is intentionally thin but still calls engine
-functions directly. API routers and versioned contracts will be introduced as
-the API grows.
+`backend/app.py` собирает FastAPI-приложение, зависимости и HTTP-маршруты. Сейчас файл всё ещё крупный и содержит значительную часть route wiring напрямую; отдельный слой API routers пока не выделен.
+
+Backend:
+
+- проверяет сессию и роль;
+- валидирует входные параметры;
+- создаёт audits и jobs;
+- читает inventory/findings/reports;
+- отдаёт frontend;
+- публикует health/readiness;
+- через контролируемый `NetworkService` обслуживает сетевые настройки хоста.
+
+Backend **не владеет временем жизни job**. После enqueue задача существует независимо от HTTP-запроса и браузера.
 
 ### `config/`
 
-`config/settings.py` is the central source for application identity and
-filesystem paths. Defaults are derived from the source checkout, with
-environment overrides for deployment. Production documentation routes can be
-disabled with `WIRESCOPE_DOCS_ENABLED`.
+`config/settings.py` — единая точка runtime-настроек. Отсюда берутся пути, лимиты захвата, concurrency, Nmap timeouts, scope caps, имена внешних binary, cookie/TLS параметры и прочая политика.
 
-### `engine/environment.py`
+Без appliance installer приложение само по себе по умолчанию использует `127.0.0.1:8000`. У installer CLI сейчас отдельный default `--bind-host 0.0.0.0`, поэтому production-команды в документации задают bind явно.
 
-Discovers local host context through Linux-native sources:
+### `engine/`
 
-- `ip -j addr`;
-- `ip -j route`;
-- `/sys/class/net/<interface>/speed`;
-- `/etc/resolv.conf`;
-- `socket.gethostname()`.
+Это сетевой и пассивный core без привязки к HTTP.
 
-Environment discovery is separate from passive packet analysis. Passive
-capture accepts only an exactly discovered interface that passes loopback,
-allowlist, and link-state policy. Active discovery additionally requires a
-server-validated authorized scope; see [SCANNING_MODEL.md](SCANNING_MODEL.md).
+Ключевые файлы:
 
-### `engine/passive.py`
+- `environment.py` — hostname, адреса, маршруты, DNS и общая информация о хосте;
+- `interfaces.py` — discovery и policy-проверка интерфейсов;
+- `network.py` / `segment.py` — сетевой контекст и изменение конфигурации через appliance boundary;
+- `routes.py` — проверка реального маршрута до активных targets;
+- `scope.py` — canonical scope, caps и запреты;
+- `active_profiles.py` — Discovery / Standard / Deep;
+- `passive.py` — pipeline захвата и разбора PCAP;
+- `assessment.py` — интерпретация пассивных наблюдений.
 
-Owns the passive pipeline:
+### `providers/`
 
-1. validate the requested interface against discovered interfaces and policy;
-2. ask the capture provider to create one bounded pcap with `dumpcap`;
-3. decode that pcap once through line-oriented tshark EK output;
-4. normalize packets and run all sensors in process;
-5. build evidence-backed assessment conclusions;
-6. remove temporary decode and capture files.
+Здесь находятся адаптеры к внешним программам и общий runner.
 
-The result includes capture/decode subprocess metrics. Normal pcap analysis
-uses one subprocess regardless of sensor count; live capture plus analysis uses
-two.
+Важный принцип: provider отвечает за запуск и получение исходного результата, но не должен решать, является ли результат security finding.
 
-### `sensors/passive.py`
+Например, Nmap provider возвращает нормализованные hosts/services и сохраняет XML; rule engine позже решает, что из данных действительно заслуживает finding.
 
-Contains independent protocol-specific consumers of normalized packet records:
+### `sensors/` и `parsers/`
+
+`tshark` декодирует PCAP один раз в line-oriented EK-поток. Parser превращает его в нормализованные packet records, после чего пассивные сенсоры работают в Python и не запускают дополнительные subprocess.
+
+Пассивные сенсоры сейчас покрывают:
 
 - Ethernet/source MAC;
-- VLAN;
+- VLAN/QinQ;
 - ARP;
-- LLDP;
-- CDP;
+- LLDP/CDP;
 - STP;
-- DHCPv4;
-- mDNS;
-- LLMNR;
-- SSDP;
-- IPv6 Router Advertisement;
-- IPv6 Neighbor Solicitation and Advertisement;
-- DHCPv6;
-- NBNS.
+- DHCPv4/DHCPv6;
+- IPv6 RA/NS/NA;
+- mDNS/LLMNR/NBNS;
+- SSDP.
 
-Each sensor returns a Pydantic `SensorResult` with status, hit count,
-observations, summary, warnings, and errors. Sensors never execute external
-tools.
+### `jobs/`
 
-### `engine/assessment.py`
+Job subsystem — фактический orchestration layer WireScope.
 
-Converts observations into explicitly qualified interpretations:
+Сейчас зарегистрированы handlers для:
 
-- traffic visibility;
-- trunk-like versus access-or-native port hints;
-- tagged VLAN observations (802.1Q tags in frames only; LLDP/CDP PVID is a
-  neighbor fact, not a tag);
-- LLDP/CDP neighbors, including advertised native/voice VLAN and port;
-- STP root from BPDUs when present;
-- IPv4 `/24` grouping hints;
-- IPv6 router observations;
-- DHCP presence.
+- `passive_discovery`;
+- `packet_capture`;
+- `active_discovery`;
+- `protocol_audit`;
+- `findings_evaluation`;
+- `report_generation`.
 
-The `/24` grouping is a hint and is not treated as a discovered subnet mask.
+`JobService` — единственный доменный слой, который должен менять состояние audit/job. `JobWorker` atomically claim'ит очередь и передаёт job подходящему handler через registry.
 
-### `jobs/`, `persistence/`, `storage/`, and `inventory/`
+Нет центрального `if job.type == ... elif ...` в worker: новые handlers регистрируются отдельно.
 
-`JobService` is the only domain layer allowed to change audit/job state. It
-persists audits, jobs, progress, events, worker heartbeats, and resource locks
-through short SQLAlchemy sessions. `JobWorker` claims queued work atomically
-and dispatches it through `HandlerRegistry`; handlers never appear in an
-`if/elif` chain. `passive_discovery`, `active_discovery`, `protocol_audit`, and
-`findings_evaluation`, and `report_generation` are registered handlers.
+### `persistence/`
 
-`EvidenceStore` writes generated files under a controlled root using a
-temporary suffix, `fsync`, and atomic replacement. SQLite stores only metadata,
-hashes, schema versions, and relative paths. Nmap XML is an artifact file, not
-a database BLOB.
+SQLAlchemy 2 + Alembic. Production schema создаётся migrations, а не `Base.metadata.create_all()`.
 
-`InventoryService` owns confirmed scopes, assets, addresses, names, services,
-vendor lookup, and deterministic MAC/IP correlation. Job status never inlines
-the inventory; clients use the dedicated inventory endpoints.
+SQLite соединения используют:
 
-`protocol_audits/` is the Milestone 4 plugin package. Each module declares
-service predicates, a required tool, safety class, argv-only command builder,
-and a parser that emits normalized observations. `ProtocolAuditHandler`
-dispatches modules only when inventory services match. Raw tool output is an
-evidence artifact; `protocol_observations` rows are bounded JSON facts, not
-findings.
+- WAL;
+- foreign keys;
+- configurable busy timeout;
+- `synchronous=FULL` по умолчанию;
+- короткие транзакции.
 
-`findings/` is the Milestone 5 rule package. Declarative rules consume
-`protocol_observations`, inventory services, and stored passive-result
-artifacts. `FindingsEvaluationHandler` does not invoke scanners or parse
-stdout. Findings persist with severity, confidence, evidence links, and a
-suppress/accepted-risk audit trail.
+Scanner или packet capture никогда не должен выполняться внутри открытой DB-транзакции.
 
-`reports/` is the Milestone 6 reporting package. It builds a versioned
-`audit-report` view from persisted audits, inventory, findings, environment
-snapshots, stored `passive_result` assessments, and artifact metadata. HTML
-and JSON prominently include the capture NIC, whether it had an L3 address,
-observed 802.1Q VLAN IDs, CDP/LLDP neighbors, and ARP/DHCP/naming summaries.
-Raw provider output is referenced by id and hash only. Untagged access-port
-traffic is never assigned an invented VLAN ID.
+### `storage/`
 
-`auth/` is the Milestone 7 local identity package. Users have role
-`auditor` or `viewer`. Sessions are random tokens stored as SHA-256
-digests. The API requires a session for operational routes; viewers may
-read but cannot start or cancel work.
+`EvidenceStore` отвечает за файлы, которые не стоит класть в SQLite.
+
+Запись идёт через временный файл, `fsync`, atomic rename и SHA-256. В БД сохраняются metadata, тип артефакта, размер, hash, schema/version и внутренний relative path.
+
+Клиент API не может передать произвольный filesystem path для evidence.
+
+### `inventory/`
+
+Inventory хранит assets, addresses, names, services и provenance.
+
+Корреляция детерминированная:
+
+1. точное совпадение MAC;
+2. затем точное совпадение IP.
+
+Если MAC-identity и IP-identity противоречат друг другу, WireScope не склеивает два объекта молча. Конфликт сохраняется как наблюдение.
+
+Hostname provenance сохраняется: PTR, DHCP, mDNS, LLMNR, NBNS и Nmap не перетирают друг друга как «последняя истина».
+
+### `protocol_audits/`
+
+Протокольные проверки организованы как registry модулей.
+
+Каждый модуль описывает:
+
+- service predicates;
+- требуемый binary;
+- safety class;
+- argv builder;
+- parser;
+- timeout;
+- типы нормализованных observations.
+
+Текущие модули: SSH, TLS, HTTP, DNS, SMB, SNMP, LDAP.
+
+Orchestrator запускает модуль только если service из inventory подходит по predicate и выбранный адрес остаётся внутри подтверждённого scope.
+
+### `findings/`
+
+Rule engine не запускает scanners и не парсит raw stdout. Он читает:
+
+- `protocol_observations`;
+- inventory services;
+- сохранённые passive-result artifacts.
+
+Finding содержит rule/version, severity, confidence, affected asset/service, rationale, recommendation и evidence links.
+
+Состояния: `open`, `suppressed`, `accepted_risk`. История изменений хранится отдельно.
+
+### `reports/`
+
+Reporting строит версионированное представление `audit-report` v1 из уже сохранённых данных.
+
+Генератор делает HTML и JSON, записывает их в evidence store и добавляет запись в историю reports. Никаких повторных сетевых проверок при генерации отчёта нет.
+
+### `auth/`
+
+Локальные пользователи живут в SQLite.
+
+Роли:
+
+- `auditor` — read/write;
+- `viewer` — read-only для operational workflow.
+
+Session token случайный. В cookie хранится сам token, в SQLite — только SHA-256 digest. Cookie: HttpOnly, `SameSite=strict`; `Secure` включается при TLS/trusted reverse proxy.
 
 ### `frontend/`
 
-The vanilla operator GUI implements the audit wizard and result screens. A
-compact 480×320 layout remains available; the production client is a local
-or LAN browser on a generic Linux appliance, with a denser laptop layout
-above 900px. It polls durable jobs and never cancels work on display
-restart. See [GUI_MODEL.md](GUI_MODEL.md).
+Frontend остаётся на vanilla HTML/CSS/JavaScript.
 
-## Current HTTP surface
+Это уже не «страница с несколькими кнопками»: `app.js` обслуживает wizard аудита, job polling, inventory, findings, report preview, сетевые настройки, смену пароля и listen/record flow. Но отдельный frontend framework пока не нужен для сборки или runtime.
 
-- `GET /api/status`
-- `GET /api/health`
-- `GET /api/ready`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-- `GET /api/environment`
-- `GET /api/interfaces`
-- `POST /api/audits`
-- `GET /api/audits`
-- `GET /api/audits/{audit_id}`
-- `POST /api/audits/{audit_id}/passive`
-- `POST /api/audits/{audit_id}/discovery`
-- `POST /api/audits/{audit_id}/protocol-audits`
-- `GET /api/audits/{audit_id}/assets`
-- `GET /api/audits/{audit_id}/assets/{asset_id}`
-- `GET /api/audits/{audit_id}/services`
-- `GET /api/audits/{audit_id}/inventory`
-- `GET /api/audits/{audit_id}/observations`
-- `POST /api/audits/{audit_id}/findings`
-- `GET /api/audits/{audit_id}/findings`
-- `GET /api/audits/{audit_id}/findings/{finding_id}`
-- `POST /api/audits/{audit_id}/findings/{finding_id}/suppress`
-- `POST /api/audits/{audit_id}/findings/{finding_id}/accept-risk`
-- `POST /api/audits/{audit_id}/findings/{finding_id}/reopen`
-- `POST /api/audits/{audit_id}/reports`
-- `GET /api/audits/{audit_id}/reports`
-- `GET /api/audits/{audit_id}/reports/{report_id}`
-- `GET /api/audits/{audit_id}/reports/{report_id}/export`
-- `GET /api/audits/{audit_id}/jobs`
-- `GET /api/jobs/{job_id}`
-- `GET /api/jobs`
-- `POST /api/jobs/{job_id}/cancel`
-- `GET /api/jobs/{job_id}/events`
-- `GET /api/jobs/{job_id}/result`
-- `GET /`
-- `/static/*`
+Базовый kiosk viewport — 480×320. При ширине от 900px интерфейс становится плотнее и удобнее для ноутбука/desktop.
 
-Swagger, ReDoc, and OpenAPI routes are enabled in development and can be
-disabled by configuration. Audit and job list endpoints are paginated. Job
-status does not inline potentially large result documents.
+### `appliance/` и `packaging/`
 
-## Target logical architecture
+Это слой превращения Python-проекта в готовый Linux appliance.
 
-```text
-WireScope UI
-    │
-    ▼
-Versioned Application API ───────── Authentication / authorization
-    │
-    ├── Environment service
-    ├── Audit service
-    ├── Job service
-    └── Report service
-            │
-            ▼
-Audit orchestrator
-    ├── Passive capture and sensors
-    ├── Active discovery scanners
-    └── Service-aware audit providers
-            │
-            ▼
-Normalized observations and evidence
-            │
-            ├── Assessment engine
-            └── Findings engine
-                    │
-                    ▼
-                  SQLite
-                    │
-              Reports and UI
-```
+Здесь находятся:
 
-The target remains a modular monolith. Boundaries are Python modules and data
-contracts, not networked microservices.
+- distro/architecture detection;
+- package mapping для apt/dnf/yum/zypper;
+- installer;
+- systemd unit generation;
+- dumpcap capability setup/verification;
+- kiosk;
+- backup/restore;
+- dependency inventory;
+- TLS helper;
+- network control helper;
+- checksums/release helpers.
 
-## Planned core contracts
+Installer запускается из Git checkout. Runtime-данные при system install находятся в `/var/lib/wirescope`, конфигурация — в `/etc/wirescope`.
 
-### Observation
-
-An observation records a fact produced by a sensor or scanner:
-
-- stable type and schema version;
-- audit and asset context;
-- provider and tool version;
-- normalized data;
-- timestamp;
-- evidence references;
-- warnings and errors.
-
-### Assessment
-
-An assessment records an interpretation:
-
-- statement;
-- confidence (`confirmed`, `high`, `medium`, `low`, `hint`, `unknown`);
-- supporting observation references;
-- limitations and rationale.
-
-### Finding
-
-A finding records an actionable security or diagnostic result:
-
-- title and rule identifier;
-- severity (`critical`, `high`, `medium`, `low`, `info`);
-- affected asset and service;
-- description, rationale, and recommendation;
-- observation and evidence references;
-- rule and schema version;
-- status (`open`, `suppressed`, `accepted_risk`) with an audit trail.
-
-See [FINDINGS_MODEL.md](FINDINGS_MODEL.md).
-
-### Report
-
-A report is a versioned export of persisted audit data:
-
-- schema `audit-report` version 1;
-- executive summary, environment, scope, assets, services, findings,
-  recommendations, evidence references, and audit metadata;
-- HTML and JSON artifacts stored under the evidence root;
-- generation history with a content `source_hash`.
-
-See [REPORTING_MODEL.md](REPORTING_MODEL.md).
-
-### Tool result
-
-Every external tool invocation produces:
-
-- executable and sanitized argument list;
-- start time and duration;
-- exit code;
-- stdout/stderr evidence references;
-- tool version;
-- timeout and cancellation state;
-- normalized error category.
-
-## Passive pipeline
-
-Milestone 1 uses a fixed two-process budget for a normal live scan:
+## Пассивный pipeline
 
 ```text
 validated interface
-    ↓
-dumpcap capture once → bounded temporary pcap
-    ↓
-tshark -T ek -l -n decode once → line-oriented structured output
-    ↓
-normalized PacketRecord collection
-    ↓
-independent in-process sensors
-    ↓
-assessment with explicit confidence and evidence references
+        ↓
+dumpcap: bounded capture
+        ↓
+temporary PCAP
+        ↓
+tshark -T ek -l -n
+        ↓
+line-oriented decode
+        ↓
+PacketRecord
+        ↓
+passive sensors
+        ↓
+SensorResult[]
+        ↓
+assessment
 ```
 
-`dumpcap` is responsible only for capture. `tshark` is responsible only for
-decoding an existing pcap. Sensors never invoke either tool. A pcap-only
-analysis therefore uses one subprocess; a live capture plus analysis uses two.
-Tool-version discovery may be cached outside the per-scan budget.
+Для обычного live passive audit это два subprocess: один `dumpcap` и один `tshark`. Число сенсоров не увеличивает число tshark-процессов.
 
-EK was selected because it is line-oriented and can be written to a bounded
-temporary decode file instead of materializing a large JSON array in memory.
-The parser reads that file incrementally and normalizes field names while
-retaining raw field values for protocol-specific sensors. Capture duration,
-packet count, pcap size, and command output are bounded for Raspberry Pi.
+### `SensorResult`
 
-Supplemental decode passes are not part of the default design. If a required
-field cannot be represented by EK, an exception must be benchmarked,
-documented, and instrumented rather than added inside an individual sensor.
-
-### Sensor result contract
-
-Every registered sensor produces `SensorResult`:
+Каждый сенсор возвращает:
 
 - `name`;
 - `status`;
 - `hits`;
-- typed observation envelopes containing protocol-specific data;
-- aggregate `summary`;
-- `warnings`;
-- structured `errors`;
-- computed `detected` compatibility flag.
+- observations;
+- summary;
+- warnings;
+- structured errors;
+- compatibility-флаг `detected`.
 
-Status semantics:
+Статусы:
 
-- `absent` — parsing succeeded and no matching protocol evidence was present;
-- `detected` — one or more trustworthy observations were produced;
-- `partial` — observations were produced, but parser/sensor errors mean the
-  result may be incomplete;
-- `error` — the sensor could not make a trustworthy presence/absence
-  determination.
+- `absent` — разбор прошёл нормально, совпадений нет;
+- `detected` — есть нормальные observations;
+- `partial` — данные есть, но часть анализа завершилась с ошибкой;
+- `error` — нельзя надёжно сказать, присутствовал протокол или нет.
 
-An errored parser therefore makes a sensor `error` or `partial`, never
-`absent`.
+Parser error поэтому не превращается в `absent`.
 
-### Observation and evidence model
+## Модель confidence
 
-An observation is a fact with:
+Assessment и findings используют уровни:
 
-- sensor and fact kind;
-- timestamp;
-- source/destination MAC and IP where available;
-- protocol;
-- packet evidence reference and frame number;
-- protocol-specific data.
+- `confirmed`;
+- `high`;
+- `medium`;
+- `low`;
+- `hint`;
+- `unknown`.
 
-Protocol-specific structures remain nested. DHCP options, LLDP neighbors, IPv6
-prefixes, and naming records are not forced into one lossy flat schema.
+`confirmed` используется осторожно. Например, LLDP advertisement — хороший прямой факт, а предполагаемый тип устройства по набору сервисов остаётся heuristic hint.
 
-### Error model
+## Active discovery
 
-Tool errors retain exit code and stderr. The common runner distinguishes:
-
-- missing binary;
-- permission denied;
-- timeout;
-- cancellation;
-- non-zero exit;
-- process/output startup failure.
-
-Pipeline errors distinguish interface, capture, decode, malformed input,
-sensor, cancellation, and cleanup failures. Raw stderr is evidence detail and
-is not converted into `detected=false`.
-
-### Confidence model
-
-- `confirmed` — directly and independently verified fact; passive assessments
-  use this sparingly because they do not actively verify configuration.
-- `high` — explicit protocol configuration or direct advertisement, such as a
-  DHCP mask/router option or LLDP neighbor.
-- `medium` — multiple direct observations support an interpretation, such as
-  multiple tagged VLANs suggesting trunk-like behavior.
-- `low` — limited direct evidence supports more than one interpretation.
-- `hint` — useful grouping or weak inference, such as ARP addresses grouped by
-  the first 24 bits.
-- `unknown` — evidence is absent, failed, or insufficient.
-
-Assessment conclusions include rationale, source references, and limitations.
-Facts remain in sensor observations and are not duplicated as conclusions.
-
-## Privilege model
-
-Production must use:
+Active discovery имеет отдельную safety boundary:
 
 ```text
-unprivileged WireScope API/worker
-    │
-    ▼
-dumpcap with Wireshark group/capabilities
-    │
-    ▼
-controlled capture path
+observed network data
+        ≠
+authorized scope
 ```
 
-The Python backend must not run as root and must not receive broad network
-capabilities. Capture arguments, interface names, durations, and output paths
-are validated before invocation. Active discovery uses Nmap only after scope
-and route validation. If `CAP_NET_RAW` is absent, the Nmap provider falls back
-to TCP connect scans and skips ARP, UDP, and OS detection instead of
-elevating the backend. Protocol audits run unprivileged against confirmed
-inventory addresses only and never raise process capabilities.
+Перед Nmap backend:
 
-The verified Debian development configuration is:
+1. canonicalize'ит targets через `ipaddress`;
+2. проверяет size limits;
+3. запрещает unspecified/multicast ranges;
+4. валидирует интерфейс;
+5. делает `ip route get` для целей;
+6. проверяет source address и route device;
+7. сохраняет immutable confirmed-scope snapshot;
+8. worker повторно проверяет snapshot перед запуском provider.
 
-- `/usr/bin/dumpcap` owned by `root:wireshark`, mode `0750`, not setuid;
-- file capabilities `cap_net_admin,cap_net_raw=eip`;
-- `wirescope` is a member of `wireshark`;
-- bounded capture as `wirescope` succeeds without root.
+Подробнее: [SCANNING_MODEL.md](SCANNING_MODEL.md).
 
-Normal audit capture disables promiscuous mode by default (`dumpcap -p`), uses a
-65,535-byte snap length, and enforces independent duration, packet-count, and
-file-size limits. Operator **listen/record** sessions (`packet_capture`) omit
-`-p` so dumpcap stays promiscuous, always retain the pcap as an evidence file,
-and take an optional tcpdump filter as a single `dumpcap -f` argv (never a
-shell). Capture directories are `0700`; decode output is `0600`.
-Dropped packet counters produce warnings even when dumpcap exits successfully.
-An L3 address on the capture NIC is not required for `dumpcap`; CDP, LLDP,
-STP, ARP, and tagged 802.1Q frames are still decoded if they arrive.
-Without a switch SPAN/mirror port the host still only receives flooded,
-broadcast, and unicast-to-this-MAC frames; promiscuous mode records all of
-those, not the rest of the segment.
+## Jobs и восстановление после перезапуска
 
-## Persistence and jobs
-
-Milestone 2 uses SQLite through SQLAlchemy 2 and Alembic. Production schema is
-created only through migrations, not `Base.metadata.create_all()`.
-
-Current tables:
-
-- `audits` — session scope, profile, lifecycle, environment reference, summary;
-- `jobs` — universal task state, monotonic progress, parameters, typed error,
-  result reference, cancellation, attempt, and resource requirements;
-- `job_events` — bounded lifecycle/progress history, not scanner stdout;
-- `artifacts` — relative path, content type, size, SHA-256, retention and
-  result-schema metadata;
-- `resource_locks` — durable exclusive-resource ownership;
-- `workers` — process/thread heartbeat and readiness state;
-- `confirmed_scopes` — immutable authorized active-scan snapshots;
-- `assets`, `asset_addresses`, `asset_names`, `services`,
-  `asset_observations` — inventory with provenance;
-- `protocol_observations` — idempotent protocol facts with confidence,
-  bounded JSON data, and evidence artifact references;
-- `findings` — versioned rule results with severity, confidence, status,
-  observation and evidence links;
-- `finding_state_events` — suppress / accepted-risk / reopen audit trail;
-- `reports` — generated report history, source hash, and HTML/JSON artifact
-  references;
-- `users` — local operator accounts and roles;
-- `sessions` — hashed session tokens and expiry.
-
-SQLite connections enable WAL, foreign keys, a configurable busy timeout, and
-`synchronous=FULL` by default for appliance power-loss durability. Scanner work
-never runs inside a database transaction.
-Atomic claiming and restart recovery use short `BEGIN IMMEDIATE`
-transactions.
-
-### Process model
-
-Production runs two processes over one SQLite database:
-
-```text
-wirescope-api                       wirescope-worker
-     │                                    │
-     └──────────── SQLite WAL ────────────┘
-                       │
-                controlled evidence root
-```
-
-The API creates metadata and never owns execution lifetime. The worker process
-starts a configurable bounded thread pool (default one), claims queued jobs,
-and invokes registered handlers. This keeps SQLite and appliance operation
-simple while preserving a future process split. A local kiosk is a third,
-independent process: Chromium against loopback after the API is ready. It is
-optional on headless servers.
-
-Only one healthy worker supervisor process may hold the supervisor lease.
-Configured concurrency is therefore not multiplied accidentally by launching
-another worker command.
-
-### State and recovery semantics
-
-Job transitions:
+Состояния job:
 
 ```text
 queued  → running
@@ -540,85 +340,92 @@ queued  → cancelled
 running → completed | failed | cancelled | interrupted
 ```
 
-Terminal jobs are immutable. There are no automatic retries; the typed error
-records whether a later explicit retry may be reasonable.
+Terminal state обратно в `running` не переходит.
 
-On worker startup, jobs left `running` by a previous worker become
-`interrupted` with code `application_restart`. Their locks are released.
-Queued jobs remain queued and can be claimed normally. Arbitrary scanner jobs
-are never resumed automatically.
+Если worker умер во время выполнения, при следующем startup оставшиеся `running` jobs становятся `interrupted` с кодом `application_restart`. Они не продолжаются «с середины» и не retry'ятся автоматически.
 
-Queued cancellation is immediate. Running cancellation sets a persistent
-request; a worker-side monitor sets the Milestone 1 cancellation token, which
-terminates the active subprocess group cooperatively. Cancellation ends as
-`cancelled`, not `failed`.
+`queued` jobs сохраняются и могут быть взяты новым worker.
 
-Passive jobs and listen/record jobs both request `interface:<name>` and the
-`packet_capture` resource group. Locks live in SQLite, so two worker threads
-cannot capture the same interface and the configured global capture limit is
-enforced. Listen sessions always import the pcap into evidence; audit passive
-jobs still follow `passive_retain_capture` (off by default).
+Cancellation running-job сначала сохраняется в БД, затем worker-side monitor передаёт cooperative cancellation token в handler/ToolRunner, который завершает subprocess group.
 
-### Artifact durability and cleanup
+### Resource locks
 
-Artifact paths are generated from internal UUIDs; API callers cannot supply
-filesystem paths. Result JSON is versioned (`passive-result`, schema version
-1). A file is written as `*.tmp-<uuid>`, flushed, atomically renamed, hashed,
-then registered in SQLite. Power loss before metadata commit can leave only an
-orphan final file, which startup maintenance removes only after the configured
-stale-file age to avoid racing a concurrent metadata commit. Partial temporary
-files and stale managed capture directories are also cleaned conservatively.
+Locks лежат в SQLite, поэтому ограничения работают между worker threads, а не только внутри одного Python-объекта.
 
-Raw PCAP retention is disabled by default. When enabled, a completed capture is
-imported into evidence storage and the runtime capture directory is force
-cleaned. Audit records and registered evidence are never deleted without an
-explicit retention policy.
+Примеры:
 
-### Persistence baseline
+- packet capture и active discovery используют `interface:<name>`;
+- глобальное число capture/Nmap jobs ограничивается resource groups;
+- protocol audit сериализуется на уровне audit/group;
+- findings и reports сериализуются на уровне audit, но интерфейсный lock им не нужен.
 
-The lightweight benchmark on the Debian AMD64 development host (50 jobs,
-2 KiB result documents) measured:
+По умолчанию worker concurrency и основные network job limits равны 1 — это консервативный режим для небольшого appliance.
 
-- initial migration: about 20 ms;
-- persistence object startup: under 1 ms;
-- job insertion median: about 0.9 ms;
-- progress/event update median: about 0.8 ms;
-- atomic result persistence median: about 0.6 ms;
-- completion/event update median: about 1.4 ms;
-- listing 50 jobs: about 2.8 ms.
+## Persistence
 
-These numbers are regression indicators, not hardware guarantees. The
-design performs commits per meaningful stage/event and result, never per
-captured frame.
+Основные таблицы:
 
-## Deployment boundaries
+- `audits`;
+- `jobs`;
+- `job_events`;
+- `artifacts`;
+- `resource_locks`;
+- `workers`;
+- `confirmed_scopes`;
+- `assets`, `asset_addresses`, `asset_names`, `services`, `asset_observations`;
+- `protocol_observations`;
+- `findings`, `finding_state_events`;
+- `reports`;
+- `users`, `sessions`.
 
-The appliance process boundary is:
+Raw scanner output не используется как event log. `job_events` — это lifecycle/progress события, а исходный stdout/stderr регистрируется как evidence.
 
-- WireScope API;
-- WireScope worker;
-- local operator kiosk or browser (loopback), or a remote browser over LAN/TLS.
+## Привилегии
 
-The backend binds to `127.0.0.1:8000` by default (`WIRESCOPE_BIND_HOST` /
-`WIRESCOPE_BIND_PORT`). Autonomous audits do not need a management network:
-the GUI runs on this computer. Listening on `0.0.0.0` is an explicit VM/LAN
-choice. The preferred LAN path keeps the API on loopback and terminates TLS
-on Caddy or nginx (`--trust-proxy`). Optional direct TLS uses
-`WIRESCOPE_TLS_CERTFILE` / `WIRESCOPE_TLS_KEYFILE` without running the
-backend as root. Production documentation routes are disabled from the
-appliance environment file.
+Production boundary должна выглядеть так:
 
-## Known transitional debt
+```text
+wirescope-api        wirescope-worker
+   uid=wirescope        uid=wirescope
+        │                    │
+        └────────┬───────────┘
+                 │
+                 ▼
+             dumpcap
+ root:wireshark 0750 + file capabilities
+```
 
-- PDF export is still unavailable (`422 pdf_not_available`);
-- structured logs include audit/job context in the worker, but there is no
-  separate security audit-log table yet;
-- retention cleanup is conservative and does not yet delete completed audits
-  or registered evidence automatically;
-- terminal-job retry records and a manual retry API are not implemented;
-- tshark field compatibility is tested against 4.4 fixtures and still requires
-  release testing against each distro's package version;
-- Raspberry Pi OS Lite HDMI kiosk hardware remains optional (same installer).
+Python interpreter, Uvicorn и worker не получают `CAP_NET_RAW`/`CAP_NET_ADMIN`.
 
-These limitations are scheduled explicitly in
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+Для Nmap действует отдельное правило: provider использует raw-socket возможности только если они уже доступны процессу. Если нет — применяется TCP connect fallback, а UDP/OS detection и другие требующие privilege функции пропускаются и отражаются в результате.
+
+В user-systemd режиме доступ к группе `wireshark` восстанавливается через `sg wireshark`; в system units используется `SupplementaryGroups=wireshark`.
+
+## Kiosk и процессные границы
+
+Kiosk не является частью backend lifecycle.
+
+```text
+systemd
+├── wirescope-api
+├── wirescope-worker
+└── wirescope-kiosk   (optional)
+```
+
+Перезапуск Chromium не отменяет job. Ошибка kiosk может вернуть `getty@tty1`, не останавливая API/worker.
+
+На VMware kiosk использует Xorg/xinit. На подходящем железе предпочтителен Cage/Wayland; fallback — xinit.
+
+## Что пока остаётся техническим долгом
+
+На текущей ветке:
+
+- PDF export не реализован;
+- отдельной security audit-log таблицы нет;
+- policy-driven удаление завершённых audits/evidence не реализовано;
+- manual/automatic retry terminal jobs отсутствует;
+- `backend/app.py` остаётся крупным и со временем потребует разбиения route layer;
+- tshark compatibility нужно проверять на версиях, поставляемых конкретными дистрибутивами;
+- hardware-specific Raspberry Pi kiosk smoke tests остаются optional.
+
+Это не скрытые TODO: они перечислены в [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).

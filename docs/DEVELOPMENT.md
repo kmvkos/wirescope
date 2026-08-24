@@ -51,7 +51,7 @@ parser runs.
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
   parsers persistence protocol_audits findings reports providers sensors \
-  storage auth tests
+  storage auth appliance tests
 .venv/bin/pip check
 .venv/bin/python -m scripts.benchmark_persistence
 .venv/bin/python -m scripts.benchmark_inventory

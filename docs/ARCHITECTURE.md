@@ -578,8 +578,10 @@ The appliance process boundary is:
 - WireScope worker;
 - local kiosk/browser.
 
-The backend binds conservatively by default. Remote access, TLS termination,
-and listening interfaces are explicit deployment settings.
+The backend binds to `127.0.0.1:8000` by default (`WIRESCOPE_BIND_HOST` /
+`WIRESCOPE_BIND_PORT`). Remote access, TLS termination, and listening
+interfaces are explicit deployment settings. Production documentation
+routes are disabled from the appliance environment file.
 
 ## Known transitional debt
 
@@ -589,12 +591,12 @@ and listening interfaces are explicit deployment settings.
 - retention cleanup is conservative and does not yet delete completed audits
   or registered evidence automatically;
 - terminal-job retry records and a manual retry API are not implemented;
-- SQLite backup/export and corruption-recovery operator tooling remain future
-  appliance work;
 - tshark field compatibility is tested against 4.4 fixtures and still requires
   release testing against the Raspberry Pi OS package version;
-- production capability setup, verification tooling, and systemd units are not
-  automated yet.
+- live Raspberry Pi OS Lite installation, on-device ARM64 smoke, and
+  touchscreen 480×320 hardware validation remain a later attempt of the same
+  installer;
+- direct TLS versus a local reverse proxy is not chosen yet.
 
 These limitations are scheduled explicitly in
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).

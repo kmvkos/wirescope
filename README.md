@@ -11,8 +11,10 @@ durable jobs, run authorized active discovery into an asset/service inventory,
 and enqueue service-aware protocol audits. The findings engine consumes those
 stored observations and can persist suppress/accepted-risk state. Reporting
 exports HTML and JSON from persisted audit data. The local operator GUI
-covers the full audit workflow with auditor/viewer sessions. Raspberry Pi
-appliance packaging remains planned work.
+covers the full audit workflow with auditor/viewer sessions. Debian VM
+appliance packaging (installer, systemd API/worker units, backup, checksums)
+is in `packaging/` and `appliance/`. Raspberry Pi OS Lite kiosk hardware
+validation remains a later attempt of the same installer.
 
 ## Current components
 
@@ -30,6 +32,8 @@ appliance packaging remains planned work.
 - `reports/` — versioned HTML/JSON audit reports from persisted data.
 - `auth/` — local operator users, password hashes, and sessions.
 - `frontend/` — kiosk operator GUI for the audit workflow.
+- `appliance/` — Debian-family installer, dumpcap verification, backup.
+- `packaging/` — install scripts, systemd units, optional kiosk templates.
 - `config/` — centralized application paths and runtime settings.
 - `tests/` — tests that do not require live packet capture.
 
@@ -37,8 +41,8 @@ See [Architecture](docs/ARCHITECTURE.md) for current boundaries and
 [Implementation plan](docs/IMPLEMENTATION_PLAN.md) for the milestone roadmap.
 Operator GUI behavior is in [GUI model](docs/GUI_MODEL.md).
 Operational details are in [Development](docs/DEVELOPMENT.md),
-[Installation](docs/INSTALLATION.md), and
-[Security model](docs/SECURITY_MODEL.md).
+[Installation](docs/INSTALLATION.md), [Security model](docs/SECURITY_MODEL.md),
+and the [operational runbook](docs/RUNBOOK.md).
 
 ## Development setup
 
@@ -93,7 +97,7 @@ Run tests:
 .venv/bin/pytest
 .venv/bin/python -m compileall -q backend config engine inventory jobs \
   parsers persistence protocol_audits findings reports providers sensors \
-  storage auth tests
+  storage auth appliance tests
 .venv/bin/pip check
 ```
 
@@ -163,7 +167,10 @@ through the `wireshark` group. See
 - `WIRESCOPE_DUMPCAP_BINARY` and `WIRESCOPE_TSHARK_BINARY` — tool paths or
   names.
 - `WIRESCOPE_DOCS_ENABLED` — enables FastAPI OpenAPI, Swagger, and ReDoc
-  routes; defaults to true for development.
+  routes; defaults to true for development. Appliance installs set this to
+  false.
+- `WIRESCOPE_BIND_HOST` / `WIRESCOPE_BIND_PORT` — API listen address;
+  defaults to `127.0.0.1:8000`.
 - `WIRESCOPE_SESSION_COOKIE_NAME` — session cookie name; defaults to
   `wirescope_session`.
 - `WIRESCOPE_SESSION_TTL_SECONDS` — session lifetime; defaults to 43200

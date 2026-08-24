@@ -49,8 +49,9 @@ token; SQLite stores only the SHA-256 digest. Login uses PBKDF2-HMAC-SHA256.
 
 Bootstrap users are created only when the `users` table is empty and
 `WIRESCOPE_BOOTSTRAP_AUDITOR_*` / `WIRESCOPE_BOOTSTRAP_VIEWER_*` are set.
-There is no built-in default password. Appliance installer creation of the
-first admin remains Milestone 8.
+There is no built-in default password. The appliance installer creates the
+first auditor from a mode `0600` password file; see
+[INSTALLATION.md](INSTALLATION.md).
 
 ## Progress and recovery
 

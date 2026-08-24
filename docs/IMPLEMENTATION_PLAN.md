@@ -613,6 +613,13 @@ Acceptance criteria:
 - reboot during a queued/running audit has defined recovery behavior;
 - the same application tests pass on AMD64 and ARM64.
 
+Debian AMD64 VM is the first verification gate for this milestone: the
+installer, systemd API/worker units, loopback GUI login, dumpcap least
+privilege, backup/restore, and fixture tests must work on the development
+host. Live Raspberry Pi OS Lite, on-device ARM64 smoke, and touchscreen
+480×320 hardware remain a later attempt of the same installer (`pytest -m
+live_pi` with `WIRESCOPE_LIVE_PI=1`).
+
 ---
 
 ## Deferred decisions and evaluation gates

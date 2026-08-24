@@ -93,7 +93,7 @@ def render_inventory_text(inventory: DependencyInventory) -> str:
         )
     parts.append(
         section(
-            "Optional kiosk stack (later extra, not required)",
+            "Optional kiosk stack (local display; not a full desktop)",
             inventory.os_kiosk,
         )
     )

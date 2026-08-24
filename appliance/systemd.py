@@ -142,36 +142,49 @@ WantedBy={wanted}
 
 def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str:
     kiosk = paths.project_root / "packaging" / "kiosk" / "kiosk.sh"
+    python = paths.python
     env_file = paths.env_file
     identity = ""
-    wanted = "default.target"
+    display_env = ""
+    session_env = ""
+    condition = ""
+    after = "wirescope-api.service"
+    wanted = "graphical-session.target"
     if not user_session:
         identity = (
             f"User={paths.service_user}\n"
             f"Group={paths.service_group}\n"
         )
+        display_env = "Environment=DISPLAY=:0\n"
+        condition = "ConditionPathExists=/tmp/.X11-unix/X0\n"
+        after = "wirescope-api.service graphical.target"
         wanted = "graphical.target"
+    else:
+        session_env = "PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY\n"
+        after = "graphical-session.target wirescope-api.service"
     return f"""[Unit]
-Description=Optional WireScope local kiosk (Raspberry Pi / local display extra)
+Description=WireScope local operator kiosk
 Documentation=file://{paths.project_root}/docs/INSTALLATION.md
-After=wirescope-api.service
+After={after}
 Wants=wirescope-api.service
-StartLimitIntervalSec=60
+{condition}StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=simple
 {identity}WorkingDirectory={paths.project_root}
 EnvironmentFile=-{env_file}
-Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
+{display_env}{session_env}Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
+ExecStartPre={python} -m appliance wait-ready
 ExecStart={kiosk}
 Restart=on-failure
+RestartPreventExitStatus=75
 RestartSec=2
+TimeoutStartSec=90
 TimeoutStopSec=15
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wirescope-kiosk
-PrivateTmp=true
 
 [Install]
 WantedBy={wanted}

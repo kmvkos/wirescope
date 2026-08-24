@@ -89,11 +89,12 @@ Python: `>=3.11`
 - openldap2-client
 - ssh-audit
 
-## Optional kiosk stack (later extra, not required)
+## Optional kiosk stack (local display; not a full desktop)
 
 - xserver-xorg
 - xinit
 - openbox
+- labwc
 - unclutter
 - chromium
 

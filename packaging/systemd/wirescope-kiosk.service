@@ -1,8 +1,9 @@
 [Unit]
-Description=Optional WireScope local kiosk (Raspberry Pi / local display extra)
+Description=WireScope local operator kiosk
 Documentation=file:///opt/wirescope/docs/INSTALLATION.md
-After=wirescope-api.service
+After=wirescope-api.service graphical.target
 Wants=wirescope-api.service
+ConditionPathExists=/tmp/.X11-unix/X0
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -12,15 +13,18 @@ User=wirescope
 Group=wirescope
 WorkingDirectory=/opt/wirescope
 EnvironmentFile=-/etc/wirescope/wirescope.env
+Environment=DISPLAY=:0
 Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
+ExecStartPre=/opt/wirescope/.venv/bin/python -m appliance wait-ready
 ExecStart=/opt/wirescope/packaging/kiosk/kiosk.sh
 Restart=on-failure
+RestartPreventExitStatus=75
 RestartSec=2
+TimeoutStartSec=90
 TimeoutStopSec=15
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wirescope-kiosk
-PrivateTmp=true
 
 [Install]
 WantedBy=graphical.target

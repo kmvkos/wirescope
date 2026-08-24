@@ -1,6 +1,7 @@
-# optional kiosk extra (not required for generic Linux)
+# optional local operator display (not a full desktop)
 xserver-xorg
 xinit
 openbox
+labwc
 unclutter
 chromium

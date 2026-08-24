@@ -83,8 +83,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install_cmd.add_argument("--skip-pip", action="store_true")
     install_cmd.add_argument("--no-optional-providers", action="store_true")
-    install_cmd.add_argument("--with-kiosk", action="store_true")
-    install_cmd.add_argument("--enable-kiosk", action="store_true")
+    install_cmd.add_argument(
+        "--with-kiosk",
+        action="store_true",
+        help="Install optional local-display packages (openbox/labwc + Chromium)",
+    )
+    install_cmd.add_argument(
+        "--enable-kiosk",
+        action="store_true",
+        help="Enable the kiosk unit if a local display and Chromium are present",
+    )
+    install_cmd.add_argument(
+        "--user-kiosk",
+        action="store_true",
+        help="User-session kiosk after graphical login (loopback GUI, no LAN)",
+    )
     install_cmd.add_argument("--no-journald", action="store_true")
     install_cmd.add_argument("--no-start", action="store_true")
     install_cmd.add_argument("--with-dev", action="store_true")
@@ -182,8 +195,9 @@ def cmd_install(args: argparse.Namespace) -> int:
         bind_port=args.bind_port,
         apply_packages=not args.skip_packages and not args.skip_apt and not args.user_install,
         optional_providers=not args.no_optional_providers,
-        install_kiosk=args.with_kiosk,
+        install_kiosk=args.with_kiosk or args.user_kiosk,
         enable_kiosk=args.enable_kiosk,
+        user_kiosk=args.user_kiosk,
         configure_journald=not args.no_journald and not args.user_install,
         start_services=not args.no_start,
         skip_pip=args.skip_pip,

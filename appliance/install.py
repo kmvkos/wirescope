@@ -11,7 +11,14 @@ from appliance.bootstrap import password_from_host
 from appliance.detect import Platform, UnsupportedPlatformError
 from appliance.dumpcap import DumpcapReport, configure_dumpcap, inspect_dumpcap
 from appliance.host import Host, HostError
-from appliance.kiosk import KIOSK_SCRIPT, XINITRC
+from appliance.kiosk import (
+    KIOSK_SCRIPT,
+    XINITRC,
+    DisplayProbe,
+    chromium_installed,
+    kiosk_enable_reason,
+    probe_display,
+)
 from appliance.packages import select_packages
 from appliance.paths import ENV_FILE_MODE, InstallPaths, production_env_text
 from appliance.systemd import render_journald_dropin, unit_files
@@ -36,6 +43,8 @@ class InstallConfig:
     optional_providers: bool = True
     install_kiosk: bool = False
     enable_kiosk: bool = False
+    user_kiosk: bool = False
+    display: DisplayProbe | None = None
     configure_journald: bool = True
     start_services: bool = True
     skip_pip: bool = False
@@ -120,6 +129,12 @@ def install(config: InstallConfig, host: Host) -> InstallReport:
         report.warnings.append(
             "user-session install: skipped OS packages, dumpcap setcap, and system units"
         )
+        if config.install_kiosk or config.user_kiosk:
+            report.warnings.append(
+                "user-session skipped kiosk packages; install chromium and "
+                "openbox or labwc with --with-kiosk as root, or the distro "
+                "packages, then systemctl --user enable --now wirescope-kiosk"
+            )
     _install_packages(config, host, report)
     _install_account(config, host, report)
     _install_directories(config, host, report)
@@ -157,6 +172,14 @@ def _plan(config: InstallConfig, host: Host, report: InstallReport) -> None:
     _note(report, "migrate SQLite and create initial auditor if needed")
     if config.start_services:
         _note(report, "enable and start wirescope-api and wirescope-worker")
+    if config.install_kiosk:
+        _note(
+            report,
+            "optional kiosk packages: openbox or labwc plus Chromium "
+            "(not a full desktop)",
+        )
+    if config.enable_kiosk or config.user_kiosk:
+        _note(report, "local operator kiosk on 127.0.0.1:8000 if a display is attached")
     if config.trust_proxy:
         _note(report, "LAN reverse proxy: API stays on loopback, cookie Secure")
     if config.tls_certfile and config.tls_keyfile:
@@ -490,7 +513,10 @@ def _install_kiosk_files(
         owner=kiosk_owner,
         group=kiosk_group,
     )
-    _note(report, "wrote optional kiosk templates (later extra, not required)")
+    _note(
+        report,
+        "wrote local operator kiosk templates (optional display, loopback GUI)",
+    )
 
 
 def _migrate(config: InstallConfig, host: Host, report: InstallReport) -> None:
@@ -641,17 +667,43 @@ def _start_services(
             + (enable.stderr.strip() or enable.stdout.strip())
         )
     report.started.extend(units)
-    if config.enable_kiosk:
-        kiosk = host.run(
-            [*ctl, "enable", "--now", "wirescope-kiosk.service"]
-        )
-        if not kiosk.ok:
-            report.warnings.append(
-                "kiosk unit failed to start; API and worker are independent"
-            )
-        else:
-            report.started.append("wirescope-kiosk.service")
+    _start_kiosk(config, host, report, ctl)
     _note(report, "started " + ", ".join(report.started))
+
+
+def _start_kiosk(
+    config: InstallConfig,
+    host: Host,
+    report: InstallReport,
+    ctl: list[str],
+) -> None:
+    want = config.enable_kiosk or config.user_kiosk
+    if not want:
+        return
+    if config.user_kiosk and not config.user_session:
+        report.warnings.append(
+            "system install: kiosk unit is on graphical.target. "
+            "For a VM graphical login use --user-install --user-kiosk, or "
+            "systemctl --user enable --now wirescope-kiosk from that session"
+        )
+        if not config.enable_kiosk:
+            return
+    probe = config.display if config.display is not None else probe_display()
+    blocked = kiosk_enable_reason(
+        probe,
+        chromium=chromium_installed(host.which),
+    )
+    if blocked:
+        report.warnings.append(blocked)
+        return
+    kiosk_ctl = ["systemctl", "--user"] if config.user_session else ctl
+    kiosk = host.run([*kiosk_ctl, "enable", "--now", "wirescope-kiosk.service"])
+    if not kiosk.ok:
+        report.warnings.append(
+            "kiosk unit failed to start; API and worker are independent"
+        )
+        return
+    report.started.append("wirescope-kiosk.service")
 
 
 def verify_privileges(config: InstallConfig, host: Host) -> DumpcapReport:

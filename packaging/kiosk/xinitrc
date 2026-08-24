@@ -1,7 +1,13 @@
 #!/bin/sh
 set -eu
-# Optional later extra: X session wrapper for packaging/kiosk/kiosk.sh.
+# Minimal local session for packaging/kiosk/kiosk.sh (openbox or labwc).
+# Not a full desktop. Never stops the API or worker.
 xset s off -dpms || true
 unclutter -idle 1 -root &
-openbox &
-exec /opt/wirescope/packaging/kiosk/kiosk.sh
+here=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v labwc >/dev/null 2>&1; then
+    labwc &
+elif command -v openbox >/dev/null 2>&1; then
+    openbox &
+fi
+exec "$here/kiosk.sh"

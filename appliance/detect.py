@@ -1,6 +1,6 @@
 """Detect Linux family via apt/dnf/yum/zypper and amd64 versus arm64.
 
-Raspberry Pi is an optional later extra, not a required install target.
+Raspberry Pi is optional hardware, not a required OS.
 """
 
 from __future__ import annotations

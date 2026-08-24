@@ -49,6 +49,7 @@
         >
             <h2 data-i18n="login.title">Вход</h2>
             <p class="hint" data-i18n="login.hint">Локальный сеанс оператора. Аудиты продолжаются, если этот экран перезапустится.</p>
+            <p class="hint" data-i18n="login.noMgmtNetwork">Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.</p>
             <form id="login-form" autocomplete="username">
                 <label for="login-username" data-i18n="login.username">Имя пользователя</label>
                 <input
@@ -118,7 +119,7 @@
             hidden
         >
             <h2 data-i18n="interface.title">Интерфейс</h2>
-            <p class="hint" data-i18n="interface.hint">Захват можно запустить только на разрешённых интерфейсах (не loopback).</p>
+            <p class="hint" data-i18n="interface.hint">Захват можно запустить только на разрешённых интерфейсах (не loopback). Адрес на интерфейсе захвата не обязателен: GUI работает локально на этом компьютере.</p>
             <div
                 id="interface-list"
                 class="choice-list"

@@ -4,8 +4,8 @@ Package names differ across apt, dnf/yum, and zypper. Nuclei and Nikto are
 never selected by default. Absence of an optional provider degrades
 capability, not installer success after the base set.
 
-Kiosk packages are a later extra for a local display. They are not required
-for a generic Linux appliance or server.
+Kiosk packages are an optional local-display stack (openbox or labwc plus
+Chromium), not a full desktop. They are not required on headless servers.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ _OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
-# Optional later extra. Not an acceptance criterion for generic Linux.
+# Optional local operator console. Not a GNOME/KDE desktop; skip if missing.
 _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
     "xserver": {
         "debian": ("xserver-xorg",),
@@ -139,6 +139,11 @@ _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
         "debian": ("openbox",),
         "rhel": ("openbox",),
         "suse": ("openbox",),
+    },
+    "labwc": {
+        "debian": ("labwc",),
+        "rhel": ("labwc",),
+        "suse": ("labwc",),
     },
     "unclutter": {
         "debian": ("unclutter",),

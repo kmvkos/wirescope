@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from pathlib import Path
 
-from appliance.paths import InstallPaths, WIRESHARK_GROUP
+from appliance.paths import InstallPaths, SERVICE_USER, WIRESHARK_GROUP
 
 
 SG_BINARY = Path("/usr/bin/sg")
@@ -140,25 +140,61 @@ WantedBy={wanted}
 """
 
 
+def render_getty_autologin(user: str = SERVICE_USER) -> str:
+    """Optional tty1 autologin drop-in. The kiosk unit Conflicts getty@tty1."""
+
+    return f"""[Service]
+# Fallback if wirescope-kiosk.service is disabled. While the kiosk is enabled
+# it Conflicts=getty@tty1.service and takes the VT as a dedicated getty.
+ExecStart=
+ExecStart=-/sbin/agetty --autologin {user} --noclear %I $TERM
+"""
+
+
 def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str:
     kiosk = paths.project_root / "packaging" / "kiosk" / "kiosk.sh"
     python = paths.python
     env_file = paths.env_file
     identity = ""
-    display_env = ""
     session_env = ""
-    condition = ""
+    tty = ""
+    runtime = ""
+    extra_env = ""
+    conflicts = ""
     after = "wirescope-api.service"
     wanted = "graphical-session.target"
     if not user_session:
         identity = (
             f"User={paths.service_user}\n"
             f"Group={paths.service_group}\n"
+            "SupplementaryGroups=video\n"
         )
-        display_env = "Environment=DISPLAY=:0\n"
-        condition = "ConditionPathExists=/tmp/.X11-unix/X0\n"
-        after = "wirescope-api.service graphical.target"
-        wanted = "graphical.target"
+        after = (
+            "wirescope-api.service getty@tty1.service "
+            "systemd-user-sessions.service"
+        )
+        wanted = "multi-user.target"
+        conflicts = "Conflicts=getty@tty1.service\n"
+        tty = (
+            "PAMName=login\n"
+            "TTYPath=/dev/tty1\n"
+            "TTYReset=yes\n"
+            "TTYVHangup=yes\n"
+            "TTYVTDisallocate=yes\n"
+            "StandardInput=tty\n"
+            "UtmpIdentifier=tty1\n"
+            "UtmpMode=user\n"
+        )
+        runtime = (
+            "RuntimeDirectory=wirescope-kiosk\n"
+            "RuntimeDirectoryMode=0700\n"
+        )
+        extra_env = (
+            f"Environment=HOME={paths.data_dir}\n"
+            "Environment=XDG_RUNTIME_DIR=/run/wirescope-kiosk\n"
+            "Environment=XDG_SESSION_TYPE=wayland\n"
+            "Environment=WLR_LIBSEAT_BACKEND=logind\n"
+        )
     else:
         session_env = "PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY\n"
         after = "graphical-session.target wirescope-api.service"
@@ -167,15 +203,15 @@ Description=WireScope local operator kiosk
 Documentation=file://{paths.project_root}/docs/INSTALLATION.md
 After={after}
 Wants=wirescope-api.service
-{condition}StartLimitIntervalSec=60
+{conflicts}StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=simple
 {identity}WorkingDirectory={paths.project_root}
 EnvironmentFile=-{env_file}
-{display_env}{session_env}Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
-ExecStartPre={python} -m appliance wait-ready
+{extra_env}{session_env}Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
+{runtime}{tty}ExecStartPre={python} -m appliance wait-ready
 ExecStart={kiosk}
 Restart=on-failure
 RestartPreventExitStatus=75

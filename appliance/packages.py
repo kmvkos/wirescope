@@ -4,7 +4,7 @@ Package names differ across apt, dnf/yum, and zypper. Nuclei and Nikto are
 never selected by default. Absence of an optional provider degrades
 capability, not installer success after the base set.
 
-Kiosk packages are an optional local-display stack (openbox or labwc plus
+Kiosk packages are an optional local-display stack (Cage or xinit plus
 Chromium), not a full desktop. They are not required on headless servers.
 """
 
@@ -123,8 +123,14 @@ _OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
-# Optional local operator console. Not a GNOME/KDE desktop; skip if missing.
+# Optional local operator console. Not a GNOME/XFCE/KDE desktop; skip if missing.
+# Prefer Cage (single-client Wayland). Fallback: Xorg + xinit + Chromium --kiosk.
 _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
+    "cage": {
+        "debian": ("cage",),
+        "rhel": ("cage",),
+        "suse": ("cage",),
+    },
     "xserver": {
         "debian": ("xserver-xorg",),
         "rhel": ("xorg-x11-server-Xorg",),
@@ -139,16 +145,6 @@ _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
         "debian": ("openbox",),
         "rhel": ("openbox",),
         "suse": ("openbox",),
-    },
-    "labwc": {
-        "debian": ("labwc",),
-        "rhel": ("labwc",),
-        "suse": ("labwc",),
-    },
-    "unclutter": {
-        "debian": ("unclutter",),
-        "rhel": ("unclutter", "unclutter-xfixes"),
-        "suse": ("unclutter",),
     },
     "chromium": {
         "debian": ("chromium", "chromium-browser"),

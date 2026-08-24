@@ -1,9 +1,9 @@
 [Unit]
 Description=WireScope local operator kiosk
 Documentation=file:///opt/wirescope/docs/INSTALLATION.md
-After=wirescope-api.service graphical.target
+After=wirescope-api.service getty@tty1.service systemd-user-sessions.service
 Wants=wirescope-api.service
-ConditionPathExists=/tmp/.X11-unix/X0
+Conflicts=getty@tty1.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -11,10 +11,24 @@ StartLimitBurst=5
 Type=simple
 User=wirescope
 Group=wirescope
+SupplementaryGroups=video
 WorkingDirectory=/opt/wirescope
 EnvironmentFile=-/etc/wirescope/wirescope.env
-Environment=DISPLAY=:0
+Environment=HOME=/var/lib/wirescope
+Environment=XDG_RUNTIME_DIR=/run/wirescope-kiosk
+Environment=XDG_SESSION_TYPE=wayland
+Environment=WLR_LIBSEAT_BACKEND=logind
 Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
+RuntimeDirectory=wirescope-kiosk
+RuntimeDirectoryMode=0700
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+UtmpIdentifier=tty1
+UtmpMode=user
 ExecStartPre=/opt/wirescope/.venv/bin/python -m appliance wait-ready
 ExecStart=/opt/wirescope/packaging/kiosk/kiosk.sh
 Restart=on-failure
@@ -27,4 +41,4 @@ StandardError=journal
 SyslogIdentifier=wirescope-kiosk
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target

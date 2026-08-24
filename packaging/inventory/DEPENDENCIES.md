@@ -91,11 +91,10 @@ Python: `>=3.11`
 
 ## Optional kiosk stack (local display; not a full desktop)
 
+- cage
 - xserver-xorg
 - xinit
 - openbox
-- labwc
-- unclutter
 - chromium
 
 ## Gated scanners never installed by default

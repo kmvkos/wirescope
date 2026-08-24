@@ -1,13 +1,37 @@
 #!/bin/sh
 set -eu
-# Minimal local session for packaging/kiosk/kiosk.sh (openbox or labwc).
-# Not a full desktop. Never stops the API or worker.
+# Minimal X session for packaging/kiosk/kiosk.sh. Not a desktop.
+# Chromium --kiosk does not need a WM; openbox is optional.
+# Never stops the API or worker.
 xset s off -dpms || true
-unclutter -idle 1 -root &
-here=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v labwc >/dev/null 2>&1; then
-    labwc &
-elif command -v openbox >/dev/null 2>&1; then
+if command -v unclutter >/dev/null 2>&1; then
+    unclutter -idle 1 -root &
+fi
+if command -v openbox >/dev/null 2>&1; then
     openbox &
 fi
-exec "$here/kiosk.sh"
+BIN="${WIRESCOPE_KIOSK_BIN:-}"
+if [ -z "$BIN" ]; then
+    for candidate in chromium chromium-browser google-chrome; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            BIN=$(command -v "$candidate")
+            break
+        fi
+    done
+fi
+if [ -z "$BIN" ]; then
+    echo "wirescope-kiosk: chromium is not installed" >&2
+    exit 75
+fi
+URL="${WIRESCOPE_KIOSK_URL:-http://127.0.0.1:8000/}"
+exec "$BIN" \
+    --kiosk \
+    --no-first-run \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --disable-restore-session-state \
+    --check-for-update-interval=31536000 \
+    --ozone-platform-hint=auto \
+    --window-size=480,320 \
+    --app="$URL"

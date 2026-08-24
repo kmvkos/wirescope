@@ -1,7 +1,6 @@
 # optional local operator display (not a full desktop)
+cage
 xserver-xorg
 xinit
 openbox
-labwc
-unclutter
 chromium

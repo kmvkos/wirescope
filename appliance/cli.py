@@ -86,12 +86,12 @@ def build_parser() -> argparse.ArgumentParser:
     install_cmd.add_argument(
         "--with-kiosk",
         action="store_true",
-        help="Install optional local-display packages (openbox/labwc + Chromium)",
+        help="Install cage or xinit plus Chromium (not a desktop; tty1 kiosk)",
     )
     install_cmd.add_argument(
         "--enable-kiosk",
         action="store_true",
-        help="Enable the kiosk unit if a local display and Chromium are present",
+        help="Enable the system kiosk on tty1 after boot (no desktop required)",
     )
     install_cmd.add_argument(
         "--user-kiosk",
@@ -195,7 +195,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         bind_port=args.bind_port,
         apply_packages=not args.skip_packages and not args.skip_apt and not args.user_install,
         optional_providers=not args.no_optional_providers,
-        install_kiosk=args.with_kiosk or args.user_kiosk,
+        install_kiosk=args.with_kiosk or args.user_kiosk or args.enable_kiosk,
         enable_kiosk=args.enable_kiosk,
         user_kiosk=args.user_kiosk,
         configure_journald=not args.no_journald and not args.user_install,

@@ -67,5 +67,6 @@ def default_release_paths(project_root: Path) -> list[Path]:
         *sorted((project_root / "packaging" / "proxy").glob("*")),
         project_root / "packaging" / "kiosk" / "kiosk.sh",
         project_root / "packaging" / "kiosk" / "xinitrc",
+        project_root / "packaging" / "systemd" / "getty-tty1-autologin.conf",
     ]
     return [path for path in candidates if path.is_file()]

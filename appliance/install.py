@@ -13,15 +13,21 @@ from appliance.dumpcap import DumpcapReport, configure_dumpcap, inspect_dumpcap
 from appliance.host import Host, HostError
 from appliance.kiosk import (
     KIOSK_SCRIPT,
+    KIOSK_SEAT_GROUPS,
     XINITRC,
     DisplayProbe,
     chromium_installed,
+    kiosk_boot_note,
     kiosk_enable_reason,
     probe_display,
 )
 from appliance.packages import select_packages
 from appliance.paths import ENV_FILE_MODE, InstallPaths, production_env_text
-from appliance.systemd import render_journald_dropin, unit_files
+from appliance.systemd import (
+    render_getty_autologin,
+    render_journald_dropin,
+    unit_files,
+)
 from appliance.tls import (
     PROXY_SAMPLE_NAMES,
     lan_warnings,
@@ -132,7 +138,7 @@ def install(config: InstallConfig, host: Host) -> InstallReport:
         if config.install_kiosk or config.user_kiosk:
             report.warnings.append(
                 "user-session skipped kiosk packages; install chromium and "
-                "openbox or labwc with --with-kiosk as root, or the distro "
+                "cage or xinit with --with-kiosk as root, or the distro "
                 "packages, then systemctl --user enable --now wirescope-kiosk"
             )
     _install_packages(config, host, report)
@@ -175,11 +181,16 @@ def _plan(config: InstallConfig, host: Host, report: InstallReport) -> None:
     if config.install_kiosk:
         _note(
             report,
-            "optional kiosk packages: openbox or labwc plus Chromium "
-            "(not a full desktop)",
+            "optional kiosk packages: cage or xinit plus Chromium "
+            "(not a full desktop; boot kiosk on tty1)",
         )
-    if config.enable_kiosk or config.user_kiosk:
-        _note(report, "local operator kiosk on 127.0.0.1:8000 if a display is attached")
+    if config.enable_kiosk:
+        _note(
+            report,
+            "system kiosk on tty1 after wirescope-api (cage or xinit + Chromium)",
+        )
+    if config.user_kiosk:
+        _note(report, "user-session kiosk on 127.0.0.1:8000 after graphical login")
     if config.trust_proxy:
         _note(report, "LAN reverse proxy: API stays on loopback, cookie Secure")
     if config.tls_certfile and config.tls_keyfile:
@@ -286,6 +297,10 @@ def _install_account(
         host.create_system_user(user, home=config.paths.data_dir, group=group)
         _note(report, f"created system account {user}")
     host.add_user_to_group(user, "wireshark")
+    if config.install_kiosk or config.enable_kiosk:
+        for seat_group in KIOSK_SEAT_GROUPS:
+            if host.group_exists(seat_group):
+                host.add_user_to_group(user, seat_group)
 
 
 def _install_directories(
@@ -513,9 +528,25 @@ def _install_kiosk_files(
         owner=kiosk_owner,
         group=kiosk_group,
     )
+    if not config.user_session and (config.install_kiosk or config.enable_kiosk):
+        dropin_dir = config.paths.systemd_dir / "getty@tty1.service.d"
+        host.mkdir(
+            dropin_dir,
+            mode=0o755,
+            owner="root",
+            group="root",
+        )
+        host.write_file(
+            dropin_dir / "wirescope-autologin.conf",
+            render_getty_autologin(config.paths.service_user),
+            mode=0o644,
+            owner="root",
+            group="root",
+        )
+        _note(report, "wrote getty@tty1 autologin drop-in (kiosk Conflicts getty)")
     _note(
         report,
-        "wrote local operator kiosk templates (optional display, loopback GUI)",
+        "wrote local operator kiosk templates (tty1 boot kiosk, loopback GUI)",
     )
 
 
@@ -680,22 +711,25 @@ def _start_kiosk(
     want = config.enable_kiosk or config.user_kiosk
     if not want:
         return
-    if config.user_kiosk and not config.user_session:
+    if config.user_kiosk and not config.user_session and not config.enable_kiosk:
         report.warnings.append(
-            "system install: kiosk unit is on graphical.target. "
-            "For a VM graphical login use --user-install --user-kiosk, or "
-            "systemctl --user enable --now wirescope-kiosk from that session"
+            "system install: use --enable-kiosk for the tty1 boot kiosk. "
+            "For a graphical login session use --user-install --user-kiosk"
         )
-        if not config.enable_kiosk:
-            return
+        return
     probe = config.display if config.display is not None else probe_display()
     blocked = kiosk_enable_reason(
         probe,
         chromium=chromium_installed(host.which),
+        system_boot=not config.user_session,
     )
     if blocked:
         report.warnings.append(blocked)
         return
+    if not config.user_session:
+        note = kiosk_boot_note(probe)
+        if note:
+            report.warnings.append(note)
     kiosk_ctl = ["systemctl", "--user"] if config.user_session else ctl
     kiosk = host.run([*kiosk_ctl, "enable", "--now", "wirescope-kiosk.service"])
     if not kiosk.ok:

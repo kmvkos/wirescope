@@ -280,23 +280,59 @@ def test_with_kiosk_installs_minimal_display_packages(tmp_path):
     apt = [item for item in host.commands if item and item[0] == "apt-get"]
     assert apt
     assert "chromium" in apt[0]
+    assert "cage" in apt[0]
+    assert "xinit" in apt[0]
     assert "openbox" in apt[0]
-    assert "labwc" in apt[0]
+    assert "labwc" not in apt[0]
     assert "gnome" not in " ".join(apt[0])
+    assert "xfce" not in " ".join(apt[0])
     kiosk_unit = host.read_text(
         config.paths.systemd_dir / "wirescope-kiosk.service"
     )
     assert "127.0.0.1:8000" in kiosk_unit
+    assert "WantedBy=multi-user.target" in kiosk_unit
+    assert "Conflicts=getty@tty1.service" in kiosk_unit
     assert any("kiosk" in step.lower() for step in report.steps)
 
 
-def test_enable_kiosk_without_display_leaves_unit_disabled(tmp_path):
+def test_enable_kiosk_without_display_enables_system_boot_unit(tmp_path):
     host = _host()
     host.binaries["chromium"] = "/usr/bin/chromium"
+    host.groups["video"] = set()
     config = _config(
         tmp_path,
         enable_kiosk=True,
+        install_kiosk=True,
         display=_headless(),
+    )
+    report = install(config, host)
+    kiosk_enabled = [
+        item
+        for item in host.commands
+        if item[:3] == ("systemctl", "enable", "--now")
+        and "wirescope-kiosk.service" in item
+    ]
+    assert kiosk_enabled
+    assert "wirescope-kiosk.service" in report.started
+    assert any("tty1" in item for item in report.warnings)
+    kiosk_unit = host.read_text(
+        config.paths.systemd_dir / "wirescope-kiosk.service"
+    )
+    assert "WantedBy=multi-user.target" in kiosk_unit
+    assert "Conflicts=getty@tty1.service" in kiosk_unit
+    dropin = host.read_text(
+        config.paths.systemd_dir / "getty@tty1.service.d" / "wirescope-autologin.conf"
+    )
+    assert "--autologin wirescope" in dropin
+    assert host.user_in_group("wirescope", "video")
+
+
+def test_enable_kiosk_without_chromium_leaves_unit_disabled(tmp_path):
+    host = _host()
+    config = _config(
+        tmp_path,
+        enable_kiosk=True,
+        display=_attached(),
     )
     report = install(config, host)
     kiosk_enabled = [
@@ -307,7 +343,7 @@ def test_enable_kiosk_without_display_leaves_unit_disabled(tmp_path):
     ]
     assert kiosk_enabled == []
     assert "wirescope-kiosk.service" not in report.started
-    assert any("no local display" in item for item in report.warnings)
+    assert any("chromium is not installed" in item for item in report.warnings)
     assert host.exists(config.paths.systemd_dir / "wirescope-kiosk.service")
 
 

@@ -39,26 +39,7 @@ function showScreen(name) {
     document.querySelectorAll(".screen").forEach((section) => {
         section.hidden = section.dataset.screen !== name;
     });
-    $("header-subtitle").textContent =
-        name === "login" ? "Network audit appliance" : screenTitle(name);
-}
-
-function screenTitle(name) {
-    return {
-        home: "Audits",
-        environment: "New audit · environment",
-        interface: "New audit · interface",
-        scope: "New audit · scope",
-        profile: "New audit · profile",
-        confirm: "New audit · confirm",
-        progress: "Audit progress",
-        summary: "Audit summary",
-        assets: "Assets and services",
-        observations: "Observations",
-        assessment: "Assessment",
-        findings: "Findings",
-        report: "Report",
-    }[name] || "WireScope";
+    $("header-subtitle").textContent = t(`screen.${name}`);
 }
 
 async function api(method, path, body) {
@@ -113,7 +94,7 @@ function setSessionChip() {
     }
     chip.hidden = false;
     $("session-label").textContent =
-        `${state.user.username} · ${state.user.role}`;
+        `${state.user.username} · ${I18N.role(state.user.role)}`;
 }
 
 function canMutate() {
@@ -181,12 +162,16 @@ function parseTargets(text) {
         .filter(Boolean);
 }
 
+function displayError(error) {
+    return I18N.apiError(error);
+}
+
 async function refreshHealth() {
     try {
         await api("GET", "/api/status");
-        setStatus("online", "READY");
+        setStatus("online", t("status.ready"));
     } catch {
-        setStatus("offline", "ERROR");
+        setStatus("offline", t("status.error"));
     }
 }
 
@@ -226,13 +211,13 @@ async function showHome() {
     showScreen("home");
     $("new-audit-button").hidden = !canMutate();
     $("home-role-hint").textContent = canMutate()
-        ? "Start a new audit or resume a running one. Jobs survive display restart."
-        : "Viewer session: you can inspect audits but cannot start or cancel them.";
+        ? t("home.auditorHint")
+        : t("home.viewerHint");
     const page = await api("GET", "/api/audits?limit=20");
     const list = $("audit-list");
     list.replaceChildren();
     if (!page.items.length) {
-        list.append(listItem("No audits yet", "Create one to begin."));
+        list.append(listItem(t("home.emptyTitle"), t("home.emptyDetail")));
         return;
     }
     page.items.forEach((audit) => {
@@ -240,7 +225,11 @@ async function showHome() {
         button.type = "button";
         button.className = "list-item";
         const title = document.createElement("strong");
-        title.textContent = `${audit.status} · ${audit.profile} · ${audit.interface || "no iface"}`;
+        title.textContent = [
+            I18N.status(audit.status),
+            I18N.profile(audit.profile),
+            audit.interface || t("common.noInterface"),
+        ].join(" · ");
         const meta = document.createElement("span");
         meta.textContent = audit.id;
         button.append(title, meta);
@@ -269,14 +258,19 @@ async function showEnvironment() {
         || (data.interfaces || [])[0]
         || {};
     const fields = [
-        ["Hostname", data.hostname],
-        ["Interface", iface.name],
-        ["Link", iface.state],
-        ["Speed", iface.speed_mbps ? `${iface.speed_mbps} Mbps` : "Unknown"],
-        ["IPv4", (iface.ipv4 || []).join(", ") || "None"],
-        ["Gateway", data.default_route && data.default_route.gateway],
-        ["MAC", iface.mac],
-        ["MTU", iface.mtu],
+        [t("environment.hostname"), data.hostname],
+        [t("environment.interface"), iface.name],
+        [t("environment.link"), I18N.link(iface.state)],
+        [
+            t("environment.speed"),
+            iface.speed_mbps
+                ? t("common.mbps", { value: iface.speed_mbps })
+                : t("common.unknown"),
+        ],
+        [t("environment.ipv4"), (iface.ipv4 || []).join(", ") || t("common.none")],
+        [t("environment.gateway"), data.default_route && data.default_route.gateway],
+        [t("environment.mac"), iface.mac],
+        [t("environment.mtu"), iface.mtu],
     ];
     fields.forEach(([label, value]) => {
         const item = document.createElement("div");
@@ -284,12 +278,12 @@ async function showEnvironment() {
         const span = document.createElement("span");
         span.textContent = label;
         const strong = document.createElement("strong");
-        strong.textContent = value || "—";
+        strong.textContent = value || t("common.dash");
         item.append(span, strong);
         grid.append(item);
     });
     $("environment-dns").textContent =
-        (data.dns || []).join(", ") || "Not detected";
+        (data.dns || []).join(", ") || t("common.notDetected");
 }
 
 async function showInterfaces() {
@@ -313,8 +307,8 @@ async function showInterfaces() {
         title.textContent = iface.name;
         const meta = document.createElement("span");
         meta.textContent = iface.allowed
-            ? `${iface.state || "unknown"} · ${(iface.ipv4 || []).join(", ") || "no IPv4"}`
-            : iface.denial_reason || "Not allowed";
+            ? `${I18N.link(iface.state)} · ${(iface.ipv4 || []).join(", ") || t("common.noIpv4")}`
+            : I18N.denial(iface.denial_reason);
         button.append(title, meta);
         button.addEventListener("click", () => {
             if (!iface.allowed) {
@@ -353,12 +347,20 @@ function showConfirm() {
     showScreen("confirm");
     const targets = parseTargets(state.draft.targets);
     const rows = [
-        ["Interface", state.draft.interface || "—"],
-        ["VLAN", state.draft.vlan || "None"],
-        ["Scope", targets.join(", ") || "Passive / not authorized"],
-        ["Profile", state.draft.profile],
-        ["Duration", `${state.draft.duration}s`],
-        ["Stages", (PIPELINES[state.draft.profile] || []).join(" → ")],
+        [t("confirm.interface"), state.draft.interface || t("common.dash")],
+        [t("confirm.vlan"), state.draft.vlan || t("common.none")],
+        [
+            t("confirm.scope"),
+            targets.join(", ") || t("confirm.passiveScope"),
+        ],
+        [t("confirm.profile"), I18N.profile(state.draft.profile)],
+        [t("confirm.duration"), t("common.seconds", { value: state.draft.duration })],
+        [
+            t("confirm.stages"),
+            (PIPELINES[state.draft.profile] || [])
+                .map((stage) => I18N.jobType(stage))
+                .join(" → "),
+        ],
     ];
     const list = $("confirm-summary");
     list.replaceChildren();
@@ -375,20 +377,20 @@ function showConfirm() {
 
 async function startAudit() {
     if (!canMutate()) {
-        setError("confirm-error", "Viewer cannot start audits");
+        setError("confirm-error", t("error.viewerCannotStart"));
         return;
     }
     if (!state.draft.interface) {
-        setError("confirm-error", "Select an interface");
+        setError("confirm-error", t("error.selectInterface"));
         return;
     }
     const targets = parseTargets(state.draft.targets);
     if (state.draft.profile !== "passive" && !targets.length) {
-        setError("confirm-error", "Active profiles require authorized CIDR or host targets");
+        setError("confirm-error", t("error.activeScopeRequired"));
         return;
     }
     if (!$("confirm-authorize").checked) {
-        setError("confirm-error", "Confirm the authorized scope before starting");
+        setError("confirm-error", t("error.confirmScope"));
         return;
     }
     state.draft.authorized = true;
@@ -424,8 +426,10 @@ async function runPipeline() {
             saveActive();
             const job = await pollJob(accepted.job_id);
             if (job.status !== "completed") {
-                $("progress-message").textContent =
-                    `Stage ${stage} ended as ${job.status}`;
+                $("progress-message").textContent = t("progress.stageEnded", {
+                    stage: I18N.jobType(stage),
+                    status: I18N.status(job.status),
+                });
                 await showSummary();
                 return;
             }
@@ -435,13 +439,12 @@ async function runPipeline() {
                 (error.code === "inventory_empty" || error.code === "scope_not_confirmed")
             ) {
                 $("progress-warning").hidden = false;
-                $("progress-warning").textContent =
-                    "Protocol audits skipped: no matching inventory yet.";
+                $("progress-warning").textContent = t("progress.protocolSkipped");
                 state.pipelineIndex += 1;
                 saveActive();
                 continue;
             }
-            $("progress-message").textContent = error.message;
+            $("progress-message").textContent = displayError(error);
             await showSummary();
             return;
         }
@@ -476,7 +479,7 @@ async function enqueueStage(stage) {
     if (stage === "report") {
         return api("POST", `/api/audits/${auditId}/reports`, {});
     }
-    throw new Error(`Unknown stage: ${stage}`);
+    throw new Error(t("error.unknownStage", { stage }));
 }
 
 function stopPolling() {
@@ -508,17 +511,19 @@ async function pollJob(jobId) {
         } catch (error) {
             state.pollDelay = Math.min(state.pollDelay * 2, 5000);
             $("progress-warning").hidden = false;
-            $("progress-warning").textContent =
-                "Progress poll failed; retrying without stopping the job.";
+            $("progress-warning").textContent = t("progress.pollFailed");
         }
         await sleep(state.pollDelay);
     }
 }
 
 function renderProgress(job) {
-    $("progress-stage").textContent =
-        `${job.type} · ${job.stage} · ${job.status}`;
-    $("progress-message").textContent = job.message || "Running";
+    $("progress-stage").textContent = t("progress.stageLine", {
+        type: I18N.jobType(job.type),
+        stage: I18N.stage(job.stage),
+        status: I18N.status(job.status),
+    });
+    $("progress-message").textContent = I18N.jobMessage(job.message);
     $("progress-fill").style.width = `${job.progress || 0}%`;
     $("progress-bar").setAttribute("aria-valuenow", String(job.progress || 0));
 }
@@ -528,7 +533,8 @@ function renderEvents(events) {
     list.replaceChildren();
     events.slice().reverse().forEach((event) => {
         const item = document.createElement("li");
-        item.textContent = `${event.stage || event.event_type}: ${event.message}`;
+        const stage = event.stage || event.event_type;
+        item.textContent = `${I18N.stage(stage)}: ${I18N.jobMessage(event.message)}`;
         list.append(item);
     });
 }
@@ -538,8 +544,8 @@ async function requestStop() {
         return;
     }
     const confirmed = await confirmModal(
-        "Stop audit?",
-        "This cancels the current job. Already finished stages stay stored."
+        t("progress.stopTitle"),
+        t("progress.stopBody")
     );
     if (!confirmed) {
         return;
@@ -603,14 +609,19 @@ async function showSummary() {
     const findings = await api("GET", `/api/audits/${state.auditId}/findings?limit=1`);
     const jobs = await api("GET", `/api/audits/${state.auditId}/jobs?limit=20`);
     const rows = [
-        ["Audit", audit.id],
-        ["Status", audit.status],
-        ["Profile", audit.profile],
-        ["Interface", audit.interface || "—"],
-        ["Assets", String(inventory.assets)],
-        ["Services", String(inventory.services)],
-        ["Findings", String(findings.total)],
-        ["Jobs", (jobs.items || []).map((job) => `${job.type}:${job.status}`).join(", ")],
+        [t("summary.audit"), audit.id],
+        [t("summary.status"), I18N.status(audit.status)],
+        [t("summary.profile"), I18N.profile(audit.profile)],
+        [t("summary.interface"), audit.interface || t("common.dash")],
+        [t("summary.assets"), String(inventory.assets)],
+        [t("summary.services"), String(inventory.services)],
+        [t("summary.findings"), String(findings.total)],
+        [
+            t("summary.jobs"),
+            (jobs.items || [])
+                .map((job) => `${I18N.jobType(job.type)}:${I18N.status(job.status)}`)
+                .join(", "),
+        ],
     ];
     const list = $("summary-list");
     list.replaceChildren();
@@ -632,7 +643,7 @@ async function showAssets() {
     assetList.replaceChildren();
     serviceList.replaceChildren();
     if (!assets.items.length) {
-        assetList.append(listItem("No assets", "Run discovery after confirming scope."));
+        assetList.append(listItem(t("assets.emptyTitle"), t("assets.emptyDetail")));
     }
     assets.items.forEach((asset) => {
         const address = (asset.addresses || []).map((item) => item.address).join(", ");
@@ -640,7 +651,11 @@ async function showAssets() {
         assetList.append(
             listItem(
                 name || address || asset.id,
-                `${asset.state} · ${asset.mac || "no MAC"} · ${asset.vendor || "vendor unknown"}`
+                t("assets.meta", {
+                    state: I18N.assetState(asset.state),
+                    mac: asset.mac || t("common.noMac"),
+                    vendor: asset.vendor || t("common.vendorUnknown"),
+                })
             )
         );
     });
@@ -648,7 +663,10 @@ async function showAssets() {
         serviceList.append(
             listItem(
                 `${service.protocol}/${service.port} ${service.service_name || ""}`.trim(),
-                `${service.state} · ${service.product || "unknown product"}`
+                t("assets.serviceMeta", {
+                    state: I18N.serviceState(service.state),
+                    product: service.product || t("common.unknownProduct"),
+                })
             )
         );
     });
@@ -664,16 +682,22 @@ async function showObservations() {
     list.replaceChildren();
     if (!page.items.length) {
         list.append(listItem(
-            "No protocol observations",
-            "Passive sensor facts stay in the capture result; this list is service-audit evidence."
+            t("observations.emptyTitle"),
+            t("observations.emptyDetail")
         ));
         return;
     }
     page.items.forEach((item) => {
         list.append(
             listItem(
-                `${item.protocol} · ${item.kind}`,
-                `${item.confidence} · module ${item.module}`
+                t("observations.item", {
+                    protocol: item.protocol,
+                    kind: item.kind,
+                }),
+                t("observations.meta", {
+                    confidence: I18N.confidence(item.confidence),
+                    module: item.module,
+                })
             )
         );
     });
@@ -689,8 +713,8 @@ async function showAssessment() {
     );
     if (!passive) {
         list.append(listItem(
-            "No assessment yet",
-            "Assessment appears after a completed passive job."
+            t("assessment.emptyTitle"),
+            t("assessment.emptyDetail")
         ));
         return;
     }
@@ -700,12 +724,14 @@ async function showAssessment() {
         || {};
     const visibility = assessment.visibility || {};
     list.append(listItem(
-        `Visibility · ${visibility.confidence || "unknown"}`,
-        String(visibility.value || visibility.rationale || "No visibility statement")
+        t("assessment.visibility", {
+            confidence: I18N.confidence(visibility.confidence || "unknown"),
+        }),
+        String(visibility.value || visibility.rationale || t("assessment.noVisibility"))
     ));
     (assessment.infrastructure || []).forEach((item) => {
         list.append(listItem(
-            `${item.confidence || "unknown"}`,
+            I18N.confidence(item.confidence || "unknown"),
             item.rationale || JSON.stringify(item.value || {})
         ));
     });
@@ -717,14 +743,21 @@ async function showFindings() {
     const list = $("finding-list");
     list.replaceChildren();
     if (!page.items.length) {
-        list.append(listItem("No findings", "Evaluate findings after protocol audits."));
+        list.append(listItem(t("findings.emptyTitle"), t("findings.emptyDetail")));
         return;
     }
     page.items.forEach((item) => {
         list.append(
             listItem(
-                `${item.severity} · ${item.title}`,
-                `${item.status} · ${item.rule_id} · ${item.confidence}`
+                t("findings.item", {
+                    severity: I18N.severity(item.severity),
+                    title: item.title,
+                }),
+                t("findings.meta", {
+                    status: I18N.findingStatus(item.status),
+                    rule: item.rule_id,
+                    confidence: I18N.confidence(item.confidence),
+                })
             )
         );
     });
@@ -739,14 +772,16 @@ async function showReport() {
     const downloadJson = $("download-json-report");
     const frame = $("report-frame");
     if (!latest) {
-        $("report-status").textContent = "No report generated yet.";
+        $("report-status").textContent = t("report.empty");
         openHtml.hidden = true;
         downloadJson.hidden = true;
         frame.hidden = true;
         return;
     }
-    $("report-status").textContent =
-        `Generated ${latest.generated_at} · hash ${latest.source_hash.slice(0, 12)}`;
+    $("report-status").textContent = t("report.generated", {
+        when: latest.generated_at,
+        hash: latest.source_hash.slice(0, 12),
+    });
     openHtml.hidden = false;
     downloadJson.hidden = false;
     openHtml.onclick = () => window.open(latest.html_url, "_blank");
@@ -783,7 +818,7 @@ function bindUi() {
             }
             await showHome();
         } catch (error) {
-            setError("login-error", error.message);
+            setError("login-error", displayError(error));
         }
     });
 
@@ -819,7 +854,7 @@ function bindUi() {
             }
             if (target === "scope") {
                 if (!state.draft.interface) {
-                    setError("interface-error", "Select an allowed interface");
+                    setError("interface-error", t("error.selectAllowedInterface"));
                     return;
                 }
                 showScope();
@@ -835,7 +870,7 @@ function bindUi() {
             if (target === "confirm") {
                 state.draft.duration = Number($("scope-duration").value);
                 if (!state.draft.profile) {
-                    setError("profile-error", "Select a profile");
+                    setError("profile-error", t("error.selectProfile"));
                     return;
                 }
                 saveDraft();
@@ -875,7 +910,7 @@ function bindUi() {
 
     $("interface-next").addEventListener("click", () => {
         if (!state.draft.interface) {
-            setError("interface-error", "Select an allowed interface");
+            setError("interface-error", t("error.selectAllowedInterface"));
             return;
         }
         showScope();
@@ -885,19 +920,19 @@ function bindUi() {
         try {
             await startAudit();
         } catch (error) {
-            setError("confirm-error", error.message);
+            setError("confirm-error", displayError(error));
         }
     });
 
     $("stop-audit-button").addEventListener("click", () => {
         requestStop().catch((error) => {
-            $("progress-message").textContent = error.message;
+            $("progress-message").textContent = displayError(error);
         });
     });
 
     $("generate-report-button").addEventListener("click", () => {
         generateReport().catch((error) => {
-            $("report-status").textContent = error.message;
+            $("report-status").textContent = displayError(error);
         });
     });
 
@@ -908,6 +943,7 @@ function bindUi() {
 }
 
 async function boot() {
+    I18N.apply();
     bindUi();
     loadDraft();
     await refreshHealth();
@@ -926,6 +962,6 @@ async function boot() {
 }
 
 boot().catch((error) => {
-    setStatus("offline", "ERROR");
-    showLogin(error.message);
+    setStatus("offline", t("status.error"));
+    showLogin(displayError(error));
 });

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 
 <head>
     <meta charset="UTF-8">
@@ -17,22 +17,24 @@
     <header>
         <div>
             <h1>WireScope</h1>
-            <p id="header-subtitle">Network audit appliance</p>
+            <p id="header-subtitle" data-i18n="brand.subtitle">Сетевой аудиторский комплекс</p>
         </div>
         <div class="header-meta">
             <div
                 id="system-status"
                 class="status unknown"
                 aria-live="polite"
-            >CHECKING</div>
+                data-i18n="status.checking"
+            >ПРОВЕРКА</div>
             <div id="session-chip" class="session-chip" hidden>
                 <span id="session-label"></span>
                 <button
                     type="button"
                     id="logout-button"
                     class="icon-button"
-                    aria-label="Sign out"
-                >Out</button>
+                    data-i18n="action.signOut"
+                    data-i18n-aria="action.signOut"
+                >Выход</button>
             </div>
         </div>
     </header>
@@ -45,10 +47,10 @@
             data-screen="login"
             hidden
         >
-            <h2>Sign in</h2>
-            <p class="hint">Local operator session. Audits keep running if this display restarts.</p>
+            <h2 data-i18n="login.title">Вход</h2>
+            <p class="hint" data-i18n="login.hint">Локальный сеанс оператора. Аудиты продолжаются, если этот экран перезапустится.</p>
             <form id="login-form" autocomplete="username">
-                <label for="login-username">Username</label>
+                <label for="login-username" data-i18n="login.username">Имя пользователя</label>
                 <input
                     id="login-username"
                     name="username"
@@ -57,7 +59,7 @@
                     maxlength="64"
                     autocomplete="username"
                 >
-                <label for="login-password">Password</label>
+                <label for="login-password" data-i18n="login.password">Пароль</label>
                 <input
                     id="login-password"
                     name="password"
@@ -67,7 +69,7 @@
                     autocomplete="current-password"
                 >
                 <p id="login-error" class="error" role="alert" hidden></p>
-                <button type="submit" class="primary">Sign in</button>
+                <button type="submit" class="primary" data-i18n="action.signIn">Войти</button>
             </form>
         </section>
 
@@ -77,14 +79,15 @@
             data-screen="home"
             hidden
         >
-            <h2>Audits</h2>
+            <h2 data-i18n="home.title">Аудиты</h2>
             <p id="home-role-hint" class="hint"></p>
             <div class="actions">
                 <button
                     type="button"
                     id="new-audit-button"
                     class="primary"
-                >New audit</button>
+                    data-i18n="action.newAudit"
+                >Новый аудит</button>
             </div>
             <div id="audit-list" class="list" aria-live="polite"></div>
         </section>
@@ -95,16 +98,16 @@
             data-screen="environment"
             hidden
         >
-            <h2>Environment</h2>
-            <p class="hint">Host context before choosing a capture interface.</p>
+            <h2 data-i18n="environment.title">Окружение</h2>
+            <p class="hint" data-i18n="environment.hint">Контекст узла перед выбором интерфейса захвата.</p>
             <div class="grid" id="environment-grid"></div>
             <div class="card compact">
-                <h3>DNS</h3>
+                <h3 data-i18n="environment.dns">DNS</h3>
                 <p id="environment-dns">—</p>
             </div>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="home">Back</button>
-                <button type="button" class="primary" data-nav="interface">Next</button>
+                <button type="button" class="secondary" data-nav="home" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" data-nav="interface" data-i18n="action.next">Далее</button>
             </div>
         </section>
 
@@ -114,13 +117,18 @@
             data-screen="interface"
             hidden
         >
-            <h2>Interface</h2>
-            <p class="hint">Only allowed, non-loopback interfaces can start capture.</p>
-            <div id="interface-list" class="choice-list" role="listbox" aria-label="Network interfaces"></div>
+            <h2 data-i18n="interface.title">Интерфейс</h2>
+            <p class="hint" data-i18n="interface.hint">Захват можно запустить только на разрешённых интерфейсах (не loopback).</p>
+            <div
+                id="interface-list"
+                class="choice-list"
+                role="listbox"
+                data-i18n-aria="interface.listLabel"
+            ></div>
             <p id="interface-error" class="error" role="alert" hidden></p>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="environment">Back</button>
-                <button type="button" class="primary" id="interface-next">Next</button>
+                <button type="button" class="secondary" data-nav="environment" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" id="interface-next" data-i18n="action.next">Далее</button>
             </div>
         </section>
 
@@ -130,26 +138,28 @@
             data-screen="scope"
             hidden
         >
-            <h2>Network / VLAN / scope</h2>
-            <p class="hint">Observed addresses are hints only. Active scans need an authorized CIDR list.</p>
-            <label for="scope-vlan">VLAN / segment note</label>
+            <h2 data-i18n="scope.title">Сеть / VLAN / область</h2>
+            <p class="hint" data-i18n="scope.hint">Подтвердите уполномоченный диапазон — не произвольную маску. Пассивные подсказки (адреса, VLAN) не равны разрешению на активное сканирование; оператор явно подтверждает CIDR или хосты.</p>
+            <label for="scope-vlan" data-i18n="scope.vlan">Примечание VLAN / сегмент</label>
             <input
                 id="scope-vlan"
                 type="text"
                 maxlength="64"
-                placeholder="Optional, e.g. VLAN 20"
+                data-i18n-placeholder="scope.vlanPlaceholder"
+                placeholder="Необязательно, напр. VLAN 20"
             >
-            <label for="scope-targets">Authorized targets</label>
+            <label for="scope-targets" data-i18n="scope.targets">Уполномоченные цели</label>
             <textarea
                 id="scope-targets"
                 rows="3"
                 maxlength="4000"
-                placeholder="One CIDR or host per line"
+                data-i18n-placeholder="scope.targetsPlaceholder"
+                placeholder="Один CIDR или хост на строку"
             ></textarea>
             <p id="scope-error" class="error" role="alert" hidden></p>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="interface">Back</button>
-                <button type="button" class="primary" data-nav="profile">Next</button>
+                <button type="button" class="secondary" data-nav="interface" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" data-nav="profile" data-i18n="action.next">Далее</button>
             </div>
         </section>
 
@@ -159,26 +169,26 @@
             data-screen="profile"
             hidden
         >
-            <h2>Profile</h2>
+            <h2 data-i18n="profile.title">Профиль</h2>
             <div class="choice-list" id="profile-list">
                 <button type="button" class="choice" data-profile="passive">
-                    <strong>Passive</strong>
-                    <span>Capture and sensors only. No Nmap.</span>
+                    <strong data-i18n="profile.passive.title">Пассивный</strong>
+                    <span data-i18n="profile.passive.hint">Только захват и датчики. Без Nmap.</span>
                 </button>
                 <button type="button" class="choice" data-profile="discovery">
-                    <strong>Discovery</strong>
-                    <span>Passive, then authorized host discovery.</span>
+                    <strong data-i18n="profile.discovery.title">Обнаружение</strong>
+                    <span data-i18n="profile.discovery.hint">Пассив, затем уполномоченное обнаружение хостов.</span>
                 </button>
                 <button type="button" class="choice" data-profile="standard">
-                    <strong>Standard</strong>
-                    <span>Discovery, protocol audits, findings, report.</span>
+                    <strong data-i18n="profile.standard.title">Стандарт</strong>
+                    <span data-i18n="profile.standard.hint">Обнаружение, аудит протоколов, находки, отчёт.</span>
                 </button>
                 <button type="button" class="choice" data-profile="deep">
-                    <strong>Deep</strong>
-                    <span>Deeper Nmap, then audits, findings, report.</span>
+                    <strong data-i18n="profile.deep.title">Глубокий</strong>
+                    <span data-i18n="profile.deep.hint">Более глубокий Nmap, затем аудиты, находки, отчёт.</span>
                 </button>
             </div>
-            <label for="scope-duration">Passive duration (seconds)</label>
+            <label for="scope-duration" data-i18n="profile.duration">Длительность пассива (секунды)</label>
             <input
                 id="scope-duration"
                 type="number"
@@ -189,8 +199,8 @@
             >
             <p id="profile-error" class="error" role="alert" hidden></p>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="scope">Back</button>
-                <button type="button" class="primary" data-nav="confirm">Next</button>
+                <button type="button" class="secondary" data-nav="scope" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" data-nav="confirm" data-i18n="action.next">Далее</button>
             </div>
         </section>
 
@@ -200,17 +210,17 @@
             data-screen="confirm"
             hidden
         >
-            <h2>Confirm audit</h2>
-            <p class="hint">Starting work queues durable jobs. Closing this display does not stop them.</p>
+            <h2 data-i18n="confirm.title">Подтверждение аудита</h2>
+            <p class="hint" data-i18n="confirm.hint">Запуск ставит задания в очередь. Закрытие этого экрана их не останавливает.</p>
             <dl id="confirm-summary" class="summary-list"></dl>
             <label class="check">
                 <input id="confirm-authorize" type="checkbox">
-                <span>I confirm the interface, profile, and authorized scope.</span>
+                <span data-i18n="confirm.authorize">Подтверждаю интерфейс, профиль и уполномоченную область.</span>
             </label>
             <p id="confirm-error" class="error" role="alert" hidden></p>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="profile">Back</button>
-                <button type="button" class="primary" id="start-audit-button">Start</button>
+                <button type="button" class="secondary" data-nav="profile" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" id="start-audit-button" data-i18n="action.start">Запуск</button>
             </div>
         </section>
 
@@ -220,8 +230,8 @@
             data-screen="progress"
             hidden
         >
-            <h2>Progress</h2>
-            <p id="progress-stage" class="stage">Queued</p>
+            <h2 data-i18n="progress.title">Ход выполнения</h2>
+            <p id="progress-stage" class="stage" data-i18n="progress.queued">В очереди</p>
             <div
                 class="progress-bar"
                 role="progressbar"
@@ -232,7 +242,7 @@
             >
                 <div id="progress-fill"></div>
             </div>
-            <p id="progress-message" class="hint">Waiting for worker…</p>
+            <p id="progress-message" class="hint" data-i18n="progress.waiting">Ожидание исполнителя…</p>
             <ol id="progress-events" class="event-list"></ol>
             <p id="progress-warning" class="warning" hidden></p>
             <div class="actions">
@@ -240,7 +250,8 @@
                     type="button"
                     class="danger"
                     id="stop-audit-button"
-                >Stop</button>
+                    data-i18n="action.stop"
+                >Стоп</button>
             </div>
         </section>
 
@@ -250,17 +261,17 @@
             data-screen="summary"
             hidden
         >
-            <h2>Summary</h2>
+            <h2 data-i18n="summary.title">Сводка</h2>
             <dl id="summary-list" class="summary-list"></dl>
             <div class="nav-grid">
-                <button type="button" class="secondary" data-open="assets">Assets</button>
-                <button type="button" class="secondary" data-open="observations">Observations</button>
-                <button type="button" class="secondary" data-open="assessment">Assessment</button>
-                <button type="button" class="secondary" data-open="findings">Findings</button>
-                <button type="button" class="secondary" data-open="report">Report</button>
+                <button type="button" class="secondary" data-open="assets" data-i18n="nav.assets">Активы</button>
+                <button type="button" class="secondary" data-open="observations" data-i18n="nav.observations">Наблюдения</button>
+                <button type="button" class="secondary" data-open="assessment" data-i18n="nav.assessment">Оценка</button>
+                <button type="button" class="secondary" data-open="findings" data-i18n="nav.findings">Находки</button>
+                <button type="button" class="secondary" data-open="report" data-i18n="nav.report">Отчёт</button>
             </div>
             <div class="actions">
-                <button type="button" class="primary" data-nav="home">Home</button>
+                <button type="button" class="primary" data-nav="home" data-i18n="action.home">Домой</button>
             </div>
         </section>
 
@@ -270,12 +281,12 @@
             data-screen="assets"
             hidden
         >
-            <h2>Assets</h2>
+            <h2 data-i18n="assets.title">Активы</h2>
             <div id="asset-list" class="list"></div>
-            <h3>Services</h3>
+            <h3 data-i18n="assets.services">Службы</h3>
             <div id="service-list" class="list"></div>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="summary">Back</button>
+                <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
             </div>
         </section>
 
@@ -285,11 +296,11 @@
             data-screen="observations"
             hidden
         >
-            <h2>Observations</h2>
-            <p class="hint">Facts from sensors and protocol modules. These are not findings.</p>
+            <h2 data-i18n="observations.title">Наблюдения</h2>
+            <p class="hint" data-i18n="observations.hint">Факты датчиков и протокольных модулей. Это не находки.</p>
             <div id="observation-list" class="list"></div>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="summary">Back</button>
+                <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
             </div>
         </section>
 
@@ -299,11 +310,11 @@
             data-screen="assessment"
             hidden
         >
-            <h2>Assessment</h2>
-            <p class="hint">Interpretations with explicit confidence. Hints are not confirmed subnets.</p>
+            <h2 data-i18n="assessment.title">Оценка</h2>
+            <p class="hint" data-i18n="assessment.hint">Интерпретации с явной уверенностью. Подсказки — не подтверждённые подсети.</p>
             <div id="assessment-list" class="list"></div>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="summary">Back</button>
+                <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
             </div>
         </section>
 
@@ -313,11 +324,11 @@
             data-screen="findings"
             hidden
         >
-            <h2>Findings</h2>
-            <p class="hint">Rule results with severity. Separate from raw observations.</p>
+            <h2 data-i18n="findings.title">Находки</h2>
+            <p class="hint" data-i18n="findings.hint">Результаты правил с серьёзностью. Отдельно от сырых наблюдений.</p>
             <div id="finding-list" class="list"></div>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="summary">Back</button>
+                <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
             </div>
         </section>
 
@@ -327,35 +338,39 @@
             data-screen="report"
             hidden
         >
-            <h2>Report</h2>
-            <p id="report-status" class="hint">No report generated yet.</p>
+            <h2 data-i18n="report.title">Отчёт</h2>
+            <p id="report-status" class="hint" data-i18n="report.empty">Отчёт ещё не сформирован.</p>
             <div class="actions wrap">
                 <button
                     type="button"
                     class="secondary"
                     id="open-html-report"
                     hidden
-                >Open HTML</button>
+                    data-i18n="action.openHtml"
+                >Открыть HTML</button>
                 <button
                     type="button"
                     class="secondary"
                     id="download-json-report"
                     hidden
-                >JSON export</button>
+                    data-i18n="action.downloadJson"
+                >Экспорт JSON</button>
                 <button
                     type="button"
                     class="primary"
                     id="generate-report-button"
-                >Generate</button>
+                    data-i18n="action.generate"
+                >Сформировать</button>
             </div>
             <iframe
                 id="report-frame"
-                title="Audit report"
+                data-i18n-title="report.iframeTitle"
+                title="Отчёт аудита"
                 hidden
                 sandbox="allow-same-origin"
             ></iframe>
             <div class="actions">
-                <button type="button" class="secondary" data-nav="summary">Back</button>
+                <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
             </div>
         </section>
 
@@ -373,17 +388,18 @@
             aria-labelledby="modal-title"
             aria-describedby="modal-body"
         >
-            <h2 id="modal-title">Confirm</h2>
+            <h2 id="modal-title" data-i18n="modal.title">Подтверждение</h2>
             <p id="modal-body"></p>
             <div class="actions">
-                <button type="button" class="secondary" id="modal-cancel">Back</button>
-                <button type="button" class="danger" id="modal-confirm">Confirm</button>
+                <button type="button" class="secondary" id="modal-cancel" data-i18n="action.back">Назад</button>
+                <button type="button" class="danger" id="modal-confirm" data-i18n="action.confirm">Подтвердить</button>
             </div>
         </div>
     </div>
 
 </div>
 
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

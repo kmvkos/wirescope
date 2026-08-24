@@ -26,20 +26,20 @@ def render_html(report: AuditReport) -> str:
     generated = _t(document["generated_at"])
     return (
         "<!DOCTYPE html>\n"
-        '<html lang="en">\n'
+        '<html lang="ru">\n'
         "<head>\n"
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<title>WireScope report {_t(report.audit.id)}</title>\n"
+        f"<title>{_l('report_title')} {_t(report.audit.id)}</title>\n"
         f"<style>{_CSS}</style>\n"
         "</head>\n"
         "<body>\n"
         '<header class="hero">\n'
-        "<p class=\"eyebrow\">WireScope audit report</p>\n"
-        f"<h1>{_t(summary.headline)}</h1>\n"
+        f"<p class=\"eyebrow\">{_l('eyebrow')}</p>\n"
+        f"<h1>{_t(_headline(summary.headline))}</h1>\n"
         "<p class=\"meta\">"
-        f"Audit {_t(report.audit.id)} · generated {generated} · "
-        f"schema {_t(report.schema_name)} v{_t(report.schema_version)}"
+        f"{_l('audit')} {_t(report.audit.id)} · {_l('generated')} {generated} · "
+        f"{_l('schema')} {_t(report.schema_name)} v{_t(report.schema_version)}"
         "</p>\n"
         "</header>\n"
         f"{_summary_section(report)}"
@@ -61,7 +61,7 @@ def _summary_section(report: AuditReport) -> str:
     severity_cells = "".join(
         (
             "<div class=\"stat\">"
-            f"<span class=\"label\">{_t(name)}</span>"
+            f"<span class=\"label\">{_l(f'severity.{name}')}</span>"
             f"<span class=\"value severity-{_t(name)}\">{_t(total)}</span>"
             "</div>"
         )
@@ -70,25 +70,25 @@ def _summary_section(report: AuditReport) -> str:
     sensors = (
         ", ".join(_t(name) for name in summary.detected_sensors)
         if summary.detected_sensors
-        else "none recorded"
+        else _l("none_recorded")
     )
+    confirmed = _l("yes") if summary.confirmed_scope else _l("no")
     return (
         '<section id="executive-summary">\n'
-        "<h2>Executive summary</h2>\n"
+        f"<h2>{_l('executive_summary')}</h2>\n"
         '<div class="stats">\n'
-        f"<div class=\"stat\"><span class=\"label\">Assets</span>"
+        f"<div class=\"stat\"><span class=\"label\">{_l('assets')}</span>"
         f"<span class=\"value\">{_t(summary.asset_count)}</span></div>\n"
-        f"<div class=\"stat\"><span class=\"label\">Services</span>"
+        f"<div class=\"stat\"><span class=\"label\">{_l('services')}</span>"
         f"<span class=\"value\">{_t(summary.service_count)}</span></div>\n"
-        f"<div class=\"stat\"><span class=\"label\">Findings</span>"
+        f"<div class=\"stat\"><span class=\"label\">{_l('findings')}</span>"
         f"<span class=\"value\">{_t(summary.finding_count)}</span></div>\n"
-        f"<div class=\"stat\"><span class=\"label\">Open</span>"
+        f"<div class=\"stat\"><span class=\"label\">{_l('open')}</span>"
         f"<span class=\"value\">{_t(summary.open_finding_count)}</span></div>\n"
         "</div>\n"
         f'<div class="stats">{severity_cells}</div>\n'
-        "<p>Confirmed scope: "
-        f"{'yes' if summary.confirmed_scope else 'no'}. "
-        f"Detected passive sensors: {sensors}.</p>\n"
+        f"<p>{_l('confirmed_scope')}: {confirmed}. "
+        f"{_l('detected_sensors')}: {sensors}.</p>\n"
         "</section>\n"
     )
 
@@ -107,25 +107,28 @@ def _environment_section(report: AuditReport) -> str:
             "</tr>"
         )
     table = (
-        "<table><thead><tr><th>Interface</th><th>State</th>"
-        "<th>MAC</th><th>Addresses</th></tr></thead><tbody>"
+        "<table><thead><tr>"
+        f"<th>{_l('interface')}</th><th>{_l('state')}</th>"
+        f"<th>MAC</th><th>{_l('addresses')}</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table>"
         if rows
-        else "<p>No interface snapshot was stored.</p>"
+        else f"<p>{_l('no_interfaces')}</p>"
     )
     route = env.default_route or {}
     route_text = (
-        f"gateway {_t(route.get('gateway'))} via {_t(route.get('interface'))}"
+        f"{_l('gateway')} {_t(route.get('gateway'))} "
+        f"{_l('via')} {_t(route.get('interface'))}"
         if route
-        else "not recorded"
+        else _l("not_recorded")
     )
-    dns = ", ".join(_t(item) for item in env.dns) or "not recorded"
+    dns = ", ".join(_t(item) for item in env.dns) or _l("not_recorded")
+    hostname = _t(env.hostname) or _l("not_recorded")
     return (
         '<section id="environment">\n'
-        "<h2>Environment</h2>\n"
-        f"<p>Hostname: {_t(env.hostname) or 'not recorded'}. "
-        f"Default route: {route_text}. DNS: {dns}.</p>\n"
+        f"<h2>{_l('environment')}</h2>\n"
+        f"<p>{_l('hostname')}: {hostname}. "
+        f"{_l('default_route')}: {route_text}. DNS: {dns}.</p>\n"
         f"{table}\n"
         "</section>\n"
     )
@@ -133,20 +136,24 @@ def _environment_section(report: AuditReport) -> str:
 
 def _scope_section(report: AuditReport) -> str:
     scope = report.scope
-    targets = ", ".join(_t(item) for item in scope.targets) or "none"
+    targets = ", ".join(_t(item) for item in scope.targets) or _l("none")
     audit_scope = _json_block(scope.audit_scope)
+    confirmed = _l("yes") if scope.confirmed else _l("no")
+    address_count = (
+        _t(scope.address_count) if scope.address_count is not None else "—"
+    )
     return (
         '<section id="scope">\n'
-        "<h2>Scope</h2>\n"
+        f"<h2>{_l('scope')}</h2>\n"
         "<p>"
-        f"Confirmed: {'yes' if scope.confirmed else 'no'}. "
-        f"Profile: {_t(scope.profile) or '—'}. "
-        f"Interface: {_t(scope.interface) or '—'}. "
-        f"Address count: {_t(scope.address_count) if scope.address_count is not None else '—'}. "
-        f"Timing: {_t(scope.timing_policy) or '—'}."
+        f"{_l('confirmed')}: {confirmed}. "
+        f"{_l('profile')}: {_t(scope.profile) or '—'}. "
+        f"{_l('interface')}: {_t(scope.interface) or '—'}. "
+        f"{_l('address_count')}: {address_count}. "
+        f"{_l('timing')}: {_t(scope.timing_policy) or '—'}."
         "</p>\n"
-        f"<p>Targets: {targets}.</p>\n"
-        "<h3>Audit scope snapshot</h3>\n"
+        f"<p>{_l('targets')}: {targets}.</p>\n"
+        f"<h3>{_l('audit_scope_snapshot')}</h3>\n"
         f"{audit_scope}\n"
         "</section>\n"
     )
@@ -154,7 +161,7 @@ def _scope_section(report: AuditReport) -> str:
 
 def _assets_section(assets: list[ReportAsset]) -> str:
     if not assets:
-        body = "<p>No assets were persisted for this audit.</p>"
+        body = f"<p>{_l('no_assets')}</p>"
     else:
         rows = []
         for asset in assets:
@@ -169,15 +176,17 @@ def _assets_section(assets: list[ReportAsset]) -> str:
                 "</tr>"
             )
         body = (
-            "<table><thead><tr><th>ID</th><th>State</th><th>MAC</th>"
-            "<th>Vendor</th><th>Addresses</th><th>Names</th>"
+            "<table><thead><tr><th>ID</th>"
+            f"<th>{_l('state')}</th><th>MAC</th>"
+            f"<th>{_l('vendor')}</th><th>{_l('addresses')}</th>"
+            f"<th>{_l('names')}</th>"
             "</tr></thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
         )
     return (
         '<section id="assets">\n'
-        "<h2>Assets</h2>\n"
+        f"<h2>{_l('assets')}</h2>\n"
         f"{body}\n"
         "</section>\n"
     )
@@ -185,7 +194,7 @@ def _assets_section(assets: list[ReportAsset]) -> str:
 
 def _services_section(services: list[ReportService]) -> str:
     if not services:
-        body = "<p>No services were persisted for this audit.</p>"
+        body = f"<p>{_l('no_services')}</p>"
     else:
         rows = []
         for service in services:
@@ -205,15 +214,17 @@ def _services_section(services: list[ReportService]) -> str:
                 "</tr>"
             )
         body = (
-            "<table><thead><tr><th>Asset</th><th>Proto</th><th>Port</th>"
-            "<th>State</th><th>Service</th><th>Product</th>"
+            "<table><thead><tr>"
+            f"<th>{_l('asset')}</th><th>{_l('proto')}</th><th>{_l('port')}</th>"
+            f"<th>{_l('state')}</th><th>{_l('service')}</th>"
+            f"<th>{_l('product')}</th>"
             "</tr></thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
         )
     return (
         '<section id="services">\n'
-        "<h2>Services</h2>\n"
+        f"<h2>{_l('services')}</h2>\n"
         f"{body}\n"
         "</section>\n"
     )
@@ -221,7 +232,7 @@ def _services_section(services: list[ReportService]) -> str:
 
 def _findings_section(findings: list[ReportFinding]) -> str:
     if not findings:
-        body = "<p>No findings were persisted for this audit.</p>"
+        body = f"<p>{_l('no_findings')}</p>"
     else:
         cards = []
         for item in findings:
@@ -230,17 +241,17 @@ def _findings_section(findings: list[ReportFinding]) -> str:
                 f"<h3>{_t(item.title)}</h3>"
                 "<p class=\"meta\">"
                 f"{_t(item.rule_id)} · {_t(item.severity)} · "
-                f"{_t(item.status)} · confidence {_t(item.confidence)}"
+                f"{_t(item.status)} · {_l('confidence')} {_t(item.confidence)}"
                 "</p>"
                 f"<p>{_t(item.description)}</p>"
-                f"<p><strong>Rationale.</strong> {_t(item.rationale)}</p>"
-                "<p><strong>Recommendation.</strong> "
+                f"<p><strong>{_l('rationale')}.</strong> {_t(item.rationale)}</p>"
+                f"<p><strong>{_l('recommendation')}.</strong> "
                 f"{_t(item.recommendation)}</p>"
                 "<p class=\"meta\">"
-                f"Asset {_t(item.asset_id) or '—'} · "
-                f"service {_t(item.service_id) or '—'} · "
-                f"observations {len(item.observation_ids)} · "
-                f"evidence {len(item.evidence_artifact_ids)}"
+                f"{_l('asset')} {_t(item.asset_id) or '—'} · "
+                f"{_l('service')} {_t(item.service_id) or '—'} · "
+                f"{_l('observations')} {len(item.observation_ids)} · "
+                f"{_l('evidence')} {len(item.evidence_artifact_ids)}"
                 "</p>"
                 f"{_json_block(item.data) if item.data else ''}"
                 "</article>"
@@ -248,7 +259,7 @@ def _findings_section(findings: list[ReportFinding]) -> str:
         body = "".join(cards)
     return (
         '<section id="findings">\n'
-        "<h2>Findings</h2>\n"
+        f"<h2>{_l('findings')}</h2>\n"
         f"{body}\n"
         "</section>\n"
     )
@@ -258,7 +269,7 @@ def _recommendations_section(
     recommendations: list[ReportRecommendation],
 ) -> str:
     if not recommendations:
-        body = "<p>No open-finding recommendations were produced.</p>"
+        body = f"<p>{_l('no_recommendations')}</p>"
     else:
         items = []
         for item in recommendations:
@@ -267,26 +278,22 @@ def _recommendations_section(
                 f"<strong>{_t(item.title)}</strong> "
                 f"({_t(item.rule_id)}, {_t(item.severity)}): "
                 f"{_t(item.recommendation)} "
-                f"— {_t(len(item.finding_ids))} finding(s)"
+                f"— {_t(len(item.finding_ids))} {_l('finding_count')}"
                 "</li>"
             )
         body = "<ol>" + "".join(items) + "</ol>"
     return (
         '<section id="recommendations">\n'
-        "<h2>Recommendations</h2>\n"
+        f"<h2>{_l('recommendations')}</h2>\n"
         f"{body}\n"
         "</section>\n"
     )
 
 
 def _evidence_section(references: list[ReportEvidenceReference]) -> str:
-    note = (
-        "<p>Raw provider output remains in controlled evidence storage. "
-        "This report lists identifiers, types, sizes, and SHA-256 hashes "
-        "only.</p>"
-    )
+    note = f"<p>{_l('evidence_note')}</p>"
     if not references:
-        body = "<p>No evidence artifacts were referenced.</p>"
+        body = f"<p>{_l('no_evidence')}</p>"
     else:
         rows = []
         for item in references:
@@ -300,14 +307,15 @@ def _evidence_section(references: list[ReportEvidenceReference]) -> str:
                 "</tr>"
             )
         body = (
-            "<table><thead><tr><th>ID</th><th>Type</th><th>Content type</th>"
-            "<th>Size</th><th>SHA-256</th></tr></thead><tbody>"
+            "<table><thead><tr><th>ID</th>"
+            f"<th>{_l('type')}</th><th>{_l('content_type')}</th>"
+            f"<th>{_l('size')}</th><th>SHA-256</th></tr></thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
         )
     return (
         '<section id="evidence">\n'
-        "<h2>Evidence references</h2>\n"
+        f"<h2>{_l('evidence_references')}</h2>\n"
         f"{note}\n"
         f"{body}\n"
         "</section>\n"
@@ -321,24 +329,25 @@ def _metadata_section(report: AuditReport) -> str:
         + "".join(f"<li>{_t(item)}</li>" for item in meta.warnings)
         + "</ul>"
         if meta.warnings
-        else "<p>None.</p>"
+        else f"<p>{_l('none_period')}</p>"
     )
+    excluded = _l("yes") if meta.raw_provider_output_excluded else _l("no")
+    truncated = _l("yes") if meta.truncated else _l("no")
     return (
         '<section id="audit-metadata">\n'
-        "<h2>Audit metadata</h2>\n"
+        f"<h2>{_l('audit_metadata')}</h2>\n"
         "<ul>\n"
-        f"<li>Product: {_t(meta.product)} {_t(meta.version)}</li>\n"
-        f"<li>Report ID: {_t(report.report_id)}</li>\n"
-        f"<li>Source hash: {_t(report.source_hash)}</li>\n"
-        f"<li>Job ID: {_t(meta.job_id) or '—'}</li>\n"
-        f"<li>Actor: {_t(meta.actor) or '—'}</li>\n"
-        f"<li>Audit status: {_t(report.audit.status)}</li>\n"
-        f"<li>Audit profile: {_t(report.audit.profile)}</li>\n"
-        f"<li>Raw provider output excluded: "
-        f"{'yes' if meta.raw_provider_output_excluded else 'no'}</li>\n"
-        f"<li>Truncated: {'yes' if meta.truncated else 'no'}</li>\n"
+        f"<li>{_l('product')}: {_t(meta.product)} {_t(meta.version)}</li>\n"
+        f"<li>{_l('report_id')}: {_t(report.report_id)}</li>\n"
+        f"<li>{_l('source_hash')}: {_t(report.source_hash)}</li>\n"
+        f"<li>{_l('job_id')}: {_t(meta.job_id) or '—'}</li>\n"
+        f"<li>{_l('actor')}: {_t(meta.actor) or '—'}</li>\n"
+        f"<li>{_l('audit_status')}: {_t(report.audit.status)}</li>\n"
+        f"<li>{_l('audit_profile')}: {_t(report.audit.profile)}</li>\n"
+        f"<li>{_l('raw_excluded')}: {excluded}</li>\n"
+        f"<li>{_l('truncated')}: {truncated}</li>\n"
         "</ul>\n"
-        "<h3>Warnings</h3>\n"
+        f"<h3>{_l('warnings')}</h3>\n"
         f"{warnings}\n"
         "</section>\n"
     )
@@ -359,6 +368,112 @@ def _t(value: Any) -> str:
     if value is None:
         return ""
     return html.escape(str(value), quote=True)
+
+
+def _l(key: str) -> str:
+    return html.escape(_LABELS.get(key, key), quote=True)
+
+
+def _headline(text: str) -> str:
+    return _HEADLINES.get(text, text)
+
+
+_LABELS = {
+    "report_title": "Отчёт WireScope",
+    "eyebrow": "Отчёт аудита WireScope",
+    "audit": "Аудит",
+    "generated": "сформирован",
+    "schema": "схема",
+    "executive_summary": "Краткое резюме",
+    "assets": "Активы",
+    "services": "Службы",
+    "findings": "Находки",
+    "open": "Открытые",
+    "confirmed_scope": "Уполномоченная область",
+    "detected_sensors": "Обнаруженные пассивные датчики",
+    "none_recorded": "не зафиксировано",
+    "yes": "да",
+    "no": "нет",
+    "environment": "Окружение",
+    "hostname": "Имя хоста",
+    "default_route": "Маршрут по умолчанию",
+    "gateway": "шлюз",
+    "via": "через",
+    "not_recorded": "не зафиксировано",
+    "interface": "Интерфейс",
+    "state": "Состояние",
+    "addresses": "Адреса",
+    "no_interfaces": "Снимок интерфейсов не сохранён.",
+    "scope": "Область",
+    "confirmed": "Подтверждена",
+    "profile": "Профиль",
+    "address_count": "Число адресов",
+    "timing": "Тайминг",
+    "targets": "Цели",
+    "none": "нет",
+    "none_period": "Нет.",
+    "audit_scope_snapshot": "Снимок области аудита",
+    "no_assets": "Для этого аудита активы не сохранены.",
+    "vendor": "Производитель",
+    "names": "Имена",
+    "no_services": "Для этого аудита службы не сохранены.",
+    "asset": "Актив",
+    "proto": "Протокол",
+    "port": "Порт",
+    "service": "Служба",
+    "product": "Продукт",
+    "no_findings": "Для этого аудита находки не сохранены.",
+    "confidence": "уверенность",
+    "rationale": "Обоснование",
+    "recommendation": "Рекомендация",
+    "observations": "наблюдения",
+    "evidence": "доказательства",
+    "recommendations": "Рекомендации",
+    "no_recommendations": "Рекомендаций по открытым находкам нет.",
+    "finding_count": "находка(и)",
+    "evidence_note": (
+        "Сырой вывод инструментов остаётся в контролируемом хранилище. "
+        "В отчёте только идентификаторы, типы, размеры и SHA-256."
+    ),
+    "no_evidence": "Артефакты доказательств не указаны.",
+    "evidence_references": "Ссылки на доказательства",
+    "type": "Тип",
+    "content_type": "Тип содержимого",
+    "size": "Размер",
+    "audit_metadata": "Метаданные аудита",
+    "product": "Продукт",
+    "report_id": "ID отчёта",
+    "source_hash": "Хеш источника",
+    "job_id": "ID задания",
+    "actor": "Исполнитель",
+    "audit_status": "Статус аудита",
+    "audit_profile": "Профиль аудита",
+    "raw_excluded": "Сырой вывод инструментов исключён",
+    "truncated": "Усечено",
+    "warnings": "Предупреждения",
+    "severity.critical": "критическая",
+    "severity.high": "высокая",
+    "severity.medium": "средняя",
+    "severity.low": "низкая",
+    "severity.info": "инфо",
+}
+
+_HEADLINES = {
+    "Open critical findings require attention": (
+        "Открытые критические находки требуют внимания"
+    ),
+    "Open high-severity findings were identified": (
+        "Выявлены открытые находки высокой серьёзности"
+    ),
+    "Open medium-severity findings were identified": (
+        "Выявлены открытые находки средней серьёзности"
+    ),
+    "Open findings were recorded": "Зафиксированы открытые находки",
+    "No open findings were recorded for the confirmed scope": (
+        "По подтверждённой области открытых находок нет"
+    ),
+    "No open findings were recorded": "Открытых находок не зафиксировано",
+}
 
 
 _CSS = """

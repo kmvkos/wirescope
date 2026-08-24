@@ -4,7 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from appliance.paths import InstallPaths
+from pathlib import Path
+
+from appliance.paths import InstallPaths, WIRESHARK_GROUP
+
+
+SG_BINARY = Path("/usr/bin/sg")
+
+
+def _exec_start(python: Path, module: str, *, user_session: bool) -> str:
+    command = f"{python} -m {module}"
+    if not user_session:
+        return command
+    # User systemd inherits groups from user@.service. SupplementaryGroups=
+    # is not available in a user unit. If the account joined wireshark after
+    # that manager started, dumpcap (0750 root:wireshark) is not executable
+    # until logout. sg is setuid and rebuilds group membership from NSS.
+    # Do not set ReadWritePaths= here: that mount namespace makes sg setgid
+    # fail with EINVAL under systemd --user.
+    return f'{SG_BINARY} {WIRESHARK_GROUP} -c "{command}"'
 
 
 SECRET_HINTS = (
@@ -32,7 +50,7 @@ def render_api_unit(paths: InstallPaths, *, user_session: bool = False) -> str:
     python = paths.python
     env_file = paths.env_file
     identity = ""
-    hardening = f"ReadWritePaths={paths.data_dir}\n"
+    hardening = ""
     wanted = "default.target"
     if not user_session:
         identity = (
@@ -61,7 +79,7 @@ Type=simple
 {identity}WorkingDirectory={paths.project_root}
 EnvironmentFile=-{env_file}
 Environment=HOME={paths.data_dir}
-ExecStart={python} -m backend
+ExecStart={_exec_start(python, "backend", user_session=user_session)}
 ExecStartPost={python} -m appliance wait-ready
 Restart=on-failure
 RestartSec=3
@@ -80,7 +98,7 @@ def render_worker_unit(paths: InstallPaths, *, user_session: bool = False) -> st
     python = paths.python
     env_file = paths.env_file
     identity = ""
-    hardening = f"ReadWritePaths={paths.data_dir}\n"
+    hardening = ""
     wanted = "default.target"
     if not user_session:
         identity = (
@@ -108,7 +126,7 @@ Type=simple
 {identity}WorkingDirectory={paths.project_root}
 EnvironmentFile=-{env_file}
 Environment=HOME={paths.data_dir}
-ExecStart={python} -m jobs.worker
+ExecStart={_exec_start(python, "jobs.worker", user_session=user_session)}
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=90

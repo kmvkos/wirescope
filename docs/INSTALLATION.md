@@ -52,10 +52,23 @@ session (API still binds to loopback; dumpcap capabilities still need root):
 User-session paths default to `~/.local/share/wirescope`, `~/.config/wirescope`,
 and `~/.config/systemd/user`. Start/stop with `systemctl --user`.
 
-User systemd may not inherit the `wireshark` group until a new login. Until
-then `/api/ready` can show `dumpcap: false` even though `python3 -m appliance
-verify` succeeds. A root system install sets `SupplementaryGroups=wireshark`
-on the units. The backend process still has no capabilities.
+User systemd inherits groups from the session manager (`user@.service`).
+`SupplementaryGroups=` is not available in a user unit. If this account was
+added to `wireshark` after that manager started, `/usr/bin/dumpcap` (`0750
+root:wireshark`) is not executable and `/api/ready` shows `dumpcap: false`
+even though `python3 -m appliance verify` succeeds. `--user-install` therefore
+starts API and worker via `sg wireshark`, which rebuilds group 103 from
+`/etc/group` without a logout. User units omit `ReadWritePaths=` because that
+mount namespace makes `sg` fail with `setgid EINVAL`. After install or upgrade:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart wirescope-api wirescope-worker
+```
+
+A root system install instead sets `SupplementaryGroups=wireshark` on the
+units. The backend process still has no capabilities. Optional:
+`sudo loginctl enable-linger $USER` so the user manager starts at boot.
 
 Useful flags:
 

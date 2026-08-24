@@ -14,7 +14,13 @@ from engine.passive_models import (
     PipelineError,
     PipelineErrorCode,
 )
-from providers.tools import CancellationToken, ToolCommand, ToolRunner
+from providers.tools import (
+    CancellationToken,
+    ToolCommand,
+    ToolErrorCode,
+    ToolResult,
+    ToolRunner,
+)
 
 
 PACKET_COUNT_PATTERN = re.compile(r"Packets captured:\s*(\d+)", re.IGNORECASE)
@@ -22,6 +28,22 @@ DROPPED_COUNT_PATTERN = re.compile(
     r"Packets dropped(?: by kernel)?:\s*(\d+)",
     re.IGNORECASE,
 )
+DUMPCAP_PERMISSION_MESSAGE = (
+    "Packet capture denied: dumpcap needs the wireshark group "
+    "in this service session"
+)
+DUMPCAP_MISSING_MESSAGE = "Packet capture denied: dumpcap is not available"
+
+
+def _dumpcap_error_message(tool_result: ToolResult) -> str:
+    error = tool_result.error
+    if error is None:
+        return "dumpcap capture failed"
+    if error.code == ToolErrorCode.PERMISSION_DENIED:
+        return DUMPCAP_PERMISSION_MESSAGE
+    if error.code == ToolErrorCode.MISSING_BINARY:
+        return DUMPCAP_MISSING_MESSAGE
+    return error.message
 
 
 class CaptureProvider:
@@ -98,11 +120,7 @@ class CaptureProvider:
                 PipelineError(
                     code=PipelineErrorCode.CAPTURE_FAILED,
                     component="capture",
-                    message=(
-                        tool_result.error.message
-                        if tool_result.error
-                        else "dumpcap capture failed"
-                    ),
+                    message=_dumpcap_error_message(tool_result),
                     retryable=(
                         tool_result.error.retryable
                         if tool_result.error

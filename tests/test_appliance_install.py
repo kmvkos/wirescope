@@ -104,8 +104,15 @@ def test_user_install_writes_user_units(tmp_path):
     config = _config(tmp_path, user_session=True, start_services=True)
     report = install(config, host)
     api_unit = host.read_text(config.paths.systemd_dir / "wirescope-api.service")
+    worker_unit = host.read_text(
+        config.paths.systemd_dir / "wirescope-worker.service"
+    )
     assert "User=wirescope" not in api_unit
     assert "WantedBy=default.target" in api_unit
+    assert "SupplementaryGroups=" not in api_unit
+    assert "/usr/bin/sg wireshark" in api_unit
+    assert "/usr/bin/sg wireshark" in worker_unit
+    assert "ReadWritePaths=" not in api_unit
     assert any(item[:2] == ("systemctl", "--user") for item in host.commands)
     assert report.started == ["wirescope-api.service", "wirescope-worker.service"]
     assert any("dumpcap" in item for item in report.warnings)

@@ -91,6 +91,7 @@ def test_capture_permission_error_is_not_silent_absence(tmp_path):
         result.errors[0].details["tool_error"]
         == ToolErrorCode.PERMISSION_DENIED.value
     )
+    assert "wireshark group" in result.errors[0].message
     assert result.pcap_path is None
 
 

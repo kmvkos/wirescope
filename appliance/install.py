@@ -366,6 +366,11 @@ def _install_units(
         )
         _note(report, "configured journald retention drop-in")
     _note(report, f"wrote systemd units in {config.paths.systemd_dir}")
+    if config.user_session:
+        _note(
+            report,
+            "user units exec via sg wireshark so dumpcap works without a new login",
+        )
 
 
 def _install_kiosk_files(

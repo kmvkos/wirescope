@@ -67,6 +67,11 @@ sudo -u wirescope /usr/bin/dumpcap -D
 Expected: dumpcap `root:wireshark` `750` with `cap_net_admin,cap_net_raw=eip`;
 Python has no those capabilities; `dumpcap -D` works as `wirescope`.
 
+On a `--user-install`, also check the worker process groups include `103`
+(`wireshark`). If not, the units should exec via `sg wireshark`; then
+`systemctl --user restart wirescope-api wirescope-worker` is enough without
+a logout.
+
 ## Backup
 
 ```bash

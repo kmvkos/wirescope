@@ -72,7 +72,11 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "derived_from" in script
     assert "applyVlanScanInterface" in script
     assert "/api/scope/proposal" in script
+    assert "loadScopeProposal" in script
+    assert "await showConfirm()" in script
     assert "state.draft.proposed" in script
+    assert "job.dumpcapPermission" in i18n
+    assert "службе не хватает группы wireshark" in i18n
     assert "required" not in html.split('id="scope-targets"')[1].split("</textarea>")[0]
     assert "Наблюдатель не может запускать аудиты" in i18n
     assert 'const locale = "ru"' in i18n

@@ -309,6 +309,8 @@ const I18N = (() => {
             "job.Building versioned report": "Построение версии отчёта",
             "job.Persisting report artifacts": "Сохранение артефактов отчёта",
             "job.Packet capture is unavailable": "Захват пакетов недоступен",
+            "job.dumpcapPermission": "Захват пакетов запрещён: службе не хватает группы wireshark. Перезапустите пользовательские службы WireScope.",
+            "job.dumpcapMissing": "Захват пакетов недоступен: dumpcap не найден для этой службы.",
             "job.Passive discovery failed": "Пассивное обнаружение не удалось",
             "job.Running": "Выполняется",
             "job.resolvingRoute": "Маршрут через {iface}",
@@ -622,6 +624,8 @@ const I18N = (() => {
             "job.Building versioned report": "Building versioned report",
             "job.Persisting report artifacts": "Persisting report artifacts",
             "job.Packet capture is unavailable": "Packet capture is unavailable",
+            "job.dumpcapPermission": "Packet capture denied: dumpcap needs the wireshark group in this service session",
+            "job.dumpcapMissing": "Packet capture denied: dumpcap is not available",
             "job.Passive discovery failed": "Passive discovery failed",
             "job.Running": "Running",
             "job.resolvingRoute": "Resolving route via {iface}",
@@ -709,6 +713,15 @@ const I18N = (() => {
         const secondary = messages[fallback] || {};
         if (primary[exactKey] || secondary[exactKey]) {
             return t(exactKey);
+        }
+        if (
+            message.startsWith("Packet capture denied: dumpcap needs the wireshark group") ||
+            /^Permission denied while starting:/.test(message)
+        ) {
+            return t("job.dumpcapPermission");
+        }
+        if (message.startsWith("Packet capture denied: dumpcap is not available")) {
+            return t("job.dumpcapMissing");
         }
         let match = /^Resolving route via (.+)$/.exec(message);
         if (match) {

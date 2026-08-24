@@ -178,6 +178,23 @@ function combinedTargets() {
     return result;
 }
 
+async function loadScopeProposal() {
+    const proposal = await api(
+        "GET",
+        `/api/scope/proposal?interface=${encodeURIComponent(state.draft.interface)}`
+    );
+    state.draft.proposed = proposal.canonical_targets || [];
+    state.draft.proposal = proposal;
+    if (!state.draft.vlan && (proposal.vlan_ids || []).length) {
+        state.draft.vlan = proposal.vlan_ids
+            .map((id) => `VLAN ${id}`)
+            .join(", ");
+    }
+    applyVlanScanInterface(proposal);
+    saveDraft();
+    return proposal;
+}
+
 function applyVlanScanInterface(proposal) {
     if (!proposal || proposal.source !== "vlan_hints" || !proposal.interface) {
         return;
@@ -355,19 +372,8 @@ async function showScope() {
     $("scope-reason").textContent = t("scope.loading");
     $("scope-proposal").replaceChildren();
     try {
-        const proposal = await api(
-            "GET",
-            `/api/scope/proposal?interface=${encodeURIComponent(state.draft.interface)}`
-        );
-        state.draft.proposed = proposal.canonical_targets || [];
-        state.draft.proposal = proposal;
-        if (!state.draft.vlan && (proposal.vlan_ids || []).length) {
-            state.draft.vlan = proposal.vlan_ids
-                .map((id) => `VLAN ${id}`)
-                .join(", ");
-            $("scope-vlan").value = state.draft.vlan;
-        }
-        saveDraft();
+        const proposal = await loadScopeProposal();
+        $("scope-vlan").value = state.draft.vlan;
         renderScopeProposal(proposal);
     } catch (error) {
         state.draft.proposed = [];
@@ -436,7 +442,14 @@ function showProfile() {
     setError("profile-error", "");
 }
 
-function showConfirm() {
+async function showConfirm() {
+    if (state.draft.interface) {
+        try {
+            await loadScopeProposal();
+        } catch {
+            // Keep any previously saved proposal; startAudit still validates.
+        }
+    }
     showScreen("confirm");
     const targets = combinedTargets();
     const rows = [
@@ -974,7 +987,7 @@ function bindUi() {
                     return;
                 }
                 saveDraft();
-                showConfirm();
+                await showConfirm();
                 return;
             }
             if (target === "summary") {

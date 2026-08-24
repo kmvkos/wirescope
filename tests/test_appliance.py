@@ -147,6 +147,10 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     assert "After=wirescope-api.service" in files["wirescope-kiosk.service"]
     assert "PartOf=wirescope-worker" not in files["wirescope-kiosk.service"]
     assert "StartLimitBurst=5" in files["wirescope-api.service"]
+    assert "SupplementaryGroups=wireshark" in files["wirescope-api.service"]
+    assert "SupplementaryGroups=wireshark" in files["wirescope-worker.service"]
+    assert "/usr/bin/sg " not in files["wirescope-api.service"]
+    assert "/usr/bin/sg " not in files["wirescope-worker.service"]
     env = production_env_text(
         InstallPaths(),
         bind_host="127.0.0.1",
@@ -154,6 +158,26 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     )
     assert "WIRESCOPE_DOCS_ENABLED=false" in env
     assert "PASSWORD" not in env
+
+
+def test_user_session_units_rejoin_wireshark_without_logout():
+    files = {
+        unit.name: unit.content
+        for unit in unit_files(InstallPaths(), user_session=True)
+    }
+    api = files["wirescope-api.service"]
+    worker = files["wirescope-worker.service"]
+    assert "User=" not in api
+    assert "SupplementaryGroups=" not in api
+    assert "SupplementaryGroups=" not in worker
+    assert "NoNewPrivileges" not in api
+    assert '/usr/bin/sg wireshark -c "' in api
+    assert '/usr/bin/sg wireshark -c "' in worker
+    assert "ReadWritePaths=" not in api
+    assert "ReadWritePaths=" not in worker
+    assert "python -m backend" in api
+    assert "python -m jobs.worker" in worker
+    assert "WantedBy=default.target" in api
 
 
 def test_packaged_units_match_renderer():

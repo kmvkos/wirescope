@@ -1,73 +1,313 @@
-# WireScope installation
+# Установка WireScope
 
-This document is the appliance installer for a **generic Linux** server or VM
-(Debian/Ubuntu and RPM families such as Fedora, RHEL/Rocky, and openSUSE).
-Raspberry Pi hardware is optional; Raspberry Pi OS is not required.
+**Русский** · [English](en/INSTALLATION.md)
 
-Operators collect a report in either of two equally valid modes:
+WireScope ставится на обычный Linux-хост или ВМ. Поддерживаемые семейства:
 
-- **Автономный (киоск):** local display on this computer, no management network
-- **Удалённый браузер:** LAN/TLS from another PC (reverse proxy)
+- Debian / Ubuntu;
+- Fedora / RHEL / Rocky;
+- openSUSE / SLES;
+- `amd64` и `arm64`.
 
-The operator GUI is Russian. This file stays English; see the short Russian
-note below.
+Raspberry Pi подходит как железо, но отдельной Raspberry Pi OS проект не требует.
 
-## Get the source (Git)
+## Перед установкой
 
-The GitHub repository is **private**:
-[https://github.com/kmvkos/wirescope](https://github.com/kmvkos/wirescope).
-Clone with SSH keys or HTTPS credentials (a token, not the account password).
+WireScope можно использовать двумя способами:
 
-The installer **runs from the checkout** (venv, frontend, kiosk scripts). It
-does not copy the tree into `/opt/wirescope`. Mutable data stays in
-`/var/lib/wirescope`; config in `/etc/wirescope`. `--project-root` defaults
-to the directory that contains `packaging/` (the clone root).
-`packaging/install.sh` always passes that directory.
+1. **автономный киоск** — монитор подключён к самому устройству, Chromium открывает локальный интерфейс;
+2. **удалённый браузер** — оператор заходит с другого ПК через HTTPS/reverse proxy.
 
-Two layouts are supported:
+Оба режима используют один и тот же backend и worker.
 
-1. Clone into `/opt/wirescope` (recommended production layout).
-2. Clone elsewhere and pass `--project-root` (or just run that clone's
-   `packaging/install.sh`).
+Для system install рекомендуемый layout:
 
-### Clone into `/opt/wirescope` (recommended)
+```text
+/opt/wirescope                  Git checkout + .venv
+/etc/wirescope                  конфигурация
+/var/lib/wirescope              SQLite, runtime, evidence, backups
+/etc/systemd/system             systemd units
+```
+
+Установщик **не копирует исходники** из checkout в `/opt/wirescope`. Он запускается из того каталога, где находится проект, и systemd units потом ссылаются на этот checkout. После установки его нельзя просто удалить или переименовать.
+
+## Получение исходников
+
+### SSH
+
+Если SSH-ключ лежит у обычного пользователя, клонируйте без `sudo`:
+
+```bash
+git clone git@github.com:kmvkos/wirescope.git
+sudo mv wirescope /opt/wirescope
+cd /opt/wirescope
+sudo git checkout milestone-8-appliance
+```
+
+`sudo git clone ...` использовал бы SSH-ключи root, а не текущего пользователя.
+
+Если у root уже настроен доступ к GitHub, можно клонировать сразу:
 
 ```bash
 sudo git clone git@github.com:kmvkos/wirescope.git /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance   # or main if that is current enough
-sudo ./packaging/install.sh --with-kiosk --enable-kiosk
+sudo git checkout milestone-8-appliance
 ```
 
-`sudo git clone` uses **root's** SSH keys. If the key is on your account,
-clone without `sudo` and `sudo mv wirescope /opt/wirescope`, or install from
-another path with `--project-root`.
-
-### Clone elsewhere
+### HTTPS
 
 ```bash
-git clone git@github.com:kmvkos/wirescope.git
-cd wirescope
-git checkout milestone-8-appliance   # or main if that is current enough
+git clone https://github.com/kmvkos/wirescope.git
+sudo mv wirescope /opt/wirescope
+cd /opt/wirescope
+sudo git checkout milestone-8-appliance
+```
+
+Для приватного репозитория GitHub нужен токен/credential helper; пароль аккаунта вместо токена не используется.
+
+## Самый простой system install
+
+Для автономного устройства с локальным экраном:
+
+```bash
+cd /opt/wirescope
 sudo ./packaging/install.sh \
-  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1 \
+  --with-kiosk \
+  --enable-kiosk
+```
+
+После установки:
+
+```bash
+sudo reboot
+```
+
+При загрузке `wirescope-kiosk` занимает `tty1` и открывает Chromium на:
+
+```text
+http://127.0.0.1:8000/
+```
+
+Полноценный desktop environment для этого не нужен.
+
+### Почему `--bind-host 127.0.0.1` передаётся явно
+
+В `config/settings.py` application default — `127.0.0.1`, но CLI appliance installer сейчас имеет собственный default `--bind-host 0.0.0.0`.
+
+Поэтому для киоска и reverse-proxy схемы в документации bind всегда задаётся явно:
+
+```bash
+--bind-host 127.0.0.1
+```
+
+Открытый HTTP на `0.0.0.0:8000` допустим только как осознанный lab/management вариант с firewall. Для обычной LAN-эксплуатации предпочтительнее HTTPS через Caddy/nginx.
+
+## Что делает installer
+
+`packaging/install.sh` в итоге вызывает `python -m appliance install`.
+
+В system install он:
+
+1. определяет дистрибутив, package manager и архитектуру;
+2. ставит системные зависимости через `apt`, `dnf`, `yum` или `zypper`;
+3. создаёт или переиспользует непривилегированного пользователя `wirescope`;
+4. создаёт каталоги данных;
+5. настраивает `dumpcap` через группу `wireshark` и file capabilities;
+6. создаёт `.venv` и ставит pinned Python dependencies;
+7. пишет `/etc/wirescope/wirescope.env`;
+8. устанавливает `wirescope-api` и `wirescope-worker` systemd units;
+9. применяет Alembic migrations;
+10. создаёт первого пользователя GUI;
+11. запускает службы;
+12. при `--with-kiosk` ставит минимальный browser/display stack;
+13. при `--enable-kiosk` включает kiosk unit на `tty1`.
+
+Повторный запуск installer рассчитан на upgrade/idempotent setup, а не на «чистую установку с нуля каждый раз».
+
+## Первый пользователь
+
+В WireScope нет встроенного пароля по умолчанию.
+
+Самый удобный вариант:
+
+```bash
+sudo ./packaging/install.sh \
   --generate-admin-password \
   --bind-host 127.0.0.1
 ```
 
-Do not rename or delete that checkout after install: systemd units point at it.
+Сгенерированный пароль записывается в:
 
-Kiosk (any clone):
+```text
+/etc/wirescope/initial-admin.txt
+```
+
+Файл имеет mode `0600`. После того как пароль сохранён в password manager, файл лучше удалить.
+
+Имя пользователя по умолчанию:
+
+```text
+auditor
+```
+
+Можно передать собственный файл с паролем:
 
 ```bash
 sudo ./packaging/install.sh \
-  --project-root "$PWD" \
-  --generate-admin-password \
-  --bind-host 127.0.0.1 \
-  --with-kiosk --enable-kiosk
+  --auditor-password-file /root/auditor.pass \
+  --bind-host 127.0.0.1
 ```
 
-User systemd (no passwordless root; dumpcap still needs root once):
+Файл должен быть `0600` или строже.
+
+Если доступ к GUI потерян, пароль можно сбросить через CLI:
+
+```bash
+/opt/wirescope/.venv/bin/python -m appliance set-password auditor
+```
+
+Для обычной смены пароля использовать CLI не нужно: после входа в GUI есть **«Сменить пароль»**.
+
+## Локальный kiosk
+
+WireScope не ставит GNOME, KDE, XFCE, GDM или LightDM.
+
+Минимальная схема:
+
+```text
+multi-user.target
+    ├── wirescope-api
+    ├── wirescope-worker
+    └── wirescope-kiosk
+             ↓
+           tty1
+             ↓
+      Cage или Xorg/xinit
+             ↓
+          Chromium
+             ↓
+  http://127.0.0.1:8000/
+```
+
+Установка:
+
+```bash
+sudo ./packaging/install.sh \
+  --generate-admin-password \
+  --bind-host 127.0.0.1 \
+  --with-kiosk \
+  --enable-kiosk
+```
+
+Если пакеты уже стоят и нужно только включить kiosk:
+
+```bash
+sudo ./packaging/install.sh --skip-packages --enable-kiosk
+```
+
+или:
+
+```bash
+sudo systemctl enable --now wirescope-kiosk
+```
+
+### VMware
+
+На VMware WireScope использует Xorg/xinit, а не Cage. Installer при необходимости добавляет VMware Xorg driver/input packages и `open-vm-tools`.
+
+После установки перезагрузите ВМ **с подключённой консолью**. SSH продолжит работать: kiosk занимает локальный `tty1`, а не отключает сеть или sshd.
+
+Если консоль чёрная и нет ни Chromium, ни login prompt:
+
+```bash
+sudo systemctl start getty@tty1
+sudo systemctl status wirescope-kiosk
+sudo journalctl -u wirescope-kiosk -e
+```
+
+`OnFailure` kiosk-unit также рассчитан на возврат текстового login на `tty1`.
+
+## Удалённый браузер через HTTPS
+
+Рекомендуемая схема для LAN:
+
+```text
+browser
+   │ HTTPS :443
+   ▼
+Caddy / nginx
+   │ HTTP loopback
+   ▼
+127.0.0.1:8000
+   │
+WireScope API
+```
+
+Установить WireScope:
+
+```bash
+sudo ./packaging/install.sh \
+  --generate-admin-password \
+  --trust-proxy \
+  --bind-host 127.0.0.1
+```
+
+`--trust-proxy` включает режим для reverse proxy: session cookie становится `Secure`, а forwarded headers принимаются только от loopback proxy.
+
+Примеры конфигов находятся в:
+
+```text
+packaging/proxy/
+```
+
+После установки копии также могут лежать в:
+
+```text
+/etc/wirescope/proxy/
+```
+
+Подробности: [packaging/proxy/README.md](../packaging/proxy/README.md).
+
+Installer сам **не запускает Caddy/nginx и не переписывает firewall**.
+
+Снаружи публикуйте 443, а не 8000.
+
+### Self-signed TLS для лаборатории
+
+```bash
+sudo python3 -m appliance tls-selfsigned \
+  --output-dir /etc/wirescope/tls \
+  --common-name wirescope.example
+```
+
+Для production предпочтительнее нормальный сертификат: Caddy automatic HTTPS или certbot/nginx.
+
+### Прямой TLS через Uvicorn
+
+Поддерживается и прямой TLS без reverse proxy:
+
+```bash
+sudo ./packaging/install.sh \
+  --generate-admin-password \
+  --bind-host 0.0.0.0 \
+  --bind-port 8443 \
+  --tls-cert /etc/wirescope/tls/cert.pem \
+  --tls-key /etc/wirescope/tls/key.pem
+```
+
+Тогда URL:
+
+```text
+https://<host>:8443/
+```
+
+Пути к cert/key хранятся в environment file; PEM содержимое не должно попадать в systemd units.
+
+## User-systemd install
+
+Если system services не нужны или нет постоянного root-доступа:
 
 ```bash
 ./packaging/install.sh \
@@ -76,444 +316,167 @@ User systemd (no passwordless root; dumpcap still needs root once):
   --bind-host 127.0.0.1
 ```
 
-### HTTPS clone
+Пути становятся пользовательскими:
 
-```bash
-git clone https://github.com/kmvkos/wirescope.git
-cd wirescope
-git checkout milestone-8-appliance   # or main if that is current enough
-sudo ./packaging/install.sh \
-  --project-root "$PWD" \
-  --generate-admin-password \
-  --bind-host 127.0.0.1
+```text
+~/.local/share/wirescope
+~/.config/wirescope
+~/.config/systemd/user
 ```
 
-Private repo: GitHub will prompt for credentials or a personal access token.
-
-## What the installer does
-
-`packaging/install.sh` (or `python3 -m appliance install`) is idempotent:
-
-1. Detect OS family (`apt`, `dnf`, `yum`, or `zypper`) and `amd64` or `arm64`.
-   Raspberry Pi hardware is not required.
-2. Install required base packages and selected optional providers using each
-   distro's package names (`dumpcap`/`tshark`/`nmap` differ). Nuclei and
-   Nikto are never installed by default.
-3. Reuse or create the unprivileged `wirescope` service account.
-4. Create controlled data directories under `/var/lib/wirescope`.
-5. Configure `dumpcap` file capabilities only (`setcap`). The API and worker
-   stay unprivileged and do not receive `CAP_NET_RAW` / `CAP_NET_ADMIN`.
-6. Create or reuse a virtualenv and install pinned Python dependencies.
-7. Write `/etc/wirescope/wirescope.env` without passwords.
-8. Install `wirescope-api` and `wirescope-worker` systemd units.
-9. Apply SQLite migrations.
-10. Create the first auditor from a mode `0600` password file, or generate one.
-11. Enable and start API + worker. Open the local GUI at
-    `http://127.0.0.1:8000/` on this computer (kiosk or any local browser),
-    or use a remote browser over LAN/TLS. Chromium kiosk packages are
-    optional (`--with-kiosk`). `--enable-kiosk` enables a **system** unit on
-    tty1 after boot (no desktop). `--user-kiosk` is only for an existing
-    graphical login.
-
-Upgrade is the same command (`packaging/upgrade.sh`). It reuses the service
-account, keeps an existing env file, re-verifies dumpcap, upgrades the venv,
-and migrates SQLite.
-
-## Operator access modes
-
-Two equally valid ways to collect a report. Capture-NIC addressing is
-independent: that interface may have **no IP and no DHCP**. The operator
-still uses the local GUI.
-
-### Автономный (киоск): local display, no management network
-
-**Без рабочего стола: киоск на tty1 после boot.** No XFCE, GNOME, KDE, GDM,
-or LightDM. Bind stays `127.0.0.1:8000`. After boot, systemd starts
-`wirescope-api`, then `wirescope-kiosk` takes tty1 and opens Chromium
-fullscreen to `http://127.0.0.1:8000/` once `/api/health` answers. Sign in
-as `auditor` in that browser. Capture-NIC addressing is independent.
-
-Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
-
-Boot sequence (Debian/Ubuntu server, no desktop):
-
-1. `multi-user.target` ( `graphical.target` is unused )
-2. Optional `getty@tty1` autologin drop-in (idle while the kiosk runs)
-3. `wirescope-api.service` and `wirescope-worker.service`
-4. `wirescope-kiosk.service` `After=wirescope-api.service`, `WantedBy=multi-user.target`
-5. The kiosk unit `Conflicts=getty@tty1.service` and uses `TTYPath=/dev/tty1`.
-   `OnFailure=getty@tty1.service` returns a text login if the kiosk cannot start.
-6. `kiosk.sh` starts **xinit + Xorg + Chromium `--kiosk`** on VMware (not Cage),
-   or **Cage + Chromium** on other hardware, else xinit
-7. Operator logs into WireScope as `auditor`
+Управление:
 
 ```bash
-# System unit: boot → tty1 kiosk, no desktop, no display-manager login
-sudo /opt/wirescope/packaging/install.sh \
-  --project-root /opt/wirescope \
-  --generate-admin-password \
-  --bind-host 127.0.0.1 \
-  --with-kiosk --enable-kiosk
-
-# User unit only after an existing graphical login (not required)
-/opt/wirescope/packaging/install.sh \
-  --user-install \
-  --generate-admin-password \
-  --bind-host 127.0.0.1 \
-  --user-kiosk
-```
-
-`--with-kiosk` installs a **minimal** stack: `cage` or `xserver-xorg`/`xinit`/`openbox`,
-plus `chromium` (or `chromium-browser`). On VMware it also pulls
-`xserver-xorg-video-vmware`, `xserver-xorg-input-all`, and `open-vm-tools`,
-and the kiosk uses **Xorg rather than Cage**. Not a GNOME/XFCE/KDE desktop.
-Headless servers that will never attach a console can omit `--with-kiosk`.
-`--enable-kiosk` still enables the system unit when Chromium is present,
-even if this VM has no monitor yet. Missing Chromium is a skip (same idea
-as Playwright), not an installer failure.
-
-`--user-install` does not install OS packages; install Chromium and Cage or
-xinit as root (`--with-kiosk`) or via the distro, then enable the user unit
-after a graphical login.
-
-The kiosk unit waits for the API, binds the browser to loopback, and does
-not stop the worker if Chromium restarts. System kiosk uses
-`WantedBy=multi-user.target`. User kiosk uses `WantedBy=graphical-session.target`.
-
-Raspberry Pi kiosk hardware remains optional. Do not require Raspberry Pi OS.
-
-### Удалённый браузер: LAN / TLS
-
-Use a browser on another PC. Preferred path: API stays on loopback, Caddy or
-nginx terminates TLS (`--trust-proxy`). Details follow.
-
-## Bind address and LAN TLS
-
-Default bind is `0.0.0.0:8000` so the operator GUI is reachable on LAN IPv4
-addresses as well as on the kiosk (`http://127.0.0.1:8000/`). Loopback-only
-bind remains available with `--bind-host 127.0.0.1` (user-session kiosk /
-reverse proxy).
-
-### From another PC (preferred)
-
-Keep the unprivileged API on loopback. Terminate TLS on Caddy or nginx.
-Session cookies become `Secure`. Do not expose TCP 8000.
-
-On this host:
-
-```bash
-sudo /opt/wirescope/packaging/install.sh \
-  --project-root /opt/wirescope \
-  --generate-admin-password \
-  --trust-proxy \
-  --bind-host 127.0.0.1
-```
-
-On the other machine open **`https://<hostname>/`** (not `http://<host>:8000`).
-Sample configs land in `/etc/wirescope/proxy/` (`Caddyfile`, `nginx.conf`,
-`nftables.nft`, `ufw.example`, `firewalld.example`). The installer does not
-start Caddy/nginx and does not rewrite the host firewall. Details:
-[packaging/proxy/README.md](../packaging/proxy/README.md).
-
-| This host | Proxy | Firewall | URL from another PC |
-| --- | --- | --- | --- |
-| This Debian VM | `apt install caddy` or `nginx` | nftables or ufw | `https://<debian-host>/` |
-| Ubuntu | `apt install caddy` or `nginx` | ufw | `https://<ubuntu-host>/` |
-| Fedora / RHEL | `dnf install caddy` or `nginx` | firewalld | `https://<fedora-host>/` |
-
-Lab self-signed certificate (browser warning; not for an untrusted network):
-
-```bash
-sudo python3 -m appliance tls-selfsigned \
-  --output-dir /etc/wirescope/tls \
-  --common-name wirescope.example
-```
-
-**Let's Encrypt** (public DNS name pointing at this host, TCP 80 + 443):
-
-- Caddy: delete the `tls` line in the Caddyfile; Caddy obtains and renews
-  certificates automatically.
-- nginx: `certbot certonly --webroot -w /var/www/html -d <hostname>` then
-  use `/etc/letsencrypt/live/<hostname>/fullchain.pem` and `privkey.pem`.
-  Debian/Ubuntu: `apt install certbot`. Fedora: `dnf install certbot`.
-
-### Direct TLS or bare HTTP (less preferred)
-
-Cert/key paths go in `wirescope.env`, never in systemd units. The API stays
-unprivileged. URL: `https://<host>:8443/`.
-
-```bash
-sudo /opt/wirescope/packaging/install.sh \
-  --project-root /opt/wirescope \
-  --generate-admin-password \
-  --bind-host 0.0.0.0 \
-  --bind-port 8443 \
-  --tls-cert /etc/wirescope/tls/cert.pem \
-  --tls-key /etc/wirescope/tls/key.pem
-```
-
-Bare HTTP on `0.0.0.0:8000` (`http://<host>:8000/`) is still possible but is
-not a safe LAN default. Restrict 443, 8443, or 8000 with nftables, ufw, or
-firewalld. See [SECURITY_MODEL.md](SECURITY_MODEL.md).
-
-## This Debian VM
-
-Stay logged in as the Linux user `wirescope` (the OS account). Do not log in
-as the WireScope GUI user `auditor` for this step.
-
-`sudo` prompts for the **wirescope** Linux password (not the GUI password).
-
-First-time kiosk install. Chromium is large (5–15 minutes). Watch apt output.
-Do not press Ctrl+C:
-
-```bash
-sudo /opt/wirescope/packaging/install.sh \
-  --project-root /opt/wirescope \
-  --generate-admin-password \
-  --bind-host 127.0.0.1 \
-  --with-kiosk --enable-kiosk
-```
-
-Already-installed packages are skipped. `--with-kiosk` does not pull GNOME or
-XFCE; boot kiosk is Chromium on tty1.
-
-If packages already exist and you only want to enable the kiosk:
-
-```bash
-sudo /opt/wirescope/packaging/install.sh --skip-packages --enable-kiosk
-# or, after units exist:
-sudo systemctl enable --now wirescope-kiosk
-```
-
-After success, reboot with the **VM console attached** (not SSH-only). tty1
-shows Chromium; sign into the WireScope GUI as `auditor`. SSH from the host
-still works for admin; the kiosk takes the local screen only.
-
-From another PC on this VM: install with `--trust-proxy --bind-host 127.0.0.1`,
-enable Caddy or nginx from `/etc/wirescope/proxy/`, open
-`https://<this-host>/`. Local GUI remains `http://127.0.0.1:8000/` (kiosk or
-any browser on this computer). This VM may be headless: `--enable-kiosk`
-still enables the system tty1 unit when Chromium is installed. Without
-`--enable-kiosk` the unit stays installed but disabled.
-
-If this host has no passwordless root, install into the operator's user systemd
-session (dumpcap capabilities still need root once):
-
-```bash
-/opt/wirescope/packaging/install.sh \
-  --user-install \
-  --generate-admin-password \
-  --bind-host 127.0.0.1
-```
-
-User-session paths default to `~/.local/share/wirescope`, `~/.config/wirescope`,
-and `~/.config/systemd/user`. Start/stop with `systemctl --user`.
-
-User systemd inherits groups from the session manager (`user@.service`).
-`SupplementaryGroups=` is not available in a user unit. If this account was
-added to `wireshark` after that manager started, `/usr/bin/dumpcap` (`0750
-root:wireshark`) is not executable and `/api/ready` shows `dumpcap: false`
-even though `python3 -m appliance verify` succeeds. `--user-install` therefore
-starts API and worker via `sg wireshark`, which rebuilds group 103 from
-`/etc/group` without a logout. User units omit `ReadWritePaths=` because that
-mount namespace makes `sg` fail with `setgid EINVAL`. After install or upgrade:
-
-```bash
-systemctl --user daemon-reload
+systemctl --user status wirescope-api wirescope-worker
 systemctl --user restart wirescope-api wirescope-worker
+journalctl --user -u wirescope-api -u wirescope-worker -e
 ```
 
-A root system install instead sets `SupplementaryGroups=wireshark` on the
-units. The backend process still has no capabilities. Optional:
-`sudo loginctl enable-linger $USER` so the user manager starts at boot.
+`--user-install` не ставит OS packages. `dumpcap` всё равно один раз должен быть настроен от root.
 
-## Ubuntu
+User unit не может использовать `SupplementaryGroups=` как system unit. Поэтому WireScope запускает API/worker через `sg wireshark`, чтобы актуальная группа `wireshark` работала без logout/login.
 
-Same installer as Debian (`apt`). From the checkout:
+При необходимости автозапуска user manager:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+## Дистрибутивы
+
+### Debian / Ubuntu
+
+Основные пакеты захвата:
+
+- `tshark`;
+- `wireshark-common` (`dumpcap`);
+- `libcap2-bin`.
+
+Установка:
 
 ```bash
 sudo apt-get update
 sudo ./packaging/install.sh \
-  --project-root "$PWD" \
   --generate-admin-password \
   --bind-host 127.0.0.1
 ```
 
-Capture packages are `tshark` and `wireshark-common` (provides `dumpcap`).
-From another PC: `--trust-proxy`, `apt install caddy` or `nginx`, apply
-`packaging/proxy/ufw.example`, open `https://<ubuntu-host>/`.
+### Fedora / RHEL / Rocky
 
-## Fedora / RHEL / Rocky
+Installer выбирает `dnf`, а если его нет — `yum`.
 
-The installer uses `dnf` when present, otherwise `yum`. Capture is the
-`wireshark-cli` package (provides both `dumpcap` and `tshark`). DNS/SMB/SNMP
-optional tools use RPM names (`bind-utils`, `samba-client`, `net-snmp-utils`).
+Основной Wireshark CLI package:
+
+```text
+wireshark-cli
+```
+
+Пример:
 
 ```bash
 sudo dnf -y install python3
 sudo ./packaging/install.sh \
-  --project-root "$PWD" \
   --generate-admin-password \
   --bind-host 127.0.0.1
 ```
 
-On RHEL-like systems without `dnf`, the same script selects `yum`. From
-another PC: `--trust-proxy`, `dnf install caddy` or `nginx`, apply
-`packaging/proxy/firewalld.example`, open `https://<fedora-host>/`. Restrict
-TCP 8000 with `firewalld` only if you insist on a direct HTTP bind.
+### openSUSE / SLES
 
-## openSUSE / SLES
+Installer использует `zypper`.
 
-The installer uses `zypper`. Capture is `wireshark-cli` (fallback `wireshark`);
-`setcap` comes from `libcap-progs`.
+Capture package — обычно `wireshark-cli`, fallback — `wireshark`. `setcap` приходит из `libcap-progs`.
 
 ```bash
 sudo zypper --non-interactive install python3
 sudo ./packaging/install.sh \
-  --project-root "$PWD" \
   --generate-admin-password \
   --bind-host 127.0.0.1
 ```
 
-From another PC: `--trust-proxy`, `zypper install caddy` or `nginx`, apply
-`packaging/proxy/firewalld.example`, open `https://<suse-host>/`.
+### Основные различия пакетов
 
-| Concern | Debian / Ubuntu | Fedora / RHEL | openSUSE |
+| Назначение | Debian / Ubuntu | Fedora / RHEL | openSUSE |
 | --- | --- | --- | --- |
-| Package manager | `apt-get` | `dnf` or `yum` | `zypper` |
-| dumpcap / tshark | `wireshark-common`, `tshark` | `wireshark-cli` | `wireshark-cli` or `wireshark` |
+| Package manager | `apt-get` | `dnf` / `yum` | `zypper` |
+| dumpcap/tshark | `wireshark-common`, `tshark` | `wireshark-cli` | `wireshark-cli` / `wireshark` |
 | `setcap` | `libcap2-bin` | `libcap` | `libcap-progs` |
-| python headers | `python3-dev` | `python3-devel` | `python3-devel` |
+| Python headers | `python3-dev` | `python3-devel` | `python3-devel` |
 | iproute | `iproute2` | `iproute` | `iproute2` |
 | sqlite CLI | `sqlite3` | `sqlite` | `sqlite3` |
-| optional DNS | `bind9-dnsutils` | `bind-utils` | `bind-utils` |
-| firewall if LAN bind | `nftables` / `ufw` | `firewalld` | `firewalld` |
-| reverse proxy | `caddy` or `nginx` (`apt`) | `caddy` or `nginx` (`dnf`) | `caddy` or `nginx` (`zypper`) |
-| Let's Encrypt | `certbot` or Caddy automatic | `certbot` or Caddy automatic | `certbot` or Caddy automatic |
+| DNS tools | `bind9-dnsutils` | `bind-utils` | `bind-utils` |
 
-systemd unit shape, service user, dumpcap capabilities, and `--user-install`
-are the same on all supported families.
+## Полезные installer flags
 
-Useful flags:
-
-- `--dry-run` — print the plan without changing the system
-- `--skip-packages` / `--skip-apt` — skip apt/dnf/zypper (enable kiosk without reinstalling)
-- `--skip-pip` — reuse the existing venv
-- `--no-start` — write units but do not `systemctl enable --now`
-- `--no-optional-providers` — base capture/decode tools only
-- `--with-kiosk` — optional local-display packages (cage or xinit + Chromium,
-  not a full desktop)
-- `--enable-kiosk` — enable the system kiosk on tty1 after boot (Chromium
-  required; no desktop / GDM / LightDM)
-- `--user-kiosk` — enable the user kiosk after graphical login (loopback GUI)
-- `--auditor-password-file /root/auditor.pass` — mode `0600` file instead of generating
-- `--overwrite-env` — replace `/etc/wirescope/wirescope.env`
-- `--bind-host` / `--bind-port` — API listen address (default loopback)
-- `--trust-proxy` — LAN reverse proxy: Secure cookies, trust forwarded headers from 127.0.0.1
-- `--tls-cert` / `--tls-key` — optional direct TLS (paths only; no PEM in units)
-
-The generated password is written to `/etc/wirescope/initial-admin.txt`
-(mode `0600`, root only). Copy it out, then delete that file.
-
-### Login
-
-```bash
-# health (public, on the appliance)
-curl -sS http://127.0.0.1:8000/api/health
-curl -sS http://127.0.0.1:8000/api/ready
-# from another PC after Caddy/nginx:
-# curl -sS https://<host>/api/health
-
-# GUI on this computer (autonomous kiosk / local browser)
-xdg-open http://127.0.0.1:8000/
-# from another PC: https://<host>/
+```text
+--dry-run
+--skip-packages
+--skip-apt                 alias для --skip-packages
+--skip-pip
+--no-start
+--no-optional-providers
+--with-kiosk
+--enable-kiosk
+--user-kiosk
+--user-install
+--generate-admin-password
+--auditor-password-file PATH
+--overwrite-env
+--bind-host HOST
+--bind-port PORT
+--trust-proxy
+--tls-cert PATH
+--tls-key PATH
 ```
 
-Sign in as `auditor` with the generated password. Production OpenAPI/Swagger
-routes are disabled (`WIRESCOPE_DOCS_ENABLED=false`).
+`--user-kiosk` относится к уже существующей graphical user session. Для обычного appliance без desktop используйте system `--enable-kiosk`.
 
-### Start / stop without reinstalling
+## Проверка после установки
 
 ```bash
 sudo systemctl status wirescope-api wirescope-worker
-sudo systemctl restart wirescope-api wirescope-worker
-sudo journalctl -u wirescope-api -u wirescope-worker -e
+curl -sS http://127.0.0.1:8000/api/health
+curl -sS http://127.0.0.1:8000/api/ready
+sudo python3 -m appliance verify --project-root /opt/wirescope
 ```
 
-## Заметка для оператора
+`/api/health` говорит, что API жив.
 
-Графический интерфейс WireScope на русском языке. Эта инструкция — на
-английском. **Сеть до вашего ПК не нужна: откройте GUI на этом компьютере /
-киоск** (`http://127.0.0.1:8000/`). С другого ПК откройте `https://<хост>/`
-через Caddy/nginx (`--trust-proxy`). Если cookie не сохраняется, страница
-должна быть HTTPS, а не HTTP. Войдите как `auditor`. Если захват пакетов
-недоступен, проверьте группу `wireshark` и перезапустите службы:
-`systemctl restart wirescope-api wirescope-worker` или
-`systemctl --user restart wirescope-api wirescope-worker`.
+`/api/ready` дополнительно проверяет:
 
-Установка из Git (репозиторий приватный, нужна авторизация). Рекомендуемый
-layout — клон в `/opt/wirescope`. Можно клонировать куда угодно и указать
-`--project-root` (каталог с `packaging/`). Установщик работает **из клона**,
-не копирует дерево в `/opt/wirescope`.
+- доступность SQLite;
+- актуальность Alembic revision;
+- heartbeat worker;
+- наличие обязательных binaries (`dumpcap`, `tshark`, `nmap`).
+
+## Проверка прав `dumpcap`
+
+Ожидаемая system-install схема:
+
+```text
+/usr/bin/dumpcap
+owner: root
+ group: wireshark
+ mode: 0750
+ caps: cap_net_admin,cap_net_raw=eip
+```
+
+Проверка:
 
 ```bash
-# SSH, клон в /opt/wirescope
-sudo git clone git@github.com:kmvkos/wirescope.git /opt/wirescope
-cd /opt/wirescope
-sudo git checkout milestone-8-appliance   # или main, если он достаточно свежий
-sudo ./packaging/install.sh --with-kiosk --enable-kiosk
-
-# SSH, клон куда угодно
-git clone git@github.com:kmvkos/wirescope.git
-cd wirescope
-git checkout milestone-8-appliance
-sudo ./packaging/install.sh \
-  --project-root "$PWD" \
-  --generate-admin-password \
-  --bind-host 127.0.0.1
-
-# HTTPS (нужен токен GitHub)
-git clone https://github.com/kmvkos/wirescope.git
-cd wirescope
-git checkout milestone-8-appliance
-sudo ./packaging/install.sh \
-  --project-root "$PWD" \
-  --generate-admin-password \
-  --bind-host 127.0.0.1
-
-# user systemd
-./packaging/install.sh --user-install --generate-admin-password --bind-host 127.0.0.1
+getent group wireshark
+getcap /usr/bin/dumpcap
+stat -c '%U:%G %a' /usr/bin/dumpcap
+sudo -u wirescope /usr/bin/dumpcap -D
+getcap /opt/wirescope/.venv/bin/python || true
 ```
 
-### Эта Debian VM (последовательность)
+На Python interpreter capabilities быть не должно.
 
-1. Оставайтесь в Linux под пользователем `wirescope`, не `auditor`.
-2. `sudo` спрашивает пароль Linux-пользователя **wirescope**.
-3. Полная установка киоска (Chromium 5–15 минут). Смотрите вывод apt, не
-   нажимайте Ctrl+C:
+API и worker не запускаются как root.
 
-   `sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk`
+## Runtime paths
 
-4. Если пакеты уже стоят и нужен только киоск:
-
-   `sudo /opt/wirescope/packaging/install.sh --skip-packages --enable-kiosk`
-
-   или `sudo systemctl enable --now wirescope-kiosk`.
-
-5. После успеха перезагрузите ВМ с подключённой **консолью** (не только SSH).
-   На tty1 откроется Chromium; в GUI войдите как `auditor`.
-6. SSH с хоста для админки работает; киоск занимает только локальный экран.
-7. Если консоль VMware **чёрная** (нет login и нет Chromium): киоск занял
-   tty1 и не смог открыть экран. По SSH:
-
-   `sudo systemctl start getty@tty1`
-
-   На консоли должен появиться login. Затем
-   `sudo systemctl status wirescope-kiosk` и журнал.
-
-## Production paths
-
-Keep mutable data outside the application checkout:
+System install environment обычно задаёт:
 
 ```bash
 WIRESCOPE_DATA_DIR=/var/lib/wirescope
@@ -526,15 +489,19 @@ WIRESCOPE_BIND_PORT=8000
 WIRESCOPE_DOCS_ENABLED=false
 ```
 
-Directories are owned by `wirescope` and are not world-readable. Use a local
-Linux filesystem suitable for SQLite locking. Do not place the database on NFS.
+Environment file:
 
-Environment variables live in `/etc/wirescope/wirescope.env`. systemd unit
-files must not contain passwords.
+```text
+/etc/wirescope/wirescope.env
+```
 
-## Database initialization
+Не размещайте рабочую SQLite на NFS. Нужна локальная файловая система с нормальной locking semantics.
 
-The installer runs migrations as `wirescope`. To apply them manually:
+## Миграции
+
+Installer применяет Alembic автоматически.
+
+Вручную:
 
 ```bash
 sudo -u wirescope \
@@ -543,123 +510,123 @@ sudo -u wirescope \
   -c /opt/wirescope/alembic.ini upgrade head
 ```
 
-Readiness remains false when the database revision does not match Alembic
-head, or when the worker is not heartbeating.
+WireScope не создаёт production tables через `Base.metadata.create_all()`.
 
-## Capture privilege
+## Upgrade
 
-The API and worker must not run as root. `dumpcap` alone receives
-`CAP_NET_RAW` and `CAP_NET_ADMIN`, and the service account receives execute
-access through the `wireshark` group.
-
-Verified shape:
-
-- `/usr/bin/dumpcap` owned `root:wireshark`, mode `0750`, not setuid
-- file capabilities `cap_net_admin,cap_net_raw=eip`
-- `wirescope` is a member of `wireshark`
-- Python/uvicorn have no those capabilities
-
-```bash
-sudo python3 -m appliance verify --project-root /opt/wirescope
-sudo -u wirescope /usr/bin/dumpcap -D
-```
-
-The worker unit does **not** set `NoNewPrivileges=true`, because that would
-block dumpcap file capabilities. The API unit also omits `NoNewPrivileges`
-so the unprivileged process can `sudo -n /usr/lib/wirescope/netctl` via a
-tight sudoers drop-in (never `shell=True`).
-
-## Process order
-
-1. migration / first-admin bootstrap (installer)
-2. `wirescope-worker`
-3. `wirescope-api`
-4. local kiosk or browser client (independent of API and worker; loopback)
-
-The worker performs restart recovery before accepting queued work. Reloading
-the GUI must not terminate audits.
-
-## Initial admin
-
-There is no built-in default password. The installer creates the first
-auditor only when the `users` table is empty, using a mode `0600` password
-file. An optional viewer password file may be supplied the same way.
-
-Operators change an existing password in the GUI: sign in, then **Сменить
-пароль**. That flow keeps the current session and revokes the user's other
-sessions. CLI reset is for lock-out recovery only:
-
-```bash
-/opt/wirescope/.venv/bin/python -m appliance set-password auditor
-```
-
-The command updates SQLite, revokes that user's sessions, writes a mode
-`0600` file (default: `<data-dir>/initial-admin.txt`), and prints only
-`password_file=...`. It loads `/etc/wirescope/wirescope.env` (or the
-user-install env file) when `WIRESCOPE_DATABASE_PATH` is unset so the
-live API database is the one that changes.
-
-Development-only environment bootstrap (`WIRESCOPE_BOOTSTRAP_*`) still works
-when the table is empty, but must not be copied into systemd units.
-
-## Upgrade and rollback
-
-Upgrade:
-
-```bash
-sudo /opt/wirescope/packaging/upgrade.sh --project-root /opt/wirescope --skip-packages
-```
-
-Before a schema change, take a backup:
+Перед существенным обновлением сначала backup:
 
 ```bash
 sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
   /opt/wirescope/.venv/bin/python -m appliance backup
 ```
 
-Rollback guidance:
+Затем:
 
-1. `systemctl stop wirescope-api wirescope-worker`
-2. Restore the SQLite backup (and evidence tree if required)
-3. Check out the previous known-good Git revision of `/opt/wirescope`
-4. `pip install -e /opt/wirescope` in the venv
-5. Start the units
-6. Do not run `alembic downgrade` unless that revision was tested
+```bash
+cd /opt/wirescope
+git pull
+sudo ./packaging/upgrade.sh --project-root /opt/wirescope
+```
 
-Alembic migrations in this project are forward-only in normal operation.
-Keep the pre-upgrade SQLite copy until the new revision is confirmed.
+Если системные пакеты уже проверены и менять их не нужно:
 
-## Local operator kiosk
+```bash
+sudo ./packaging/upgrade.sh \
+  --project-root /opt/wirescope \
+  --skip-packages
+```
 
-First-class autonomous mode: Chromium on the appliance display against
-`http://127.0.0.1:8000/`. **Без рабочего стола: киоск на tty1 после boot.**
-See [Operator access modes](#operator-access-modes).
-Raspberry Pi hardware is optional; Raspberry Pi OS is not required. Live
-Pi OS Lite, touch, and on-device ARM64 smoke tests remain unused
-(`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1` on Pi hardware only).
+После обновления:
 
-Headless CI and servers omit Chromium; Playwright/kiosk browser tests skip
-when Chromium is missing.
+```bash
+curl -sS http://127.0.0.1:8000/api/ready
+```
+
+## Rollback
+
+Нормальный rollback строится вокруг backup, а не вокруг слепого `alembic downgrade`.
+
+1. Остановить API и worker.
+2. Восстановить pre-upgrade backup SQLite/evidence.
+3. Checkout предыдущего known-good Git revision.
+4. Переустановить проект в `.venv`.
+5. Запустить worker и API.
+6. Проверить `/api/ready` и вход в GUI.
+
+Пример:
+
+```bash
+sudo systemctl stop wirescope-api wirescope-worker
+
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance restore \
+  /var/lib/wirescope/backups/TIMESTAMP
+
+cd /opt/wirescope
+git checkout <known-good-commit>
+/opt/wirescope/.venv/bin/pip install -e /opt/wirescope
+
+sudo systemctl start wirescope-worker wirescope-api
+```
+
+Alembic migrations в обычной эксплуатации считаются forward-only, если downgrade конкретной revision отдельно не был протестирован.
+
+## Backup / restore
+
+Backup:
+
+```bash
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance backup
+```
+
+По умолчанию архив создаётся под:
+
+```text
+/var/lib/wirescope/backups/<UTC timestamp>/
+```
+
+Restore выполнять при остановленных службах:
+
+```bash
+sudo systemctl stop wirescope-api wirescope-worker
+
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance restore \
+  /var/lib/wirescope/backups/TIMESTAMP
+
+sudo systemctl start wirescope-worker wirescope-api
+```
+
+## Что происходит при аварийном reboot
+
+SQLite работает с WAL, foreign keys, короткими транзакциями и `synchronous=FULL` по умолчанию. Evidence записывается через temporary file + atomic rename.
+
+После старта worker:
+
+- `queued` jobs остаются в очереди;
+- jobs, которые были `running`, становятся `interrupted` с `application_restart`;
+- автоматического retry нет;
+- stale locks и временные файлы чистятся контролируемой startup maintenance.
+
+Перезапуск браузера или kiosk к job lifecycle отношения не имеет.
 
 ## Release checksums
 
 ```bash
-python3 -m appliance checksums --project-root /opt/wirescope \
+python3 -m appliance checksums \
+  --project-root /opt/wirescope \
   --output /opt/wirescope/packaging/SHA256SUMS
-sha256sum -c packaging/SHA256SUMS
+
+sha256sum -c /opt/wirescope/packaging/SHA256SUMS
 ```
 
-Sign `packaging/SHA256SUMS` with an operator key when distributing artifacts
-(`gpg --detach-sign`). The installer never embeds that key.
+При распространении release artifacts `SHA256SUMS` можно подписывать отдельным operator GPG key. Installer приватный ключ не хранит.
 
-## Power loss
+## Дальше
 
-SQLite runs in WAL mode with foreign keys, short transactions, busy timeout,
-and `synchronous=FULL` by default. Evidence uses temporary files and atomic
-rename. Startup removes abandoned temporary files, stale managed capture
-directories, orphan final files, and abandoned locks.
-
-Running jobs become `interrupted` with `application_restart`. Queued jobs
-remain queued. There is no automatic retry.
-
-Use `python -m appliance backup` / `restore` for operator backups.
+- [Архитектура](ARCHITECTURE.md)
+- [Модель безопасности](SECURITY_MODEL.md)
+- [Runbook](RUNBOOK.md)
+- [Разработка](DEVELOPMENT.md)

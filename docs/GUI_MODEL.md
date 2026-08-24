@@ -16,7 +16,7 @@ http://127.0.0.1:8000/
 
 Обычная appliance-установка слушает `0.0.0.0:8000`, поэтому удалённый оператор может открыть GUI через IP любого настроенного интерфейса WireScope.
 
-## Frontend
+## Frontend и визуальный слой
 
 Frontend остаётся без build framework:
 
@@ -25,13 +25,36 @@ frontend/
 ├── index.html
 ├── app.js
 ├── i18n.js
-├── style.css
+├── style.css          # базовая совместимая разметка
+├── modern.css         # актуальный responsive visual layer
 ├── enhancements.js
 ├── enhancements.css
 └── operations.js
 ```
 
 `app.js` содержит основной wizard. `enhancements.js` добавляет dashboard/diff/evidence/Markdown export. `operations.js` отдельно добавляет эксплуатационные функции для auditor.
+
+`modern.css` загружается последним и меняет только presentation layer: существующие DOM id, API-контракты и workflow не переписываются. Это позволяет модернизировать внешний вид без риска сломать durable audit flow.
+
+### Адаптивность
+
+Один и тот же интерфейс используется в двух режимах:
+
+- маленький kiosk — крупные touch targets, компактные карточки, вертикальная прокрутка, минимум визуального шума;
+- обычный браузер/ноутбук — широкая рабочая область, более плотные grid-layouts и больше контекста на экране.
+
+Базовые breakpoint'ы:
+
+```text
+≤560 px     kiosk / small touchscreen
+≥900 px     desktop / laptop browser
+```
+
+### Обновление интерфейса после upgrade
+
+Root page отдаётся с `Cache-Control: no-store`, а CSS/JS получают version query string. Это защищает от ситуации, когда Chromium после обновления продолжает использовать старые assets.
+
+`packaging/upgrade.sh` после успешного upgrade автоматически рестартует `wirescope-kiosk.service`, если kiosk был запущен. API/worker jobs при этом не отменяются.
 
 ## Основной audit flow
 
@@ -139,7 +162,7 @@ POST /api/v1/maintenance/cleanup
 - failed/interrupted/cancelled jobs выбранного audit;
 - последние operational events.
 
-Cleanup намеренно двухшаговый. Сначала **«Предпросмотр очистки»** делает запрос с `confirm=false`. Кнопка фактического удаления дополнительно требует browser confirmation и отправляет `confirm=true`.
+Cleanup двухшаговый: сначала preview с `confirm=false`, затем отдельное подтверждение и запрос `confirm=true`.
 
 Retry создаёт новую durable job и не переписывает terminal job.
 
@@ -205,7 +228,11 @@ Network settings идут через backend `NetworkService`/`netctl`. Поте
 
 ## Reports
 
-GUI умеет открывать HTML и экспортировать JSON/Markdown. Markdown-кнопка добавляется `enhancements.js` и использует `/api/v1` export endpoint. PDF пока возвращает `422 pdf_not_available` и не блокирует v1.0.
+GUI открывает human-readable HTML и экспортирует canonical JSON/русский Markdown. HTML renderer адаптивный и print-friendly; подробнее — [REPORTING_MODEL.md](REPORTING_MODEL.md).
+
+Старые сохранённые reports при открытии HTML автоматически получают текущий presentation layer, потому что human HTML строится из их canonical JSON. Повторный network audit для этого не нужен.
+
+PDF пока возвращает `422 pdf_not_available` и не блокирует v1.0.
 
 ## Ошибки и recovery
 
@@ -223,6 +250,6 @@ wirescope-kiosk    может рестартовать независимо
 
 ## Тестирование
 
-Fixture/API tests проверяют roles и workflow. Static regression tests контролируют подключение enhancement modules, audit-scoped evidence, Markdown и operations lifecycle UI. Optional Playwright tests остаются `browser` marker. Основной CI выполняет compileall и default pytest suite.
+Fixture/API tests проверяют roles и workflow. Static regression tests контролируют modern theme, cache-busting, kiosk refresh после upgrade, enhancement modules, audit-scoped evidence, Markdown и operations lifecycle UI. Optional Playwright tests остаются `browser` marker. Основной CI выполняет compileall и default pytest suite.
 
 Release checklist находится в [RELEASE_READINESS.md](RELEASE_READINESS.md).

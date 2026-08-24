@@ -15,7 +15,7 @@ from jobs.models import JobProgress, RetentionClass
 from jobs.registry import HandlerContext, HandlerResult
 from persistence.models import utc_now
 from reports.builder import build_audit_report
-from reports.html import render_html
+from reports.html_v2 import render_html
 from reports.models import (
     REPORT_HTML_ARTIFACT,
     REPORT_JSON_ARTIFACT,

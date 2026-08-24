@@ -1,108 +1,5 @@
-import asyncio
-from dataclasses import replace
-from types import SimpleNamespace
-
-from httpx import ASGITransport, AsyncClient
-import pytest
-
-from backend.app import create_app
-from engine.interfaces import (
-    InterfaceInfo,
-    InterfaceValidationCode,
-    InterfaceValidationError,
-)
-from engine.routes import ResolvedScope, TargetRoute
 from jobs.models import RetentionClass
-from storage.evidence import EvidenceStore
-
-
-def request(app, method, path, **kwargs):
-    async def send():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport,
-            base_url="http://testserver",
-        ) as client:
-            return await client.request(method, path, **kwargs)
-
-    return asyncio.run(send())
-
-
-class RouteStub:
-    def resolve(self, interface_name, scope):
-        return ResolvedScope(
-            interface=interface_name,
-            interface_state="UP",
-            vlan_subinterface="." in interface_name,
-            routes=[
-                TargetRoute(
-                    target=target.value,
-                    representative_address=target.value.split("/", 1)[0],
-                    family=target.family,
-                    interface=interface_name,
-                    source_address=(
-                        "192.0.2.10"
-                        if target.family == 4
-                        else "2001:db8::10"
-                    ),
-                    gateway=None,
-                    directly_connected=True,
-                )
-                for target in scope.targets
-            ],
-        )
-
-
-class InterfaceStub:
-    def __init__(self):
-        self.interface = InterfaceInfo(
-            name="eth0",
-            state="UP",
-            allowed=True,
-        )
-
-    def validate(self, name):
-        if name != self.interface.name:
-            raise InterfaceValidationError(
-                InterfaceValidationCode.UNKNOWN_INTERFACE,
-                f"Unknown network interface: {name}",
-            )
-        return self.interface
-
-    def discover(self):
-        return SimpleNamespace(interfaces=[self.interface])
-
-
-@pytest.fixture
-def api_context(
-    durable_settings,
-    database,
-    job_service,
-    evidence_store,
-):
-    settings = replace(
-        durable_settings,
-        dumpcap_binary="/bin/true",
-        tshark_binary="/bin/true",
-        nmap_binary="/bin/true",
-    )
-    environment = {
-        "hostname": "wirescope-test",
-        "interfaces": [],
-        "default_route": None,
-        "routes": [],
-        "dns": [],
-    }
-    app = create_app(
-        settings=settings,
-        database=database,
-        job_service=job_service,
-        evidence_store=evidence_store,
-        interface_service=InterfaceStub(),
-        route_resolver=RouteStub(),
-        environment_provider=lambda: environment,
-    )
-    return app, job_service, evidence_store, environment
+from tests.helpers import http_request as request
 
 
 def create_audit(app):
@@ -301,6 +198,8 @@ def test_root_serves_frontend(api_context):
     response = request(app, "GET", "/")
 
     assert response.status_code == 200
+    assert "data-screen=\"login\"" in response.text
+    assert "data-screen=\"progress\"" in response.text
     assert "WireScope" in response.text
 
 

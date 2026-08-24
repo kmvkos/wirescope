@@ -52,6 +52,10 @@ def test_settings_default_to_source_checkout(monkeypatch):
     assert settings.protocol_audit_concurrency == 1
     assert settings.max_findings_jobs == 1
     assert settings.max_report_jobs == 1
+    assert settings.session_cookie_name == "wirescope_session"
+    assert settings.session_ttl_seconds == 43_200
+    assert settings.session_cookie_secure is False
+    assert settings.bootstrap_auditor_username == ""
     assert settings.active_standard_max_targets == 1_024
     assert settings.nmap_binary == "nmap"
     assert settings.sqlite_synchronous == "FULL"
@@ -102,5 +106,16 @@ def test_settings_accept_environment_overrides(monkeypatch, tmp_path):
     assert settings.allowed_interfaces == ("eth0", "eth1")
     assert settings.allow_loopback is True
     assert settings.require_interface_up is False
+
+    get_settings.cache_clear()
+
+
+def test_settings_reject_partial_bootstrap_credentials(monkeypatch):
+    monkeypatch.setenv("WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME", "auditor")
+    monkeypatch.delenv("WIRESCOPE_BOOTSTRAP_AUDITOR_PASSWORD", raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(ValueError, match="bootstrap auditor"):
+        get_settings()
 
     get_settings.cache_clear()

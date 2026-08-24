@@ -260,3 +260,42 @@ class ProtocolRecordingRunner:
         if isinstance(output, ToolResult):
             return output
         return tool_result(tool=command.tool, stdout=output)
+
+
+def http_request(app, method, path, *, as_role="auditor", auth=True, **kwargs):
+    import asyncio
+
+    from httpx import ASGITransport, AsyncClient
+
+    cookies = kwargs.pop("cookies", None)
+    if cookies is None and auth:
+        cookies = getattr(app.state, "auth_cookies", {}).get(as_role)
+
+    async def send():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+            cookies=cookies,
+        ) as client:
+            return await client.request(method, path, **kwargs)
+
+    return asyncio.run(send())
+
+
+def session_cookie(response):
+    return response.cookies.get("wirescope_session")
+
+
+def login_role(app, username, password):
+    response = http_request(
+        app,
+        "POST",
+        "/api/auth/login",
+        json={"username": username, "password": password},
+        auth=False,
+    )
+    assert response.status_code == 200, response.text
+    token = session_cookie(response)
+    assert token
+    return {app.state.settings.session_cookie_name: token}

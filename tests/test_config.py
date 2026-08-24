@@ -39,7 +39,7 @@ def test_settings_default_to_source_checkout(monkeypatch):
         == settings.project_root / "data" / "runtime" / "captures"
     )
     assert settings.docs_enabled is True
-    assert settings.bind_host == "127.0.0.1"
+    assert settings.bind_host == "0.0.0.0"
     assert settings.bind_port == 8000
     assert settings.allowed_interfaces == ()
     assert settings.allow_loopback is False

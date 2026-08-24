@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     install_cmd = sub.add_parser("install", help="Install or upgrade the appliance")
     _add_path_arguments(install_cmd)
-    install_cmd.add_argument("--bind-host", default="127.0.0.1")
+    install_cmd.add_argument("--bind-host", default="0.0.0.0")
     install_cmd.add_argument("--bind-port", type=int, default=8000)
     install_cmd.add_argument(
         "--trust-proxy",

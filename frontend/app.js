@@ -18,6 +18,8 @@ const state = {
     pollDelay: 1000,
     pollTimer: null,
     stopping: false,
+    network: null,
+    networkIface: "",
 };
 
 function defaultDraft() {
@@ -269,6 +271,7 @@ async function showLogin(message) {
 async function showHome() {
     showScreen("home");
     $("new-audit-button").hidden = !canMutate();
+    $("network-button").hidden = !canMutate();
     $("home-role-hint").textContent = canMutate()
         ? t("home.auditorHint")
         : t("home.viewerHint");
@@ -313,23 +316,21 @@ async function showEnvironment() {
     const data = await api("GET", "/api/environment");
     const grid = $("environment-grid");
     grid.replaceChildren();
-    const iface = (data.interfaces || []).find((item) => !item.is_loopback)
-        || (data.interfaces || [])[0]
+    const ifaces = (data.interfaces || []).filter((item) => !item.is_loopback);
+    const defaultDev = data.default_route && data.default_route.interface;
+    const management = ifaces.find((item) => item.name === defaultDev)
+        || ifaces.find((item) => (item.ipv4 || []).length)
         || {};
+    const capture = ifaces.find((item) => item.name !== management.name) || {};
     const fields = [
         [t("environment.hostname"), data.hostname],
-        [t("environment.interface"), iface.name],
-        [t("environment.link"), I18N.link(iface.state)],
-        [
-            t("environment.speed"),
-            iface.speed_mbps
-                ? t("common.mbps", { value: iface.speed_mbps })
-                : t("common.unknown"),
-        ],
-        [t("environment.ipv4"), (iface.ipv4 || []).join(", ") || t("common.none")],
+        [t("environment.management"), management.name],
+        [t("environment.ipv4"), (management.ipv4 || []).join(", ") || t("common.none")],
         [t("environment.gateway"), data.default_route && data.default_route.gateway],
-        [t("environment.mac"), iface.mac],
-        [t("environment.mtu"), iface.mtu],
+        [t("environment.capture"), capture.name],
+        [t("environment.link"), I18N.link(capture.state || management.state)],
+        [t("environment.mac"), capture.mac || management.mac],
+        [t("environment.mtu"), capture.mtu || management.mtu],
     ];
     fields.forEach(([label, value]) => {
         const item = document.createElement("div");
@@ -351,12 +352,20 @@ async function showInterfaces() {
     const data = await api("GET", "/api/interfaces");
     const list = $("interface-list");
     list.replaceChildren();
-    (data.interfaces || []).forEach((iface) => {
+    const ifaces = data.interfaces || [];
+    if (!state.draft.interface) {
+        state.draft.interface = preferredCaptureInterface(ifaces);
+        saveDraft();
+    }
+    ifaces.forEach((iface) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "choice";
-        button.disabled = !iface.allowed;
-        if (!iface.allowed) {
+        const selectable = iface.selectable !== false && !iface.is_loopback
+            && iface.denial_reason !== "loopback_denied"
+            && iface.denial_reason !== "not_allowed";
+        button.disabled = !selectable;
+        if (!selectable) {
             button.classList.add("denied");
         }
         if (iface.name === state.draft.interface) {
@@ -365,12 +374,25 @@ async function showInterfaces() {
         const title = document.createElement("strong");
         title.textContent = iface.name;
         const meta = document.createElement("span");
-        meta.textContent = iface.allowed
-            ? `${I18N.link(iface.state)} · ${(iface.ipv4 || []).join(", ") || t("common.noIpv4")}`
-            : I18N.denial(iface.denial_reason);
+        const role = iface.role_hint
+            ? t(`interface.role.${iface.role_hint}`)
+            : "";
+        const addressing = iface.addressing === "none"
+            ? t("common.noIpv4")
+            : (iface.ipv4 || []).join(", ") || t("common.noIpv4");
+        if (!selectable) {
+            meta.textContent = I18N.denial(iface.denial_reason);
+        } else {
+            meta.textContent = [
+                role,
+                I18N.link(iface.state),
+                addressing,
+                iface.has_default_route ? t("network.defaultRoute") : "",
+            ].filter(Boolean).join(" · ");
+        }
         button.append(title, meta);
         button.addEventListener("click", () => {
-            if (!iface.allowed) {
+            if (!selectable) {
                 return;
             }
             state.draft.interface = iface.name;
@@ -378,9 +400,34 @@ async function showInterfaces() {
             list.querySelectorAll(".choice").forEach((node) => {
                 node.classList.toggle("selected", node === button);
             });
+            if (iface.denial_reason === "link_not_up") {
+                setError("interface-error", t("interface.downHint"));
+            } else if (iface.role_hint === "management") {
+                setError("interface-error", t("interface.managementHint"));
+            } else {
+                setError("interface-error", "");
+            }
         });
         list.append(button);
     });
+}
+
+function preferredCaptureInterface(interfaces) {
+    const usable = (interfaces || []).filter((item) => {
+        if (item.is_loopback) {
+            return false;
+        }
+        if (item.denial_reason === "loopback_denied" || item.denial_reason === "not_allowed") {
+            return false;
+        }
+        return item.selectable !== false;
+    });
+    const capture = usable.find((item) => item.role_hint === "capture" || item.addressing === "none");
+    if (capture) {
+        return capture.name;
+    }
+    const notMgmt = usable.find((item) => item.role_hint !== "management");
+    return (notMgmt || usable[0] || {}).name || "";
 }
 
 async function showScope() {
@@ -421,7 +468,12 @@ function renderScopeProposal(proposal) {
     } else if (proposal.source === "route_hints") {
         reason.textContent = t("scope.derivedFromRoute", { networks });
     } else {
-        reason.textContent = t("scope.emptyProposal");
+        reason.textContent = proposal.uses_management_interface
+            ? t("scope.emptyManagement")
+            : t("scope.emptyProposal");
+    }
+    if (proposal.uses_management_interface && proposal.source !== "empty") {
+        reason.textContent = `${reason.textContent} ${t("scope.managementWarning")}`;
     }
     (proposal.networks || []).forEach((item) => {
         list.append(listItem(item.cidr, scopeOriginLabel(item)));
@@ -705,6 +757,153 @@ function confirmModal(title, body) {
         $("modal-confirm").onclick = () => finish(true);
         $("modal-cancel").onclick = () => finish(false);
     });
+}
+
+function networkRoleLabel(role) {
+    return t(`network.role.${role || "unknown"}`);
+}
+
+function renderNetworkUrls(payload) {
+    const urls = (payload && payload.gui_urls) || [];
+    const box = $("network-urls");
+    if (!urls.length) {
+        box.textContent = t("network.noUrls");
+        return;
+    }
+    box.textContent = t("network.openGui", { urls: urls.join(", ") });
+}
+
+function fillNetworkForm(iface) {
+    $("network-form").hidden = false;
+    $("network-form-title").textContent = iface.name;
+    const role = iface.role === "management" || iface.role === "capture"
+        ? iface.role
+        : (iface.has_default_route ? "management" : "capture");
+    $("network-role").value = role;
+    const method = iface.addressing === "dhcp" || iface.addressing === "static"
+        ? iface.addressing
+        : (role === "capture" ? "none" : "dhcp");
+    $("network-method").value = method;
+    $("network-address").value = (iface.ipv4 || [])[0] || "";
+    $("network-gateway").value = "";
+    $("network-dns").value = ((state.network && state.network.dns) || []).join(" ");
+    syncNetworkForm();
+}
+
+function syncNetworkForm() {
+    const role = $("network-role").value;
+    const method = $("network-method").value;
+    $("network-role-hint").textContent = role === "capture"
+        ? t("network.captureHint")
+        : t("network.managementHint");
+    if (role === "management" && method === "none") {
+        $("network-method").value = "dhcp";
+    }
+    $("network-static-fields").hidden = $("network-method").value !== "static";
+}
+
+async function showNetwork() {
+    if (!canMutate()) {
+        await showHome();
+        return;
+    }
+    showScreen("network");
+    setError("network-error", "");
+    $("network-result").hidden = true;
+    const payload = await api("GET", "/api/network/interfaces");
+    state.network = payload;
+    renderNetworkUrls(payload);
+    const list = $("network-list");
+    list.replaceChildren();
+    (payload.interfaces || []).forEach((iface) => {
+        if (iface.is_loopback) {
+            return;
+        }
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "choice";
+        if (iface.name === state.networkIface) {
+            button.classList.add("selected");
+        }
+        const title = document.createElement("strong");
+        title.textContent = iface.name;
+        const meta = document.createElement("span");
+        meta.textContent = [
+            networkRoleLabel(iface.role),
+            I18N.link(iface.state),
+            (iface.ipv4 || []).join(", ") || t("common.noIpv4"),
+            iface.has_default_route ? t("network.defaultRoute") : t("network.noDefault"),
+            t(`network.addressing.${iface.addressing || "none"}`),
+        ].join(" · ");
+        button.append(title, meta);
+        button.addEventListener("click", () => {
+            state.networkIface = iface.name;
+            list.querySelectorAll(".choice").forEach((node) => {
+                node.classList.toggle("selected", node === button);
+            });
+            fillNetworkForm(iface);
+        });
+        list.append(button);
+    });
+    if (state.networkIface) {
+        const selected = (payload.interfaces || []).find((item) => item.name === state.networkIface);
+        if (selected) {
+            fillNetworkForm(selected);
+        }
+    } else {
+        $("network-form").hidden = true;
+    }
+}
+
+async function applyNetwork(confirm) {
+    if (!canMutate()) {
+        setError("network-error", t("error.forbidden_role"));
+        return;
+    }
+    if (!state.networkIface) {
+        setError("network-error", t("error.selectInterface"));
+        return;
+    }
+    setError("network-error", "");
+    $("network-result").hidden = true;
+    const method = $("network-method").value;
+    const body = {
+        role: $("network-role").value,
+        method,
+        confirm: Boolean(confirm),
+    };
+    if (method === "static") {
+        body.address = $("network-address").value.trim();
+        body.gateway = $("network-gateway").value.trim() || null;
+        body.dns = parseTargets($("network-dns").value);
+    }
+    try {
+        const result = await api(
+            "POST",
+            `/api/network/interfaces/${encodeURIComponent(state.networkIface)}`,
+            body
+        );
+        state.network = result;
+        renderNetworkUrls(result);
+        const urls = (result.gui_urls || []).join(", ");
+        $("network-result").hidden = false;
+        $("network-result").textContent = t("network.result", { urls });
+        await showNetwork();
+        $("network-result").hidden = false;
+        $("network-result").textContent = t("network.result", { urls });
+    } catch (error) {
+        if (error.status === 409 && error.code === "confirm_required") {
+            const confirmed = await confirmModal(
+                t("network.confirmTitle"),
+                t("network.confirmBody")
+            );
+            if (confirmed) {
+                await applyNetwork(true);
+                return;
+            }
+        }
+        throw error;
+    }
 }
 
 async function openAudit(auditId) {
@@ -1099,12 +1298,20 @@ function bindUi() {
         await showEnvironment();
     });
 
+    $("network-button").addEventListener("click", async () => {
+        await showNetwork();
+    });
+
     document.querySelectorAll("[data-nav]").forEach((button) => {
         button.addEventListener("click", async () => {
             const target = button.dataset.nav;
             if (target === "home") {
                 clearActive();
                 await showHome();
+                return;
+            }
+            if (target === "network") {
+                await showNetwork();
                 return;
             }
             if (target === "interface") {
@@ -1200,6 +1407,14 @@ function bindUi() {
             $("report-status").textContent = displayError(error);
         });
     });
+
+    $("network-apply").addEventListener("click", () => {
+        applyNetwork().catch((error) => {
+            setError("network-error", displayError(error));
+        });
+    });
+    $("network-role").addEventListener("change", syncNetworkForm);
+    $("network-method").addEventListener("change", syncNetworkForm);
 
     $("scope-duration").addEventListener("change", () => {
         state.draft.duration = Number($("scope-duration").value);

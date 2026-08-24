@@ -213,8 +213,11 @@ class ScopeValidator:
         assigned: list[str],
         peers: list[dict[str, Any]] | None = None,
         routes: list[dict[str, Any]] | None = None,
+        management_names: set[str] | None = None,
     ) -> "ScopeProposal":
         rejected: list[RejectedCandidate] = []
+        management = set(management_names or ())
+        uses_management = interface_name in management
         selected = _eligible_networks(
             self,
             assigned,
@@ -228,11 +231,14 @@ class ScopeValidator:
                 source=ScopeProposalSource.INTERFACE_PREFIX,
                 networks=selected,
                 rejected=rejected,
+                uses_management_interface=uses_management,
             )
 
         vlan_by_iface: dict[str, list[ProposedNetwork]] = {}
         for peer in peers or []:
             name = str(peer.get("name") or "")
+            if name in management:
+                continue
             vlan_id = _vlan_id_for(interface_name, name)
             if vlan_id is None:
                 continue
@@ -257,11 +263,15 @@ class ScopeValidator:
                 source=ScopeProposalSource.VLAN_HINTS,
                 networks=vlan_by_iface[chosen_iface],
                 rejected=rejected,
+                uses_management_interface=uses_management,
             )
 
         route_networks: list[ProposedNetwork] = []
         for route in routes or []:
-            if str(route.get("dev") or "") != interface_name:
+            device = str(route.get("dev") or "")
+            if device != interface_name:
+                continue
+            if device in management and not uses_management:
                 continue
             if route.get("gateway"):
                 continue
@@ -283,6 +293,7 @@ class ScopeValidator:
                 source=ScopeProposalSource.ROUTE_HINTS,
                 networks=route_networks,
                 rejected=rejected,
+                uses_management_interface=uses_management,
             )
 
         return _proposal(
@@ -290,6 +301,7 @@ class ScopeValidator:
             source=ScopeProposalSource.EMPTY,
             networks=[],
             rejected=rejected,
+            uses_management_interface=uses_management,
         )
 
     def _proposal_limit(self, version: int) -> int:
@@ -331,6 +343,7 @@ class ScopeProposal(BaseModel):
     assigned_addresses: list[str]
     vlan_ids: list[int]
     rejected: list[RejectedCandidate]
+    uses_management_interface: bool = False
 
 
 def _proposal(
@@ -339,6 +352,7 @@ def _proposal(
     source: ScopeProposalSource,
     networks: list[ProposedNetwork],
     rejected: list[RejectedCandidate],
+    uses_management_interface: bool = False,
 ) -> ScopeProposal:
     unique: list[ProposedNetwork] = []
     seen: set[str] = set()
@@ -363,6 +377,7 @@ def _proposal(
             }
         ),
         rejected=rejected,
+        uses_management_interface=uses_management_interface,
     )
 
 

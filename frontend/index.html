@@ -89,8 +89,60 @@
                     class="primary"
                     data-i18n="action.newAudit"
                 >Новый аудит</button>
+                <button
+                    type="button"
+                    id="network-button"
+                    class="secondary"
+                    data-i18n="action.network"
+                >Сеть</button>
             </div>
             <div id="audit-list" class="list" aria-live="polite"></div>
+        </section>
+
+        <section
+            id="screen-network"
+            class="screen"
+            data-screen="network"
+            hidden
+        >
+            <h2 data-i18n="network.title">Сеть</h2>
+            <p class="hint" data-i18n="network.hint">Управление без GNOME. Интерфейс управления держит GUI; захват может быть без IP и без маршрута по умолчанию.</p>
+            <p id="network-urls" class="callout"></p>
+            <div
+                id="network-list"
+                class="choice-list"
+                role="listbox"
+                data-i18n-aria="network.listLabel"
+            ></div>
+            <form id="network-form" hidden>
+                <h3 id="network-form-title"></h3>
+                <label for="network-role" data-i18n="network.role">Назначение</label>
+                <select id="network-role">
+                    <option value="management" data-i18n="network.role.management">Управление</option>
+                    <option value="capture" data-i18n="network.role.capture">Захват</option>
+                </select>
+                <p id="network-role-hint" class="hint"></p>
+                <label for="network-method" data-i18n="network.method">Адресация</label>
+                <select id="network-method">
+                    <option value="dhcp" data-i18n="network.addressing.dhcp">DHCP</option>
+                    <option value="static" data-i18n="network.addressing.static">Статический</option>
+                    <option value="none" data-i18n="network.addressing.none">Без IPv4</option>
+                </select>
+                <div id="network-static-fields">
+                    <label for="network-address" data-i18n="network.address">Адрес/префикс</label>
+                    <input id="network-address" type="text" maxlength="64" placeholder="192.168.32.149/24">
+                    <label for="network-gateway" data-i18n="network.gateway">Шлюз</label>
+                    <input id="network-gateway" type="text" maxlength="64" placeholder="192.168.32.2">
+                    <label for="network-dns" data-i18n="network.dns">DNS</label>
+                    <input id="network-dns" type="text" maxlength="128" placeholder="192.168.32.2">
+                </div>
+            </form>
+            <p id="network-error" class="error" role="alert" hidden></p>
+            <p id="network-result" class="callout" hidden></p>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="home" data-i18n="action.back">Назад</button>
+                <button type="button" class="primary" id="network-apply" data-i18n="network.apply">Применить</button>
+            </div>
         </section>
 
         <section
@@ -119,7 +171,7 @@
             hidden
         >
             <h2 data-i18n="interface.title">Интерфейс</h2>
-            <p class="hint" data-i18n="interface.hint">Захват можно запустить только на разрешённых интерфейсах (не loopback). Адрес на интерфейсе захвата не обязателен: GUI работает локально на этом компьютере.</p>
+            <p class="hint" data-i18n="interface.hint">Выберите NIC захвата. Новый адаптер без адреса тоже можно выбрать. Интерфейс управления (GUI) для захвата не обязателен.</p>
             <div
                 id="interface-list"
                 class="choice-list"

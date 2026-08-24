@@ -23,11 +23,10 @@ TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wirescope-api
-NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/wirescope
+ReadWritePaths=/var/lib/wirescope /etc/wirescope /etc/network /etc/NetworkManager /etc/systemd/network
 
 [Install]
 WantedBy=multi-user.target

@@ -174,7 +174,8 @@ label.check input {
 }
 
 input,
-textarea {
+textarea,
+select {
     width: 100%;
     min-height: 44px;
     border: 1px solid #3a424c;

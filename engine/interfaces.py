@@ -40,7 +40,11 @@ class InterfaceInfo(BaseModel):
     ipv6: list[str] = Field(default_factory=list)
     is_loopback: bool = False
     allowed: bool = False
+    selectable: bool = False
     denial_reason: InterfaceValidationCode | None = None
+    role_hint: str | None = None
+    addressing: str | None = None
+    has_default_route: bool = False
 
 
 class InterfaceDiscoveryResult(BaseModel):
@@ -92,8 +96,9 @@ class InterfaceService:
                 "iproute2 interface JSON must be a list",
             )
 
+        default_devs = self._default_route_devices()
         interfaces = [
-            self._normalize_interface(item)
+            self._normalize_interface(item, default_devs=default_devs)
             for item in payload
             if isinstance(item, dict) and item.get("ifname")
         ]
@@ -132,7 +137,12 @@ class InterfaceService:
             )
         return interface
 
-    def _normalize_interface(self, item: dict) -> InterfaceInfo:
+    def _normalize_interface(
+        self,
+        item: dict,
+        *,
+        default_devs: set[str],
+    ) -> InterfaceInfo:
         name = str(item["ifname"])
         flags = {str(flag).upper() for flag in item.get("flags", [])}
         is_loopback = (
@@ -154,8 +164,14 @@ class InterfaceService:
         ):
             denial_reason = InterfaceValidationCode.LINK_NOT_UP
 
+        selectable = denial_reason in {
+            None,
+            InterfaceValidationCode.LINK_NOT_UP,
+        }
+
         ipv4: list[str] = []
         ipv6: list[str] = []
+        dhcp = False
         for address in item.get("addr_info", []):
             local = address.get("local")
             prefix = address.get("prefixlen")
@@ -164,8 +180,27 @@ class InterfaceService:
             value = f"{local}/{prefix}"
             if address.get("family") == "inet":
                 ipv4.append(value)
+                if address.get("dynamic") is True:
+                    dhcp = True
             elif address.get("family") == "inet6":
                 ipv6.append(value)
+
+        if not ipv4:
+            addressing = "none"
+        elif dhcp:
+            addressing = "dhcp"
+        else:
+            addressing = "static"
+
+        has_default = name in default_devs
+        if is_loopback:
+            role_hint = None
+        elif has_default:
+            role_hint = "management"
+        elif not ipv4:
+            role_hint = "capture"
+        else:
+            role_hint = None
 
         return InterfaceInfo(
             name=name,
@@ -177,8 +212,41 @@ class InterfaceService:
             ipv6=ipv6,
             is_loopback=is_loopback,
             allowed=denial_reason is None,
+            selectable=selectable,
             denial_reason=denial_reason,
+            role_hint=role_hint,
+            addressing=addressing,
+            has_default_route=has_default,
         )
+
+    def _default_route_devices(self) -> set[str]:
+        tool_result = self.runner.run(
+            ToolCommand(
+                tool="ip",
+                args=["-j", "route"],
+                timeout_seconds=5,
+            )
+        )
+        if not tool_result.success:
+            return set()
+        try:
+            payload = json.loads(tool_result.stdout)
+        except (json.JSONDecodeError, TypeError):
+            return set()
+        if not isinstance(payload, list) or not payload:
+            return set()
+        if "ifname" in payload[0] and "dst" not in payload[0]:
+            return set()
+        devices: set[str] = set()
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            destination = item.get("dst")
+            if destination in {None, "", "default", "unspecified", "0.0.0.0/0"}:
+                name = str(item.get("dev") or "")
+                if name:
+                    devices.add(name)
+        return devices
 
     def _interface_speed(self, interface_name: str) -> int | None:
         speed_path = self.sys_class_net / interface_name / "speed"

@@ -8,6 +8,7 @@ FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
 SCREENS = (
     "login",
     "home",
+    "network",
     "environment",
     "interface",
     "scope",
@@ -73,6 +74,11 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "applyVlanScanInterface" in script
     assert "/api/scope/proposal" in script
     assert "loadScopeProposal" in script
+    assert "preferredCaptureInterface" in script
+    assert "/api/network/interfaces" in script
+    assert 'id="network-button"' in html
+    assert 'data-screen="network"' in html
+    assert "Откройте GUI по адресу" in i18n
     assert "await showConfirm()" in script
     assert "state.draft.proposed" in script
     assert "job.dumpcapPermission" in i18n

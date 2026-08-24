@@ -59,11 +59,10 @@ def render_api_unit(paths: InstallPaths, *, user_session: bool = False) -> str:
             "SupplementaryGroups=wireshark\n"
         )
         hardening = (
-            "NoNewPrivileges=true\n"
             "PrivateTmp=true\n"
             "ProtectHome=true\n"
             "ProtectSystem=full\n"
-            f"ReadWritePaths={paths.data_dir}\n"
+            f"ReadWritePaths={paths.data_dir} /etc/wirescope /etc/network /etc/NetworkManager /etc/systemd/network\n"
         )
         wanted = "multi-user.target"
     return f"""[Unit]

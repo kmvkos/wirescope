@@ -137,6 +137,31 @@ class InterfaceListResponse(BaseModel):
     interfaces: list[InterfaceInfo]
 
 
+class NetworkApplyRequest(BaseModel):
+    role: str = Field(min_length=1, max_length=16)
+    method: str = Field(min_length=1, max_length=16)
+    address: str | None = Field(default=None, max_length=64)
+    gateway: str | None = Field(default=None, max_length=64)
+    dns: list[str] = Field(default_factory=list, max_length=8)
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def validate_network_apply(self) -> "NetworkApplyRequest":
+        if self.role not in {"management", "capture"}:
+            raise ValueError("role must be management or capture")
+        if self.method not in {"dhcp", "static", "none"}:
+            raise ValueError("method must be dhcp, static, or none")
+        if self.method == "static" and not (self.address or "").strip():
+            raise ValueError("static method requires address")
+        cleaned: list[str] = []
+        for item in self.dns:
+            value = item.strip()
+            if value:
+                cleaned.append(value)
+        self.dns = cleaned
+        return self
+
+
 class AssetPageResponse(BaseModel):
     items: list[AssetRecord]
     limit: int

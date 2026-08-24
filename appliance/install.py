@@ -43,7 +43,7 @@ class InstallError(RuntimeError):
 @dataclass(frozen=True)
 class InstallConfig:
     paths: InstallPaths
-    bind_host: str = "127.0.0.1"
+    bind_host: str = "0.0.0.0"
     bind_port: int = 8000
     apply_packages: bool = True
     optional_providers: bool = True
@@ -146,6 +146,7 @@ def install(config: InstallConfig, host: Host) -> InstallReport:
     _install_account(config, host, report)
     _install_directories(config, host, report)
     _install_env(config, host, report)
+    _install_netctl(config, host, report)
     _install_proxy_examples(config, host, report)
     _install_venv(config, host, report)
     report.dumpcap = _install_dumpcap(config, host, report)
@@ -425,6 +426,7 @@ def _install_env(
     )
     if exists and not config.overwrite_env:
         _note(report, f"kept existing {config.paths.env_file}")
+        _promote_lan_bind(config, host, report)
     else:
         _note(report, f"wrote {config.paths.env_file}")
     if config.trust_proxy:
@@ -432,12 +434,104 @@ def _install_env(
     report.warnings.extend(
         warning
         for warning in lan_warnings(
-            bind_host=config.bind_host,
+            bind_host=_effective_bind_host(config, host),
             trust_proxy=config.trust_proxy,
             tls_enabled=bool(tls_cert and tls_key),
         )
         if warning not in report.warnings
+    )
+
+
+def _effective_bind_host(config: InstallConfig, host: Host) -> str:
+    if not host.exists(config.paths.env_file):
+        return config.bind_host
+    try:
+        text = host.read_text(config.paths.env_file)
+    except Exception:
+        return config.bind_host
+    for line in text.splitlines():
+        if line.startswith("WIRESCOPE_BIND_HOST="):
+            return line.split("=", 1)[1].strip() or config.bind_host
+    return config.bind_host
+
+
+def _promote_lan_bind(
+    config: InstallConfig,
+    host: Host,
+    report: InstallReport,
+) -> None:
+    if config.user_session or config.trust_proxy:
+        return
+    if not host.exists(config.paths.env_file):
+        return
+    text = host.read_text(config.paths.env_file)
+    if "WIRESCOPE_BIND_HOST=127.0.0.1" not in text:
+        return
+    if config.bind_host in {"127.0.0.1", "localhost", "::1"}:
+        return
+    updated = text.replace(
+        "WIRESCOPE_BIND_HOST=127.0.0.1",
+        f"WIRESCOPE_BIND_HOST={config.bind_host}",
+        1,
+    )
+    env_owner = "root" if not config.user_session else config.paths.service_user
+    host.write_file(
+        config.paths.env_file,
+        updated,
+        mode=ENV_FILE_MODE,
+        owner=env_owner,
+        group=config.paths.service_group,
+        overwrite=True,
+    )
+    _note(
+        report,
+        f"rebound API from 127.0.0.1 to {config.bind_host} in {config.paths.env_file}",
+    )
+
+
+def _install_netctl(
+    config: InstallConfig,
+    host: Host,
+    report: InstallReport,
+) -> None:
+    from appliance.netctl import (
+        HELPER_PATH,
+        SUDOERS_PATH,
+        helper_script_text,
+        sudoers_text,
+    )
+
+    if config.user_session:
+        report.warnings.append(
+            "user-session skipped /usr/lib/wirescope/netctl and sudoers; "
+            "network GUI needs a system install"
         )
+        return
+    lib_dir = HELPER_PATH.parent
+    host.mkdir(lib_dir, mode=0o755, owner="root", group="root")
+    host.write_file(
+        HELPER_PATH,
+        helper_script_text(),
+        mode=0o755,
+        owner="root",
+        group="root",
+    )
+    host.write_file(
+        SUDOERS_PATH,
+        sudoers_text(HELPER_PATH, config.paths.service_user),
+        mode=0o440,
+        owner="root",
+        group="root",
+    )
+    visudo = host.which("visudo")
+    if visudo:
+        checked = host.run([visudo, "-cf", str(SUDOERS_PATH)])
+        if not checked.ok:
+            raise InstallError(
+                "sudoers drop-in failed visudo -cf: "
+                + (checked.stderr.strip() or checked.stdout.strip())
+            )
+    _note(report, f"installed {HELPER_PATH} and {SUDOERS_PATH}")
 
 
 def _install_proxy_examples(

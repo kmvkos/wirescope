@@ -153,6 +153,29 @@ def test_propose_uses_connected_route_when_no_address_or_vlan(durable_settings):
     assert "::/0" not in proposal.canonical_targets
 
 
+def test_propose_ignores_management_prefixes_for_capture_nic(durable_settings):
+    proposal = validator(durable_settings).propose(
+        interface_name="eth1",
+        assigned=[],
+        peers=[
+            {
+                "name": "eth0",
+                "ipv4": ["192.168.32.149/24"],
+                "ipv6": [],
+            }
+        ],
+        routes=[
+            {"dst": "default", "dev": "eth0", "gateway": "192.168.32.2"},
+            {"dst": "192.168.32.0/24", "dev": "eth0"},
+        ],
+        management_names={"eth0"},
+    )
+    assert proposal.source == ScopeProposalSource.EMPTY
+    assert proposal.canonical_targets == []
+    assert "192.168.32.0/24" not in proposal.canonical_targets
+    assert proposal.uses_management_interface is False
+
+
 def test_propose_never_includes_unspecified_or_oversize(durable_settings):
     unspecified = validator(durable_settings).propose(
         interface_name="eth0",

@@ -26,6 +26,7 @@ from backend.models import (
     JobEventResponse,
     JobPageResponse,
     JobResponse,
+    NetworkApplyRequest,
     ObservationPageResponse,
     PassiveJobRequest,
     ProtocolAuditRequest,
@@ -44,6 +45,7 @@ from engine.interfaces import (
     InterfaceValidationCode,
     InterfaceValidationError,
 )
+from engine.network import NetworkConfirmRequired, NetworkService
 from engine.routes import RouteResolver, RouteValidationError
 from engine.scope import ScopeProposal, ScopeValidationError, ScopeValidator
 from findings.models import FindingStatus, Severity
@@ -83,6 +85,7 @@ def create_app(
     report_store: ReportStore | None = None,
     auth_service: AuthService | None = None,
     environment_provider: Callable[[], dict[str, Any]] = get_environment,
+    network_service: NetworkService | None = None,
 ) -> FastAPI:
     active_settings = settings or get_settings()
     active_database = database or Database(active_settings)
@@ -109,6 +112,7 @@ def create_app(
     active_reports = report_store or ReportStore(active_database)
     active_auth = auth_service or AuthService(active_database, active_settings)
     active_auth.bootstrap()
+    active_network = network_service or NetworkService(active_settings)
     module_registry = default_registry()
 
     def _auth_guard(request: Request) -> None:
@@ -155,6 +159,7 @@ def create_app(
     application.state.findings = active_findings
     application.state.reports = active_reports
     application.state.auth = active_auth
+    application.state.network = active_network
 
     def _session_payload(user: SessionUser) -> SessionUserResponse:
         capabilities = (
@@ -279,6 +284,53 @@ def create_app(
             raise _interface_http_error(exc) from exc
         return InterfaceListResponse(interfaces=discovery.interfaces)
 
+    @application.get("/api/network/interfaces")
+    def api_network_interfaces() -> dict[str, Any]:
+        try:
+            return active_network.list_payload()
+        except Exception as exc:
+            from appliance.netctl import NetctlError
+
+            if isinstance(exc, NetctlError):
+                raise _netctl_http_error(exc) from exc
+            raise
+
+    @application.post("/api/network/interfaces/{name}")
+    def api_network_apply(
+        name: str,
+        payload: NetworkApplyRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
+        from appliance.netctl import ApplySpec, NetctlError
+
+        client_host = None
+        if http_request.client is not None:
+            client_host = http_request.client.host
+        spec = ApplySpec(
+            interface=name,
+            role=payload.role,
+            method=payload.method,
+            address=payload.address,
+            gateway=payload.gateway,
+            dns=tuple(payload.dns),
+            confirm=payload.confirm,
+            bind_host=active_settings.bind_host,
+        )
+        try:
+            return active_network.apply(spec, client_host=client_host)
+        except NetworkConfirmRequired as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": exc.code,
+                    "message": exc.message,
+                    "reasons": exc.reasons,
+                    "remaining_ipv4": exc.remaining_ipv4,
+                },
+            ) from exc
+        except NetctlError as exc:
+            raise _netctl_http_error(exc) from exc
+
     @application.get(
         "/api/scope/proposal",
         response_model=ScopeProposal,
@@ -336,11 +388,17 @@ def create_app(
                     "ipv6": list(item.get("ipv6") or []),
                 }
             )
+        management_names = {
+            item.name
+            for item in discovery.interfaces
+            if item.role_hint == "management" and item.name != selected.name
+        }
         return ScopeValidator(active_settings).propose(
             interface_name=selected.name,
             assigned=[*selected.ipv4, *selected.ipv6],
             peers=peers,
             routes=list(environment.get("routes") or []),
+            management_names=management_names,
         )
 
     @application.post(
@@ -1336,7 +1394,32 @@ def _is_public_request(request: Request) -> bool:
 
 
 def _requires_auditor(request: Request) -> bool:
+    path = request.url.path
+    if path == "/api/network" or path.startswith("/api/network/"):
+        return True
     return request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
+
+
+def _netctl_http_error(error: Exception) -> HTTPException:
+    code = getattr(error, "code", "netctl_failed")
+    message = getattr(error, "message", str(error))
+    details = getattr(error, "details", {}) or {}
+    status = 400
+    if code in {"unknown_interface", "invalid_interface"}:
+        status = 422
+    if code == "confirm_required":
+        status = 409
+    if code == "netctl_failed":
+        status = 503
+    return HTTPException(
+        status_code=status,
+        detail={
+            "code": code,
+            "message": message,
+            **({"reasons": details.get("reasons")} if details.get("reasons") else {}),
+            **details,
+        },
+    )
 
 
 def _not_found(error: EntityNotFound) -> HTTPException:

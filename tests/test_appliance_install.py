@@ -72,6 +72,12 @@ def test_install_reuses_account_and_is_idempotent(tmp_path):
     assert "User=wirescope" in api_unit
     assert "AmbientCapabilities=" not in api_unit
     assert first.admin_created == ["auditor"]
+    assert "WIRESCOPE_BIND_HOST=0.0.0.0" in host.read_text(config.paths.env_file)
+    assert host.exists(Path("/usr/lib/wirescope/netctl"))
+    sudoers = host.read_text(Path("/etc/sudoers.d/wirescope-netctl"))
+    assert "NOPASSWD:" in sudoers
+    assert "/usr/lib/wirescope/netctl" in sudoers
+    assert "shell" not in sudoers.lower()
     nuclei = [item for item in host.commands if "nuclei" in item or "nikto" in item]
     assert nuclei == []
     assert len(host.commands) >= len(first_commands)

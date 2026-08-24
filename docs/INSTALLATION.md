@@ -189,8 +189,10 @@ nginx terminates TLS (`--trust-proxy`). Details follow.
 
 ## Bind address and LAN TLS
 
-Default bind is `127.0.0.1:8000` (local browser only). That is the
-conservative production default.
+Default bind is `0.0.0.0:8000` so the operator GUI is reachable on LAN IPv4
+addresses as well as on the kiosk (`http://127.0.0.1:8000/`). Loopback-only
+bind remains available with `--bind-host 127.0.0.1` (user-session kiosk /
+reverse proxy).
 
 ### From another PC (preferred)
 
@@ -563,7 +565,9 @@ sudo -u wirescope /usr/bin/dumpcap -D
 ```
 
 The worker unit does **not** set `NoNewPrivileges=true`, because that would
-block dumpcap file capabilities. The API unit may use `NoNewPrivileges`.
+block dumpcap file capabilities. The API unit also omits `NoNewPrivileges`
+so the unprivileged process can `sudo -n /usr/lib/wirescope/netctl` via a
+tight sudoers drop-in (never `shell=True`).
 
 ## Process order
 

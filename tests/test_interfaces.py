@@ -103,6 +103,16 @@ def test_interface_validator_rejects_unsafe_interfaces(
     assert exc_info.value.code == expected_code
 
 
+def test_down_interface_is_selectable_for_capture_picker(tmp_path):
+    discovered = service(tmp_path).discover()
+    by_name = {item.name: item for item in discovered.interfaces}
+    assert by_name["eth1"].selectable is True
+    assert by_name["eth1"].allowed is False
+    assert by_name["eth1"].role_hint == "capture"
+    assert by_name["eth0"].selectable is True
+    assert by_name["lo"].selectable is False
+
+
 def test_interface_allowlist_is_enforced(tmp_path):
     with pytest.raises(InterfaceValidationError) as exc_info:
         service(tmp_path, allowed=("eth1",)).validate("eth0")

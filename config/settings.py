@@ -120,6 +120,7 @@ class Settings:
     trust_proxy: bool
     tls_certfile: str
     tls_keyfile: str
+    netctl_binary: str
     bootstrap_auditor_username: str
     bootstrap_auditor_password: str
     bootstrap_viewer_username: str
@@ -403,6 +404,11 @@ def get_settings() -> Settings:
         trust_proxy=trust_proxy,
         tls_certfile=tls_certfile,
         tls_keyfile=tls_keyfile,
+        netctl_binary=os.getenv(
+            "WIRESCOPE_NETCTL_BINARY",
+            "/usr/lib/wirescope/netctl",
+        ).strip()
+        or "/usr/lib/wirescope/netctl",
         bootstrap_auditor_username=os.getenv(
             "WIRESCOPE_BOOTSTRAP_AUDITOR_USERNAME",
             "",

@@ -23,6 +23,7 @@ from reports.models import (
     REPORT_SCHEMA,
     REPORT_SCHEMA_VERSION,
 )
+from reports.presentation import localized_report
 from reports.sources import load_report_source
 from reports.store import ReportStore
 from reports.validate import validate_report_document
@@ -88,7 +89,7 @@ class ReportGenerationHandler:
         )
         document = report.to_document()
         validate_report_document(document)
-        html = render_html(report)
+        html = render_html(localized_report(report))
         self._ensure_not_cancelled(context)
         self._progress(context, 75, "persisting_report", "Persisting report artifacts")
         json_artifact = context.evidence_store.put_json(

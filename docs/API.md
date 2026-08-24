@@ -2,16 +2,16 @@
 
 [English](en/API.md)
 
-WireScope публикует канонический HTTP API под префиксом `/api/v1`. Старый `/api/*` пока остаётся скрытым compatibility alias, чтобы существующий frontend и внешние клиенты можно было переводить постепенно.
+WireScope публикует канонический HTTP API под префиксом `/api/v1`. Старый `/api/*` пока остаётся скрытым compatibility alias для существующих установок и клиентов.
 
 ```text
 /api/v1/...   основной контракт
-/api/...      совместимый переходный alias
+/api/...      переходный compatibility alias
 ```
 
 В OpenAPI/Swagger показывается только `/api/v1`.
 
-## Базовые системные endpoints
+## Системное состояние
 
 ```text
 GET /api/v1/health
@@ -21,11 +21,15 @@ GET /api/v1/environment
 GET /api/v1/interfaces
 GET /api/v1/capabilities
 GET /api/v1/scan-profiles
+GET /api/v1/diagnostics
+GET /api/v1/diagnostics/export
 ```
 
-`/health` отвечает на вопрос «API-процесс жив?». `/ready` проверяет SQLite, актуальность миграций, worker и обязательные для базовой работы `dumpcap`/`tshark`.
+`/health` отвечает только на вопрос «API-процесс жив?». `/ready` проверяет SQLite, актуальность миграций, worker и обязательные для базовой работы `dumpcap`/`tshark`.
 
-Отсутствие необязательного provider, например `ssh-audit`, `smbclient` или даже Nmap, больше не делает весь appliance `not_ready`. Полный список доступных функций и обнаруженных бинарников возвращает `/capabilities`.
+Отсутствие optional provider, например `ssh-audit` или `smbclient`, не делает весь appliance `not_ready`. Полный список возможностей и обнаруженных бинарников возвращает `/capabilities`.
+
+`/diagnostics` — расширенный снимок для эксплуатации. В нём есть версия/платформа, listener, runtime checks, capabilities, SQLite `quick_check`, disk/evidence usage, retention и последние operational events. `/diagnostics/export` отдаёт тот же безопасный снимок JSON-файлом. Эти endpoints доступны только `auditor`.
 
 `/scan-profiles` возвращает фактически загруженные декларативные профили `discovery`, `standard` и `deep`. API не принимает произвольную строку флагов Nmap.
 
@@ -50,11 +54,11 @@ GET /api/v1/audits/{audit_id}/correlations
 GET /api/v1/audits/{audit_id}/diff?against={previous_audit_id}
 ```
 
-`dashboard` собирается из существующих jobs, inventory и findings. Отдельной «dashboard database» нет.
+`dashboard` собирается из существующих jobs, inventory и findings. Отдельной dashboard database нет.
 
-`correlations` объясняет, за счёт каких сигналов пассивные и активные наблюдения попали в один asset: MAC, IP, источник имени, Nmap и т.д. Hostname сам по себе не используется как основание для автоматического объединения узлов.
+`correlations` объясняет, за счёт каких сигналов passive и active observations относятся к одному asset. Hostname сам по себе не используется как основание для автоматического merge.
 
-`diff` сравнивает два сохранённых аудита и показывает появившиеся/исчезнувшие assets, открытые сервисы и findings. Сравнение строится на стабильной идентичности MAC → IP → имя как последний fallback; findings на разных сервисах одного узла не схлопываются в одну запись.
+`diff` сравнивает два сохранённых аудита и показывает появившиеся/исчезнувшие assets, открытые services и findings.
 
 ## Inventory
 
@@ -66,35 +70,38 @@ GET /api/v1/audits/{audit_id}/inventory
 GET /api/v1/audits/{audit_id}/observations
 ```
 
-Inventory остаётся нормализованным source of truth. Классификация (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`) — это hint с confidence и источниками сигнала, а не finding.
+Inventory остаётся нормализованным source of truth. Device classification (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`) — это hint с confidence и источниками сигнала, а не finding.
 
-## Jobs
+## Jobs и recovery
 
 ```text
 GET  /api/v1/jobs
 GET  /api/v1/jobs/{job_id}
 POST /api/v1/jobs/{job_id}/cancel
+POST /api/v1/jobs/{job_id}/retry
 GET  /api/v1/jobs/{job_id}/events
 GET  /api/v1/jobs/{job_id}/result
 ```
 
-Job status и большие результаты разделены: список jobs не тянет сырые provider outputs.
+`retry` разрешён только для `failed`, `interrupted` и `cancelled` jobs. Историческая job остаётся неизменной; WireScope создаёт новую queued job с теми же параметрами и связывает обе записи через job events.
+
+Это stage-level recovery. WireScope не пытается продолжить умерший subprocess с внутренней точки выполнения.
 
 ## Evidence
 
-Для finding можно получить зарегистрированные evidence-артефакты:
+Для finding можно получить зарегистрированные evidence artifacts:
 
 ```text
 GET /api/v1/audits/{audit_id}/findings/{finding_id}/evidence
 ```
 
-Контент артефакта читается через audit-scoped URL:
+Контент артефакта читается только через audit-scoped URL:
 
 ```text
 GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
-Перед выдачей WireScope проверяет, что artifact действительно относится к этому audit. Текстовые/JSON/XML evidence можно открыть inline; бинарные файлы отдаются как attachment. В ответе также есть `X-WireScope-SHA256`.
+Перед выдачей проверяется принадлежность artifact к audit. Текстовые/JSON/XML evidence могут открываться inline; бинарные файлы отдаются как attachment. Ответ содержит `X-WireScope-SHA256`.
 
 ## Reports
 
@@ -106,21 +113,63 @@ GET /api/v1/audits/{audit_id}/reports/{report_id}/export?format=html
 GET /api/v1/audits/{audit_id}/reports/{report_id}/export?format=markdown
 ```
 
-JSON `audit-report` v1 остаётся каноническим отчётом. HTML и Markdown — представления над теми же сохранёнными данными. Генерация export не запускает повторное сканирование.
+JSON `audit-report` v1 остаётся каноническим документом. HTML и Markdown строятся из тех же persisted data и не запускают повторное сканирование. `format=md` — alias для Markdown. PDF пока не является частью v1 release gate.
 
-`format=md` является коротким alias для Markdown. PDF пока не реализован.
+## Operational audit log
+
+```text
+GET /api/v1/audit-log
+```
+
+Доступно только роли `auditor`. Поддерживаются фильтры `actor`, `action`, `audit_id`, `limit`, `offset`.
+
+В журнал попадают значимые mutating operations: login/logout/password change, создание и запуск audit stages, cancel/retry, network changes, finding changes, report generation и maintenance cleanup.
+
+Журнал хранит request metadata, но **не** request body, пароль, session cookie или provider stdout.
+
+## Lifecycle и retention
+
+```text
+GET  /api/v1/maintenance/status
+POST /api/v1/maintenance/cleanup
+```
+
+`maintenance/status` показывает filesystem/evidence usage, SQLite state и текущую retention policy.
+
+Cleanup использует явный двухшаговый контракт:
+
+```json
+{"confirm": false, "include_raw": true}
+```
+
+возвращает preview и ничего не удаляет.
+
+```json
+{"confirm": true, "include_raw": true}
+```
+
+разрешает удалить aged raw evidence по policy. Normalized inventory, findings и reports автоматически не удаляются.
+
+Стандартные интервалы:
+
+- temporary: 24 часа;
+- debug: 7 дней;
+- PCAP: 30 дней;
+- Nmap XML / protocol raw output: 90 дней.
 
 ## Авторизация
 
-Публичные маршруты:
+Публичные routes:
 
 - `GET /health`, `/status`, `/ready`;
 - `POST /auth/login`, `/auth/logout`.
 
-Остальные routes требуют локальную сессию. Mutating endpoints требуют роль `auditor`; `viewer` может читать inventory, findings, reports, capabilities, diff и evidence.
+Остальные routes требуют локальную session. Обычные mutating endpoints требуют роль `auditor`; `viewer` может читать audits, inventory, findings, reports, diff и evidence. Operational audit log, diagnostics и maintenance доступны только auditor.
 
 Сессия хранится в HttpOnly cookie. Подробнее: [SECURITY_MODEL.md](SECURITY_MODEL.md).
 
 ## Правило совместимости v1
 
-Внутри `/api/v1` допустимы совместимые добавления: новые optional поля и новые endpoints. Изменение, которое ломает существующий request/response contract, должно получать новую major-версию API, а не менять v1 молча.
+В `/api/v1` допустимы совместимые добавления: новые optional fields и новые endpoints. Изменение, которое ломает существующий request/response contract, должно получать новую major API version, а не менять v1 молча.
+
+Критерии, после которых WireScope можно пометить как `v1.0.0-rc1`, описаны в [RELEASE_READINESS.md](RELEASE_READINESS.md).

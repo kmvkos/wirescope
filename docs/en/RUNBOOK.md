@@ -12,8 +12,8 @@ Commands below assume a system install in `/opt/wirescope`. For `--user-install`
 systemctl is-active wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
-python3 -m appliance verify --project-root /opt/wirescope
-python3 -m appliance detect
+/opt/wirescope/.venv/bin/python -m appliance verify --project-root /opt/wirescope
+/opt/wirescope/.venv/bin/python -m appliance detect
 ```
 
 Endpoint meaning:
@@ -184,7 +184,8 @@ Python should have no packet-capture capabilities.
 If `dumpcap -D` fails as `wirescope`, run verification and inspect the distro-specific Wireshark setup:
 
 ```bash
-sudo python3 -m appliance verify --project-root /opt/wirescope
+sudo /opt/wirescope/.venv/bin/python \
+  -m appliance verify --project-root /opt/wirescope
 ```
 
 ### User install
@@ -464,7 +465,7 @@ Full policy-driven cleanup of registered audits/evidence is not implemented yet,
 ## Dependency inventory
 
 ```bash
-python3 -m appliance inventory
+/opt/wirescope/.venv/bin/python -m appliance inventory
 ```
 
 or read:
@@ -478,8 +479,8 @@ packaging/inventory/DEPENDENCIES.md
 Useful output:
 
 ```bash
-python3 -m appliance detect
-python3 -m appliance verify --project-root /opt/wirescope
+/opt/wirescope/.venv/bin/python -m appliance detect
+/opt/wirescope/.venv/bin/python -m appliance verify --project-root /opt/wirescope
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
 systemctl status wirescope-api wirescope-worker --no-pager

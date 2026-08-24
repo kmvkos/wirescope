@@ -12,6 +12,10 @@ from backend.models import (
     AuditResponse,
     CreateAuditRequest,
     DiscoveryJobRequest,
+    FindingPageResponse,
+    FindingResponse,
+    FindingStateChangeRequest,
+    FindingsJobRequest,
     HealthResponse,
     InterfaceListResponse,
     InventorySummaryResponse,
@@ -37,6 +41,8 @@ from engine.interfaces import (
 )
 from engine.routes import RouteResolver, RouteValidationError
 from engine.scope import ScopeValidationError, ScopeValidator
+from findings.models import FindingStatus, Severity
+from findings.store import FindingNotFound, FindingStore, InvalidFindingState
 from inventory.models import AssetRecord, AssetState, DeviceClassHint
 from inventory.service import InventoryService
 from jobs.errors import JobExecutionError
@@ -67,6 +73,7 @@ def create_app(
     route_resolver: RouteResolver | None = None,
     inventory_service: InventoryService | None = None,
     observation_store: ProtocolObservationStore | None = None,
+    finding_store: FindingStore | None = None,
     environment_provider: Callable[[], dict[str, Any]] = get_environment,
 ) -> FastAPI:
     active_settings = settings or get_settings()
@@ -90,6 +97,7 @@ def create_app(
     active_observations = observation_store or ProtocolObservationStore(
         active_database
     )
+    active_findings = finding_store or FindingStore(active_database)
     module_registry = default_registry()
 
     application = FastAPI(
@@ -109,6 +117,7 @@ def create_app(
     application.state.routes = active_routes
     application.state.inventory = active_inventory
     application.state.observations = active_observations
+    application.state.findings = active_findings
 
     @application.get("/api/health", response_model=HealthResponse)
     @application.get("/api/status", response_model=HealthResponse)
@@ -631,6 +640,178 @@ def create_app(
             total=page.total,
         )
 
+    @application.post(
+        "/api/audits/{audit_id}/findings",
+        response_model=JobAcceptedResponse,
+        status_code=202,
+    )
+    def enqueue_findings(
+        audit_id: str,
+        request: FindingsJobRequest,
+    ) -> JobAcceptedResponse:
+        try:
+            audit = active_jobs.get_audit(audit_id)
+            job = active_jobs.create_job(
+                audit_id=audit.id,
+                job_type="findings_evaluation",
+                target=audit.interface,
+                parameters={},
+                priority=request.priority,
+                resource_key=f"audit:{audit.id}",
+                resource_group="findings",
+                resource_limit=active_settings.max_findings_jobs,
+            )
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_state_transition",
+                    "message": str(exc),
+                },
+            ) from exc
+        return JobAcceptedResponse(
+            audit_id=audit.id,
+            job_id=job.id,
+            status=job.status,
+            status_url=f"/api/jobs/{job.id}",
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/findings",
+        response_model=FindingPageResponse,
+    )
+    def list_findings(
+        audit_id: str,
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        severity: Severity | None = None,
+        status: FindingStatus | None = None,
+        asset_id: str | None = None,
+        service_id: str | None = None,
+        rule_id: str | None = None,
+        family: str | None = None,
+    ) -> FindingPageResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        page = active_findings.list_findings(
+            audit_id=audit_id,
+            limit=limit,
+            offset=offset,
+            severity=severity,
+            status=status,
+            asset_id=asset_id,
+            service_id=service_id,
+            rule_id=rule_id,
+            family=family,
+        )
+        return FindingPageResponse(
+            items=[_finding_response(item, include_events=False) for item in page.items],
+            limit=page.limit,
+            offset=page.offset,
+            total=page.total,
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/findings/{finding_id}",
+        response_model=FindingResponse,
+    )
+    def get_finding(audit_id: str, finding_id: str) -> FindingResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+            return _finding_response(
+                active_findings.get_finding(
+                    audit_id=audit_id,
+                    finding_id=finding_id,
+                    include_events=True,
+                )
+            )
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except FindingNotFound as exc:
+            raise _not_found(exc) from exc
+
+    @application.post(
+        "/api/audits/{audit_id}/findings/{finding_id}/suppress",
+        response_model=FindingResponse,
+    )
+    def suppress_finding(
+        audit_id: str,
+        finding_id: str,
+        request: FindingStateChangeRequest,
+    ) -> FindingResponse:
+        return _change_finding_status(
+            audit_id,
+            finding_id,
+            FindingStatus.SUPPRESSED,
+            request,
+        )
+
+    @application.post(
+        "/api/audits/{audit_id}/findings/{finding_id}/accept-risk",
+        response_model=FindingResponse,
+    )
+    def accept_finding_risk(
+        audit_id: str,
+        finding_id: str,
+        request: FindingStateChangeRequest,
+    ) -> FindingResponse:
+        return _change_finding_status(
+            audit_id,
+            finding_id,
+            FindingStatus.ACCEPTED_RISK,
+            request,
+        )
+
+    @application.post(
+        "/api/audits/{audit_id}/findings/{finding_id}/reopen",
+        response_model=FindingResponse,
+    )
+    def reopen_finding(
+        audit_id: str,
+        finding_id: str,
+        request: FindingStateChangeRequest,
+    ) -> FindingResponse:
+        return _change_finding_status(
+            audit_id,
+            finding_id,
+            FindingStatus.OPEN,
+            request,
+        )
+
+    def _change_finding_status(
+        audit_id: str,
+        finding_id: str,
+        to_status: FindingStatus,
+        request: FindingStateChangeRequest,
+    ) -> FindingResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+            return _finding_response(
+                active_findings.change_status(
+                    audit_id=audit_id,
+                    finding_id=finding_id,
+                    to_status=to_status,
+                    actor=request.actor,
+                    reason=request.reason,
+                )
+            )
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except FindingNotFound as exc:
+            raise _not_found(exc) from exc
+        except InvalidFindingState as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_finding_state",
+                    "message": str(exc),
+                },
+            ) from exc
+
     @application.get(
         "/api/audits/{audit_id}/jobs",
         response_model=JobPageResponse,
@@ -830,6 +1011,13 @@ def _job_page(page) -> JobPageResponse:
 
 def _event_response(event: JobEventRecord) -> JobEventResponse:
     return JobEventResponse(**event.model_dump())
+
+
+def _finding_response(finding, *, include_events: bool = True) -> FindingResponse:
+    payload = finding.model_dump(mode="json")
+    if not include_events:
+        payload["state_events"] = []
+    return FindingResponse(**payload)
 
 
 def _not_found(error: EntityNotFound) -> HTTPException:

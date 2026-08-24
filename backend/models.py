@@ -193,3 +193,59 @@ class ObservationPageResponse(BaseModel):
     limit: int
     offset: int
     total: int
+
+
+class FindingsJobRequest(BaseModel):
+    priority: int = Field(default=0, ge=-100, le=100)
+
+
+class FindingStateChangeRequest(BaseModel):
+    actor: str = Field(min_length=1, max_length=128)
+    reason: str = Field(min_length=1, max_length=512)
+
+
+class FindingStateEventResponse(BaseModel):
+    id: int
+    finding_id: str
+    audit_id: str
+    created_at: datetime
+    actor: str
+    from_status: str
+    to_status: str
+    reason: str
+    details: dict[str, Any]
+
+
+class FindingResponse(BaseModel):
+    id: str
+    audit_id: str
+    asset_id: str | None
+    service_id: str | None
+    rule_id: str
+    rule_version: str
+    schema_version: int
+    family: str
+    title: str
+    severity: str
+    confidence: str
+    status: str
+    description: str
+    rationale: str
+    recommendation: str
+    data: dict[str, Any]
+    observation_ids: list[str]
+    evidence_artifact_ids: list[str]
+    dedupe_key: str
+    first_seen: datetime
+    last_seen: datetime
+    created_at: datetime
+    updated_at: datetime
+    state_events: list[FindingStateEventResponse] = Field(default_factory=list)
+
+
+class FindingPageResponse(BaseModel):
+    items: list[FindingResponse]
+    limit: int
+    offset: int
+    total: int
+

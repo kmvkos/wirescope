@@ -13,6 +13,7 @@ from config.settings import Settings, get_settings
 from jobs.errors import JobCancelled, JobExecutionError
 from jobs.handlers import (
     ActiveDiscoveryHandler,
+    FindingsEvaluationHandler,
     PassiveDiscoveryHandler,
     ProtocolAuditHandler,
 )
@@ -255,6 +256,7 @@ def build_registry() -> HandlerRegistry:
     registry.register("passive_discovery", PassiveDiscoveryHandler())
     registry.register("active_discovery", ActiveDiscoveryHandler())
     registry.register("protocol_audit", ProtocolAuditHandler())
+    registry.register("findings_evaluation", FindingsEvaluationHandler())
     return registry
 
 

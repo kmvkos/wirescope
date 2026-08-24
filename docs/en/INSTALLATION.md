@@ -2,11 +2,18 @@
 
 [Русский](../INSTALLATION.md)
 
-WireScope can be installed as a dedicated Linux appliance or on an existing VM/server. Supported targets include Debian/Ubuntu, Fedora/RHEL/Rocky, and openSUSE on `amd64` and `arm64`. Raspberry Pi is a supported hardware option but is not required.
+WireScope can be installed as a dedicated Linux appliance, a VM, or an application on an existing server. Supported targets include Debian/Ubuntu, Fedora/RHEL/Rocky, and openSUSE on `amd64` and `arm64`. Raspberry Pi is a supported hardware option but is not required.
 
-The installer runs **from the Git checkout**. A typical system installation keeps code in `/opt/wirescope`, mutable data in `/var/lib/wirescope`, and configuration in `/etc/wirescope`.
+The installer runs **from the Git checkout**. The recommended system layout is:
 
-## Recommended installation
+```text
+/opt/wirescope                  Git checkout + .venv
+/etc/wirescope                  configuration
+/var/lib/wirescope              SQLite, runtime, evidence, backups
+/etc/systemd/system             systemd units
+```
+
+## Clone the repository
 
 The repository is private, so use an SSH key or GitHub token.
 
@@ -19,17 +26,39 @@ sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
 ```
 
-Clone without `sudo` so Git uses the current user's SSH keys. Checkout before moving the repository into `/opt` to avoid unnecessary ownership and `safe.directory` problems.
+Clone without `sudo` so Git uses the current user's SSH configuration. Checkout before moving the repository into `/opt` to avoid unnecessary ownership and `safe.directory` issues.
 
-Basic system installation:
+## Basic system installation
 
 ```bash
 sudo ./packaging/install.sh --generate-admin-password
 ```
 
-The API defaults to **`127.0.0.1:8000`**, which is the safe setup for a local browser, kiosk, or reverse proxy.
+A normal appliance install listens on **`0.0.0.0:8000`**. This is intentional: the UI is expected to be reachable through any configured WireScope interface, including Ethernet and Wi-Fi.
 
-### Local kiosk
+A local browser can still use:
+
+```text
+http://127.0.0.1:8000/
+```
+
+while another machine can use the address of a WireScope interface:
+
+```text
+http://<wirescope-ip>:8000/
+```
+
+A deployment that needs loopback-only access can request it explicitly:
+
+```bash
+sudo ./packaging/install.sh \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+```
+
+Firewall rules, TLS, and a reverse proxy remain available as deployment hardening options; they are not mandatory WireScope defaults.
+
+## Local kiosk
 
 ```bash
 sudo ./packaging/install.sh \
@@ -38,41 +67,30 @@ sudo ./packaging/install.sh \
   --enable-kiosk
 ```
 
-`--with-kiosk` installs a minimal display stack: Chromium plus Cage or Xorg/xinit. A full GNOME/KDE/XFCE desktop is not required. VMware uses the Xorg path.
+`--with-kiosk` installs a minimal display stack: Chromium and Cage or Xorg/xinit. A full GNOME/KDE/XFCE desktop is not required. VMware uses the Xorg path.
 
-The system kiosk starts on `tty1` after boot and opens `http://127.0.0.1:8000/`. Restarting Chromium does not stop the API, worker, or an active audit.
+After boot, the system kiosk owns `tty1` and opens `http://127.0.0.1:8000/`. Restarting Chromium does not stop the API, worker, or an active audit.
 
-### Access from another machine
+## TLS / reverse proxy when needed
 
-Preferred layout:
+For environments where plain HTTP is undesirable, bind WireScope to loopback and place Caddy/nginx in front of it:
 
 ```text
 browser → HTTPS 443 → Caddy/nginx → 127.0.0.1:8000
 ```
 
-Install WireScope on loopback with proxy trust enabled:
+Example:
 
 ```bash
 sudo ./packaging/install.sh \
   --generate-admin-password \
+  --bind-host 127.0.0.1 \
   --trust-proxy
 ```
 
-Caddy/nginx and firewall examples live under `packaging/proxy/` and are copied to `/etc/wirescope/proxy/` by a system install. The installer does not start the reverse proxy or rewrite the host firewall.
+Templates live under `packaging/proxy/` and are copied to `/etc/wirescope/proxy/` by a system installation. The installer does not start Caddy/nginx automatically and does not rewrite the host firewall.
 
-### Direct LAN bind
-
-If a reverse proxy is intentionally not used, expose the API explicitly:
-
-```bash
-sudo ./packaging/install.sh \
-  --generate-admin-password \
-  --bind-host 0.0.0.0
-```
-
-Plain HTTP on `0.0.0.0:8000` is not the recommended production layout. Restrict it with a firewall or use direct TLS.
-
-Direct TLS example:
+Direct TLS is also supported:
 
 ```bash
 sudo ./packaging/install.sh \
@@ -83,65 +101,39 @@ sudo ./packaging/install.sh \
   --tls-key /etc/wirescope/tls/key.pem
 ```
 
-PEM contents do not go into systemd units; only certificate/key paths are stored in the environment file.
+Only certificate/key paths are stored in the environment/systemd configuration; PEM contents are not embedded in unit files.
 
 ## What the installer does
 
-`packaging/install.sh` invokes `python -m appliance install` and performs idempotent setup:
+`packaging/install.sh` invokes the appliance installer and idempotently performs:
 
-1. detect distro family, package manager, and architecture;
-2. install required packages and available optional providers;
-3. create or reuse the unprivileged `wirescope` account;
-4. create data/runtime/evidence directories;
-5. configure capabilities only on `dumpcap`;
-6. create `.venv` and install pinned Python dependencies;
-7. write `/etc/wirescope/wirescope.env`;
-8. install API/worker systemd units and optional kiosk units;
-9. apply Alembic migrations;
-10. create the first auditor without a built-in default password;
-11. start services unless `--no-start` is used.
+1. distro family, package manager, and architecture detection;
+2. required packages and available optional-provider installation;
+3. creation or reuse of the unprivileged `wirescope` account;
+4. data/runtime/evidence directory setup;
+5. packet-capture privileges on `dumpcap` only;
+6. `.venv` creation and pinned Python dependency installation;
+7. `/etc/wirescope/wirescope.env` generation;
+8. API/worker systemd units and optional kiosk units;
+9. Alembic migrations;
+10. first `auditor` creation without a built-in default password;
+11. service startup unless `--no-start` is supplied.
 
 Nuclei and Nikto are not installed by default.
 
-## Main paths
+## Services
 
-System install:
-
-```text
-/opt/wirescope
-    Git checkout + .venv
-
-/etc/wirescope/
-    wirescope.env
-    proxy/
-    initial-admin.txt   # only when a password is generated; remove after storing it
-
-/var/lib/wirescope/
-    wirescope.db
-    evidence/
-    runtime/
-    backups/
-```
-
-User installs use `~/.local/share/wirescope`, `~/.config/wirescope`, and `~/.config/systemd/user`.
-
-## Service model
-
-A normal system install runs:
+A normal system installation runs:
 
 ```text
-wirescope-worker.service
 wirescope-api.service
+wirescope-worker.service
 [wirescope-kiosk.service]
 ```
 
-API and worker run as an unprivileged account. System units receive `wireshark` membership through `SupplementaryGroups=wireshark`.
+API and worker run as an unprivileged account.
 
-User units cannot use the same mechanism, so the installer launches through `sg wireshark` to make updated group membership effective without requiring a logout.
-
-## Packet-capture privileges
-
-Expected state:
+Packet-capture privileges should remain on `dumpcap` only:
 
 ```text
 /usr/bin/dumpcap
@@ -163,11 +155,15 @@ sudo -u wirescope /usr/bin/dumpcap -D
 
 ## First login
 
-With `--generate-admin-password`, the initial password is written to a protected file, normally `/etc/wirescope/initial-admin.txt`. Store the password in a password manager and remove the file.
+With `--generate-admin-password`, the installer writes the initial password to a protected file, normally:
 
-The default GUI username is `auditor`. There is no permanent built-in password.
+```text
+/etc/wirescope/initial-admin.txt
+```
 
-Recovery if access is lost:
+The default username is `auditor`. There is no permanent built-in password. Store the generated password securely and remove the file afterwards.
+
+Password recovery:
 
 ```bash
 /opt/wirescope/.venv/bin/python -m appliance set-password auditor
@@ -177,37 +173,37 @@ Recovery if access is lost:
 
 ```bash
 systemctl status wirescope-api wirescope-worker
-curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/v1/health
-curl -sS http://127.0.0.1:8000/api/ready
+curl -sS http://127.0.0.1:8000/api/v1/ready
+curl -sS http://127.0.0.1:8000/api/v1/capabilities
 ```
 
-`/api/v1` is the canonical API. `/api` remains a compatibility alias for the current GUI and existing clients.
+From another machine, replace `127.0.0.1` with the WireScope interface address.
 
-`/api/health` checks that the API is alive. `/api/ready` also requires an accessible database, current migrations, a live worker heartbeat, and required binaries.
+`/health` checks that the API is alive. `/ready` checks SQLite, migrations, the worker, `dumpcap`, and `tshark`. Optional providers are reported through `/capabilities` and do not make the entire appliance `not_ready`.
 
-## Debian / Ubuntu
+## Distribution notes
 
-The installer uses `apt`. Core packages include Python, `iproute2`, `tshark`, `wireshark-common`/`dumpcap`, SQLite, and `libcap2-bin`.
+### Debian / Ubuntu
+
+The installer uses `apt`. Core packages include Python, `iproute2`, Wireshark CLI tools, SQLite, and `libcap2-bin`.
 
 ```bash
 sudo ./packaging/install.sh --generate-admin-password
 ```
 
-Add `--with-kiosk --enable-kiosk` for a local kiosk.
+### Fedora / RHEL / Rocky
 
-## Fedora / RHEL / Rocky
-
-The installer uses `dnf`, or `yum` when `dnf` is unavailable. `dumpcap` and `tshark` come from `wireshark-cli`.
+The installer uses `dnf`, with `yum` as a fallback. `dumpcap`/`tshark` normally come from `wireshark-cli`.
 
 ```bash
 sudo dnf -y install python3
 sudo ./packaging/install.sh --generate-admin-password
 ```
 
-## openSUSE / SLES
+### openSUSE / SLES
 
-The installer uses `zypper`; the capture package is `wireshark-cli` or the distro fallback.
+The installer uses `zypper` and the distro Wireshark CLI package.
 
 ```bash
 sudo zypper --non-interactive install python3
@@ -222,90 +218,89 @@ sudo ./packaging/install.sh --generate-admin-password
   --generate-admin-password
 ```
 
-OS packages and the initial `dumpcap` capability setup still need administrative configuration at least once.
+User installs use:
+
+```text
+~/.local/share/wirescope
+~/.config/wirescope
+~/.config/systemd/user
+```
+
+OS packages and the initial `dumpcap` setup may still require root once.
 
 ## Useful flags
 
 ```text
---dry-run                 show the plan without modifying the system
+--dry-run                 show the plan without changes
 --skip-packages           skip the package manager
 --skip-pip                reuse the current venv
 --no-start                do not start units
---no-optional-providers   base dependencies only
---with-kiosk              install minimal kiosk packages
+--no-optional-providers   install base dependencies only
+--with-kiosk              install the minimal kiosk stack
 --enable-kiosk            enable the system tty1 kiosk
 --user-kiosk              user-session kiosk
 --user-install            user systemd install
---bind-host               API address; default 127.0.0.1
+--bind-host               API bind; appliance default 0.0.0.0
 --bind-port               API port; default 8000
 --trust-proxy             reverse-proxy mode
 --tls-cert / --tls-key    direct TLS
---overwrite-env           replace an existing wirescope.env
+--overwrite-env           replace wirescope.env
 ```
 
-## Updating an existing VM
+## Updating an installed VM
 
-If the checkout already lives at `/opt/wirescope`, update it through normal Git operations.
-
-Before updating:
+If the checkout already lives at `/opt/wirescope`:
 
 ```bash
 cd /opt/wirescope
 git status
 git branch --show-current
 git fetch origin
-```
-
-If the worktree is clean and the current branch is the one you want:
-
-```bash
 git pull --ff-only
 ```
 
-After a code-only update with no new migration or dependency changes, this is normally enough:
+After a code-only update with no migration/dependency changes:
 
 ```bash
 sudo systemctl restart wirescope-worker wirescope-api
-curl -sS http://127.0.0.1:8000/api/ready
+curl -sS http://127.0.0.1:8000/api/v1/ready
 ```
 
-For the general upgrade path use:
+For the full upgrade path:
 
 ```bash
 sudo ./packaging/upgrade.sh --project-root /opt/wirescope
 ```
 
-The upgrade path rechecks environment, venv, dumpcap, and migrations.
+The upgrade entrypoint uses the same `0.0.0.0` appliance default unless an explicit `--bind-host` override is provided.
 
-## Backup before a substantial upgrade
+## Backup and rollback
+
+Before a substantial upgrade:
 
 ```bash
 sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
   /opt/wirescope/.venv/bin/python -m appliance backup
 ```
 
-Backups are stored below `/var/lib/wirescope/backups/`.
-
-## Rollback
+For rollback:
 
 1. stop API and worker;
-2. restore the pre-upgrade backup if schema/data formats changed;
+2. restore the backup if schema/data formats changed;
 3. return to the previous known-good Git revision;
 4. reinstall the editable package in `.venv` if needed;
 5. start worker and API;
-6. verify `/api/ready`.
+6. verify `/api/v1/ready`.
 
-Alembic is treated as a forward migration mechanism during normal operation; an arbitrary `alembic downgrade` is not a replacement for restoring a tested backup.
+## Restart / power loss
 
-## Power loss and restart
-
-SQLite uses WAL and short transactions. Evidence files are written atomically.
+SQLite uses WAL mode and short transactions. Evidence files are written atomically.
 
 After a worker restart:
 
 - `running` jobs become `interrupted` with `application_restart`;
 - `queued` jobs remain queued;
 - there is no automatic retry;
-- stale temporary files and locks are cleaned conservatively.
+- stale locks/temp files are cleaned conservatively.
 
 Restarting the browser or kiosk does not change job state.

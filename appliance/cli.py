@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 
 from appliance.backup import create_backup, restore_backup
-from appliance.bootstrap import create_initial_operators, read_password_file
+from appliance.bootstrap import (
+    BootstrapError,
+    create_initial_operators,
+    read_password_file,
+    set_operator_password,
+)
 from appliance.detect import detect_platform
 from appliance.dumpcap import inspect_dumpcap
 from appliance.host import RealHost
 from appliance.install import InstallConfig, install
 from appliance.inventory import build_inventory, render_inventory_text
-from appliance.paths import InstallPaths, discover_project_root
+from appliance.paths import ENV_FILE_NAME, InstallPaths, discover_project_root
 from appliance.release import checksum_paths, default_release_paths, render_checksums
 from appliance.tls import self_signed_argv
 from appliance.wait import wait_ready, health_url
@@ -138,6 +144,28 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--viewer-username", default="viewer")
     bootstrap.add_argument("--viewer-password-file", default="")
     bootstrap.set_defaults(handler=cmd_bootstrap_admin)
+
+    passwd = sub.add_parser(
+        "set-password",
+        help="Reset a local operator password and write a mode 0600 file",
+    )
+    passwd.add_argument(
+        "username",
+        nargs="?",
+        default="auditor",
+        help="Local GUI username (default: auditor)",
+    )
+    passwd.add_argument(
+        "--password-file",
+        default="",
+        help="Existing mode 0600 file to apply instead of generating a password",
+    )
+    passwd.add_argument(
+        "--output",
+        default="",
+        help="Where to write the password (default: <data-dir>/initial-admin.txt)",
+    )
+    passwd.set_defaults(handler=cmd_set_password)
 
     backup = sub.add_parser("backup", help="Write a SQLite/evidence backup")
     backup.add_argument("--backup-dir", default="")
@@ -266,8 +294,50 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _parse_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key:
+            values[key] = value
+    return values
+
+
+def apply_service_environment() -> Path | None:
+    """Load /etc or ~/.config wirescope.env when WIRESCOPE_DATABASE_PATH is unset."""
+
+    if os.environ.get("WIRESCOPE_DATABASE_PATH"):
+        return None
+    candidates = (
+        Path("/etc/wirescope") / ENV_FILE_NAME,
+        Path.home() / ".config/wirescope" / ENV_FILE_NAME,
+    )
+    for path in candidates:
+        if not path.is_file():
+            continue
+        for key, value in _parse_env_file(path).items():
+            os.environ.setdefault(key, value)
+        return path
+    return None
+
+
+def _runtime_settings():
+    apply_service_environment()
+    get_settings.cache_clear()
+    return get_settings()
+
+
 def cmd_bootstrap_admin(args: argparse.Namespace) -> int:
-    settings = get_settings()
+    settings = _runtime_settings()
     auditor = read_password_file(Path(args.auditor_password_file))
     viewer_password = ""
     if args.viewer_password_file:
@@ -284,6 +354,29 @@ def cmd_bootstrap_admin(args: argparse.Namespace) -> int:
             print(username)
     else:
         print("# unchanged")
+    return 0
+
+
+def cmd_set_password(args: argparse.Namespace) -> int:
+    settings = _runtime_settings()
+    password = None
+    output = Path(args.output).expanduser() if args.output else None
+    if args.password_file:
+        source = read_password_file(Path(args.password_file).expanduser())
+        password = source.password
+        if output is None:
+            output = source.path
+    try:
+        path = set_operator_password(
+            settings,
+            username=args.username,
+            password=password,
+            output=output,
+        )
+    except BootstrapError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"password_file={path}")
     return 0
 
 

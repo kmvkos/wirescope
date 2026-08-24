@@ -585,6 +585,20 @@ There is no built-in default password. The installer creates the first
 auditor only when the `users` table is empty, using a mode `0600` password
 file. An optional viewer password file may be supplied the same way.
 
+Operators change an existing password in the GUI: sign in, then **Сменить
+пароль**. That flow keeps the current session and revokes the user's other
+sessions. CLI reset is for lock-out recovery only:
+
+```bash
+/opt/wirescope/.venv/bin/python -m appliance set-password auditor
+```
+
+The command updates SQLite, revokes that user's sessions, writes a mode
+`0600` file (default: `<data-dir>/initial-admin.txt`), and prints only
+`password_file=...`. It loads `/etc/wirescope/wirescope.env` (or the
+user-install env file) when `WIRESCOPE_DATABASE_PATH` is unset so the
+live API database is the one that changes.
+
 Development-only environment bootstrap (`WIRESCOPE_BOOTSTRAP_*`) still works
 when the table is empty, but must not be copied into systemd units.
 

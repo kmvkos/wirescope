@@ -9,6 +9,7 @@ SCREENS = (
     "login",
     "home",
     "network",
+    "password",
     "environment",
     "interface",
     "scope",
@@ -78,6 +79,22 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "/api/network/interfaces" in script
     assert 'id="network-button"' in html
     assert 'data-screen="network"' in html
+    assert 'id="password-button"' in html
+    assert 'data-screen="password"' in html
+    assert 'id="password-current"' in html
+    assert 'id="password-new"' in html
+    assert 'id="password-confirm"' in html
+    assert "/api/auth/password" in script
+    assert "submitPasswordChange" in script
+    assert 't("password.success")' in script
+    assert "Сменить пароль" in html
+    assert "Текущий пароль" in html
+    assert 'type="password"' in html.split('id="password-current"')[1].split(">")[0]
+    assert 'type="password"' in html.split('id="password-new"')[1].split(">")[0]
+    assert 'type="password"' in html.split('id="password-confirm"')[1].split(">")[0]
+    assert 'method="post"' in html.split('id="password-form"')[1].split(">")[0]
+    assert "Этот сеанс останется" in i18n
+    assert "Этот сеанс остаётся активным" in i18n
     assert "Откройте GUI по адресу" in i18n
     assert "await showConfirm()" in script
     assert "state.draft.proposed" in script
@@ -119,6 +136,10 @@ def test_i18n_russian_default_matches_english_fallback_keys():
     assert "соединение отклонено" in i18n
     assert "login.noMgmtNetwork" in russian
     assert "Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск" in i18n
+    assert "password.title" in russian
+    assert "password.success" in russian
+    assert "action.changePassword" in russian
+    assert "screen.password" in russian
 
 
 def test_root_is_public_and_static_assets_load(api_context):

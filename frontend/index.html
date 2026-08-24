@@ -95,6 +95,12 @@
                     class="secondary"
                     data-i18n="action.network"
                 >Сеть</button>
+                <button
+                    type="button"
+                    id="password-button"
+                    class="secondary"
+                    data-i18n="action.changePassword"
+                >Сменить пароль</button>
             </div>
             <div id="audit-list" class="list" aria-live="polite"></div>
         </section>
@@ -143,6 +149,57 @@
                 <button type="button" class="secondary" data-nav="home" data-i18n="action.back">Назад</button>
                 <button type="button" class="primary" id="network-apply" data-i18n="network.apply">Применить</button>
             </div>
+        </section>
+
+        <section
+            id="screen-password"
+            class="screen"
+            data-screen="password"
+            hidden
+        >
+            <h2 data-i18n="password.title">Сменить пароль</h2>
+            <p class="hint" data-i18n="password.hint">Этот сеанс останется. Другие сеансы этого пользователя будут завершены.</p>
+            <form id="password-form" method="post" action="#" autocomplete="off">
+                <label for="password-current" data-i18n="password.current">Текущий пароль</label>
+                <input
+                    id="password-current"
+                    name="current_password"
+                    type="password"
+                    required
+                    minlength="1"
+                    maxlength="128"
+                    autocomplete="current-password"
+                    spellcheck="false"
+                >
+                <label for="password-new" data-i18n="password.new">Новый пароль</label>
+                <input
+                    id="password-new"
+                    name="new_password"
+                    type="password"
+                    required
+                    minlength="8"
+                    maxlength="128"
+                    autocomplete="new-password"
+                    spellcheck="false"
+                >
+                <label for="password-confirm" data-i18n="password.confirm">Повторите новый пароль</label>
+                <input
+                    id="password-confirm"
+                    name="confirm_password"
+                    type="password"
+                    required
+                    minlength="8"
+                    maxlength="128"
+                    autocomplete="new-password"
+                    spellcheck="false"
+                >
+                <p id="password-error" class="error" role="alert" hidden></p>
+                <p id="password-result" class="callout" hidden></p>
+                <div class="actions">
+                    <button type="button" class="secondary" data-nav="home" data-i18n="action.back">Назад</button>
+                    <button type="submit" class="primary" data-i18n="password.submit">Сменить пароль</button>
+                </div>
+            </form>
         </section>
 
         <section

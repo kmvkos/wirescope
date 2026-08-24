@@ -6,7 +6,13 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from auth.models import LoginRequest, Role, SessionUser, SessionUserResponse
+from auth.models import (
+    ChangePasswordRequest,
+    LoginRequest,
+    Role,
+    SessionUser,
+    SessionUserResponse,
+)
 from auth.service import AuthError, AuthService
 from backend.models import (
     AssetPageResponse,
@@ -221,6 +227,23 @@ def create_app(
     @application.get("/api/auth/me", response_model=SessionUserResponse)
     def current_user(request: Request) -> SessionUserResponse:
         return _session_payload(request.state.user)
+
+    @application.post("/api/auth/password", response_model=SessionUserResponse)
+    def change_password(
+        payload: ChangePasswordRequest,
+        request: Request,
+    ) -> SessionUserResponse:
+        token = request.cookies.get(active_settings.session_cookie_name)
+        try:
+            user = active_auth.change_password(
+                request.state.user,
+                payload.current_password,
+                payload.new_password,
+                keep_token=token,
+            )
+        except AuthError as exc:
+            raise _password_change_http_error(exc) from exc
+        return _session_payload(user)
 
     @application.get("/api/health", response_model=HealthResponse)
     @application.get("/api/status", response_model=HealthResponse)
@@ -1395,9 +1418,26 @@ def _is_public_request(request: Request) -> bool:
 
 def _requires_auditor(request: Request) -> bool:
     path = request.url.path
+    if path == "/api/auth/password":
+        return False
     if path == "/api/network" or path.startswith("/api/network/"):
         return True
     return request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
+
+
+def _password_change_http_error(error: AuthError) -> HTTPException:
+    if error.code == "invalid_password":
+        return HTTPException(
+            status_code=422,
+            detail={"code": error.code, "message": error.message},
+        )
+    return HTTPException(
+        status_code=401,
+        detail={
+            "code": "invalid_credentials",
+            "message": "Invalid username or password",
+        },
+    )
 
 
 def _netctl_http_error(error: Exception) -> HTTPException:

@@ -19,9 +19,10 @@
   (`WIRESCOPE_DOCS_ENABLED=false`). Development defaults remain enabled.
 
 Authentication is local SQLite users with roles `auditor` and `viewer`.
-Sessions use HttpOnly cookies; mutating routes require `auditor`. Health and
-readiness stay public so a local kiosk or LAN browser can show appliance state
-before login.
+Sessions use HttpOnly cookies; mutating routes require `auditor`, except
+`POST /api/auth/password` (the signed-in user changes their own password).
+Health and readiness stay public so a local kiosk or LAN browser can show
+appliance state before login.
 
 ## Bind address, TLS, and firewall
 

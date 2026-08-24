@@ -46,6 +46,10 @@ On `--user-install`, use `systemctl --user` and `journalctl --user`.
 4. Delete `/etc/wirescope/initial-admin.txt` after copying it to a password
    manager.
 
+Сменить пароль GUI `auditor`: после входа нажмите **Сменить пароль**
+(рядом с **Сеть**). Текущий сеанс остаётся; другие сеансы этого пользователя
+завершаются. CLI `set-password` — только если вход в GUI уже невозможен.
+
 The GUI is Russian. Viewers can inspect results but cannot start or cancel
 work. If login does not stick, the page is probably HTTP while cookies are
 `Secure` — open the GUI over HTTPS.

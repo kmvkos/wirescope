@@ -262,6 +262,16 @@ def test_cli_skip_packages_enable_kiosk():
     assert args.with_kiosk is False
 
 
+def test_cli_set_password_parses_username():
+    parser = build_parser()
+    args = parser.parse_args(["set-password", "auditor"])
+    assert args.username == "auditor"
+    assert args.password_file == ""
+    assert args.output == ""
+    defaulted = parser.parse_args(["set-password"])
+    assert defaulted.username == "auditor"
+
+
 def test_cli_project_root_defaults_to_checkout_not_only_opt():
     parser = build_parser()
     args = parser.parse_args(["install"])

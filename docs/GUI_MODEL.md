@@ -10,6 +10,7 @@ hardware is optional; Raspberry Pi OS is not required.
 
 ```text
 login
+  → home (audits · Сеть · Сменить пароль)
   → new audit
   → environment
   → interface
@@ -46,7 +47,8 @@ Local users persist in SQLite. Roles are `auditor` and `viewer`.
 | Action | Auditor | Viewer |
 | --- | --- | --- |
 | Sign in / view audits, jobs, inventory, findings, reports | yes | yes |
-| Create audits, enqueue jobs, cancel, change finding state, generate reports | yes | no |
+| Change own password | yes | yes |
+| Create audits, enqueue jobs, cancel, change finding state, generate reports, edit network | yes | no |
 
 Sessions are HttpOnly `SameSite=strict` cookies. The cookie stores a random
 token; SQLite stores only the SHA-256 digest. Login uses PBKDF2-HMAC-SHA256.
@@ -58,6 +60,13 @@ Bootstrap users are created only when the `users` table is empty and
 There is no built-in default password. The appliance installer creates the
 first auditor from a mode `0600` password file; see
 [INSTALLATION.md](INSTALLATION.md).
+
+After sign-in, **Сменить пароль** on the home screen (same style as **Сеть**)
+lets the current user set a new password: current, new, confirm. The API
+verifies the current hash, writes the new hash, and revokes other sessions
+for that user. The browser session that submitted the form stays signed in.
+Wrong current password returns a generic `401`. The CLI `set-password`
+command remains for lock-out recovery only.
 
 ## Progress and recovery
 

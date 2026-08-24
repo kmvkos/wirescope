@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import re
+import time
 import uuid
 
 from sqlalchemy import delete, inspect, select
@@ -24,6 +25,47 @@ from persistence.models import SessionModel, UserModel, utc_now
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,62}[A-Za-z0-9]$")
 MIN_PASSWORD_LENGTH = 8
 _DUMMY_HASH = dummy_hash()
+PASSWORD_CHANGE_MAX_FAILURES = 8
+PASSWORD_CHANGE_WINDOW_SECONDS = 900.0
+
+
+class AttemptThrottle:
+    """In-memory failure window. Does not store secrets."""
+
+    def __init__(
+        self,
+        *,
+        max_failures: int = PASSWORD_CHANGE_MAX_FAILURES,
+        window_seconds: float = PASSWORD_CHANGE_WINDOW_SECONDS,
+    ) -> None:
+        self.max_failures = max_failures
+        self.window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+
+    def _prune(self, key: str, now: float) -> list[float]:
+        stamps = [
+            stamp
+            for stamp in self._failures.get(key, [])
+            if now - stamp < self.window_seconds
+        ]
+        if stamps:
+            self._failures[key] = stamps
+        else:
+            self._failures.pop(key, None)
+        return stamps
+
+    def blocked(self, key: str, *, now: float | None = None) -> bool:
+        current = time.monotonic() if now is None else now
+        return len(self._prune(key, current)) >= self.max_failures
+
+    def record_failure(self, key: str, *, now: float | None = None) -> None:
+        current = time.monotonic() if now is None else now
+        stamps = self._prune(key, current)
+        stamps.append(current)
+        self._failures[key] = stamps
+
+    def clear(self, key: str) -> None:
+        self._failures.pop(key, None)
 
 
 class AuthError(ValueError):
@@ -38,6 +80,7 @@ class AuthService:
         self.database = database
         self.settings = settings
         self._dummy_hash = _DUMMY_HASH
+        self._password_throttle = AttemptThrottle()
 
     def bootstrap(self) -> list[SessionUser]:
         created: list[SessionUser] = []
@@ -123,6 +166,77 @@ class AuthService:
                     "Invalid username or password",
                 )
             return _user_record(model)
+
+    def set_password(
+        self,
+        username: str,
+        password: str,
+        *,
+        keep_token: str | None = None,
+    ) -> SessionUser:
+        normalized = _normalize_username(username)
+        if len(password) < MIN_PASSWORD_LENGTH:
+            raise AuthError(
+                "invalid_password",
+                f"Password must be at least {MIN_PASSWORD_LENGTH} characters",
+            )
+        keep_digest = token_digest(keep_token) if keep_token else None
+        with self.database.session() as session, session.begin():
+            model = session.scalar(
+                select(UserModel).where(UserModel.username == normalized)
+            )
+            if model is None:
+                raise AuthError(
+                    "unknown_user",
+                    f"User not found: {normalized}",
+                )
+            if model.disabled:
+                raise AuthError(
+                    "user_disabled",
+                    f"User is disabled: {normalized}",
+                )
+            model.password_hash = hash_password(password)
+            revoke = delete(SessionModel).where(SessionModel.user_id == model.id)
+            if keep_digest:
+                revoke = revoke.where(SessionModel.id != keep_digest)
+            session.execute(revoke)
+            return _user_record(model)
+
+    def change_password(
+        self,
+        user: SessionUser,
+        current_password: str,
+        new_password: str,
+        *,
+        keep_token: str | None = None,
+    ) -> SessionUser:
+        key = user.id
+        if self._password_throttle.blocked(key):
+            raise AuthError(
+                "invalid_credentials",
+                "Invalid username or password",
+            )
+        try:
+            authenticated = self.authenticate(user.username, current_password)
+        except AuthError:
+            self._password_throttle.record_failure(key)
+            raise AuthError(
+                "invalid_credentials",
+                "Invalid username or password",
+            ) from None
+        if authenticated.id != user.id:
+            self._password_throttle.record_failure(key)
+            raise AuthError(
+                "invalid_credentials",
+                "Invalid username or password",
+            )
+        changed = self.set_password(
+            user.username,
+            new_password,
+            keep_token=keep_token,
+        )
+        self._password_throttle.clear(key)
+        return changed
 
     def create_session(self, user: SessionUser) -> str:
         token = new_session_token()

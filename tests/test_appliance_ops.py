@@ -8,6 +8,8 @@ from appliance.backup import create_backup, restore_backup
 from appliance.bootstrap import (
     BootstrapError,
     create_initial_operators,
+    read_password_file,
+    set_operator_password,
     write_password_file,
 )
 from appliance.recovery import describe_reboot_recovery
@@ -30,6 +32,84 @@ def test_create_initial_auditor_once(durable_settings, database):
     )
     assert created == ["auditor", "viewer"]
     assert again == []
+
+
+def test_set_operator_password_writes_0600_and_replaces_hash(
+    durable_settings, database, tmp_path
+):
+    create_initial_operators(
+        durable_settings,
+        auditor_username="auditor",
+        auditor_password="initial-pass",
+        database=database,
+    )
+    output = tmp_path / "initial-admin.txt"
+    path = set_operator_password(
+        durable_settings,
+        username="auditor",
+        password="replacement-pass",
+        output=output,
+        database=database,
+    )
+    from auth.service import AuthError, AuthService
+
+    service = AuthService(database, durable_settings)
+    assert path == output
+    assert output.stat().st_mode & 0o777 == 0o600
+    assert read_password_file(output).password == "replacement-pass"
+    assert service.authenticate("auditor", "replacement-pass").username == "auditor"
+    try:
+        service.authenticate("auditor", "initial-pass")
+    except AuthError as exc:
+        assert exc.code == "invalid_credentials"
+    else:
+        raise AssertionError("old password must stop working")
+
+
+def test_set_operator_password_generates_secret_without_printing(
+    durable_settings, database, capsys
+):
+    create_initial_operators(
+        durable_settings,
+        auditor_username="auditor",
+        auditor_password="initial-pass",
+        database=database,
+    )
+    path = set_operator_password(
+        durable_settings,
+        username="auditor",
+        database=database,
+    )
+    from auth.service import AuthService
+
+    captured = capsys.readouterr()
+    secret = read_password_file(path).password
+    assert path == durable_settings.data_dir / "initial-admin.txt"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert secret not in captured.out
+    assert secret not in captured.err
+    assert AuthService(database, durable_settings).authenticate(
+        "auditor", secret
+    ).username == "auditor"
+
+
+def test_set_operator_password_unknown_user_leaves_file_alone(
+    durable_settings, database, tmp_path
+):
+    output = tmp_path / "initial-admin.txt"
+    try:
+        set_operator_password(
+            durable_settings,
+            username="auditor",
+            password="replacement-pass",
+            output=output,
+            database=database,
+        )
+    except BootstrapError as exc:
+        assert "not found" in str(exc).lower() or "User not found" in str(exc)
+    else:
+        raise AssertionError("missing user must fail")
+    assert not output.exists()
 
 
 def test_password_file_rejects_world_readable(tmp_path):

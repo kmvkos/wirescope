@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import secrets
 import stat
 from typing import TYPE_CHECKING
 
@@ -120,6 +121,41 @@ def create_initial_operators(
             except AuthError as exc:
                 raise BootstrapError(exc.message) from exc
         return created
+    finally:
+        if database is None:
+            active.dispose()
+
+
+def default_password_output(settings: Settings, username: str) -> Path:
+    name = "initial-admin.txt" if username.strip() == "auditor" else f"{username.strip()}.txt"
+    return settings.data_dir / name
+
+
+def set_operator_password(
+    settings: Settings,
+    *,
+    username: str,
+    password: str | None = None,
+    output: Path | None = None,
+    database: Database | None = None,
+) -> Path:
+    """Reset a local operator password and write a mode 0600 file. Never prints the secret."""
+
+    from auth.service import AuthError, AuthService
+    from persistence.database import Database
+
+    if output is None:
+        output = default_password_output(settings, username)
+    if password is None:
+        password = secrets.token_urlsafe(24)
+    active = database or Database(settings)
+    try:
+        service = AuthService(active, settings)
+        try:
+            service.set_password(username=username, password=password)
+        except AuthError as exc:
+            raise BootstrapError(exc.message) from exc
+        return write_password_file(output, password)
     finally:
         if database is None:
             active.dispose()

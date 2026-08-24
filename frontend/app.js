@@ -279,6 +279,7 @@ async function showHome() {
     showScreen("home");
     $("new-audit-button").hidden = !canMutate();
     $("network-button").hidden = !canMutate();
+    $("password-button").hidden = !state.user;
     $("home-role-hint").textContent = canMutate()
         ? t("home.auditorHint")
         : t("home.viewerHint");
@@ -913,6 +914,48 @@ async function applyNetwork(confirm) {
     }
 }
 
+function clearPasswordForm() {
+    $("password-current").value = "";
+    $("password-new").value = "";
+    $("password-confirm").value = "";
+}
+
+function showPassword() {
+    showScreen("password");
+    setError("password-error", "");
+    $("password-result").hidden = true;
+    $("password-result").textContent = "";
+    clearPasswordForm();
+    $("password-current").focus();
+}
+
+async function submitPasswordChange() {
+    const currentPassword = $("password-current").value;
+    const newPassword = $("password-new").value;
+    const confirmPassword = $("password-confirm").value;
+    setError("password-error", "");
+    $("password-result").hidden = true;
+    if (newPassword !== confirmPassword) {
+        setError("password-error", t("password.mismatch"));
+        return;
+    }
+    try {
+        await api("POST", "/api/auth/password", {
+            current_password: currentPassword,
+            new_password: newPassword,
+        });
+        clearPasswordForm();
+        $("password-result").hidden = false;
+        $("password-result").textContent = t("password.success");
+    } catch (error) {
+        if (error.status === 401 && error.code === "invalid_credentials") {
+            setError("password-error", t("password.wrongCurrent"));
+            return;
+        }
+        setError("password-error", displayError(error));
+    }
+}
+
 async function openAudit(auditId) {
     state.auditId = auditId;
     const jobs = await api("GET", `/api/audits/${auditId}/jobs?limit=20`);
@@ -1309,6 +1352,15 @@ function bindUi() {
         await showNetwork();
     });
 
+    $("password-button").addEventListener("click", () => {
+        showPassword();
+    });
+
+    $("password-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await submitPasswordChange();
+    });
+
     document.querySelectorAll("[data-nav]").forEach((button) => {
         button.addEventListener("click", async () => {
             const target = button.dataset.nav;
@@ -1319,6 +1371,10 @@ function bindUi() {
             }
             if (target === "network") {
                 await showNetwork();
+                return;
+            }
+            if (target === "password") {
+                showPassword();
                 return;
             }
             if (target === "interface") {

@@ -6,7 +6,7 @@ from backend.capabilities import capability_inventory
 from backend.correlations import correlation_summary
 from backend.dependencies import AppServices, get_services
 from backend.insights import audit_diff, dashboard
-from engine.active_profiles import profile_catalog
+from engine.active_profiles import ProfileConfigError, profile_catalog
 from findings.store import FindingNotFound
 from jobs.errors import JobExecutionError
 from jobs.service import EntityNotFound
@@ -29,7 +29,13 @@ def capabilities(services: AppServices = Depends(get_services)) -> dict:
 
 @router.get("/scan-profiles")
 def scan_profiles(services: AppServices = Depends(get_services)) -> dict:
-    return {"profiles": profile_catalog(services.settings)}
+    try:
+        return {"profiles": profile_catalog(services.settings)}
+    except ProfileConfigError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "profile_config_error", "message": str(exc)},
+        ) from exc
 
 
 @router.get("/audits/{audit_id}/dashboard")
@@ -144,16 +150,3 @@ def artifact_content(
             "X-WireScope-SHA256": artifact.sha256,
         },
     )
-
-
-@router.get("/artifacts/{artifact_id}", include_in_schema=False)
-def artifact_content_compat(
-    artifact_id: str,
-    services: AppServices = Depends(get_services),
-) -> Response:
-    """Compatibility path for the transitional enhancement UI."""
-    try:
-        artifact = services.jobs.artifact(artifact_id)
-    except EntityNotFound as exc:
-        raise _missing(str(exc)) from exc
-    return artifact_content(artifact.audit_id, artifact_id, services)

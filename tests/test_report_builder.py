@@ -158,9 +158,9 @@ def test_report_html_snapshot_and_escaping():
     assert "alert(" not in html or "&quot;xss&quot;" in html
     assert "nmaprun" not in html
     assert "../" not in html
-    assert "Executive summary" in html
-    assert "Evidence references" in html
-    assert "Recommendations" in html
+    assert "Краткое резюме" in html
+    assert "Ссылки на доказательства" in html
+    assert "Рекомендации" in html
 
 
 def test_source_hash_is_stable_across_generation_time():

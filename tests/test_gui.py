@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from tests.helpers import http_request
 from tests.test_api import create_audit
@@ -22,22 +23,59 @@ SCREENS = (
 )
 
 
+def _locale_keys(script: str, locale: str) -> set[str]:
+    marker = f"{locale}: {{"
+    start = script.index(marker) + len(marker) - 1
+    depth = 0
+    end = start
+    for index, char in enumerate(script[start:], start):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = index
+                break
+    return set(re.findall(r'"([a-zA-Z0-9_.]+)":', script[start : end + 1]))
+
+
 def test_frontend_defines_kiosk_workflow_screens():
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = (FRONTEND / "style.css").read_text(encoding="utf-8")
     script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    i18n = (FRONTEND / "i18n.js").read_text(encoding="utf-8")
 
     for name in SCREENS:
         assert f'data-screen="{name}"' in html
+    assert 'lang="ru"' in html
+    assert "/static/i18n.js" in html
+    assert "Сеть / VLAN / область" in html
+    assert "уполномоченный диапазон" in html
+    assert 'data-profile="passive"' in html
+    assert 'data-profile="discovery"' in html
+    assert 'data-profile="standard"' in html
+    assert 'data-profile="deep"' in html
     assert "min-height: 44px" in css
     assert "480px" in css
     assert "min-width: 900px" in css
     assert "wirescope.activeAudit" in script
     assert "beforeunload" not in script
     assert "pagehide" not in script
-    assert "Viewer cannot start" in script or "viewer cannot start" in script.lower()
+    assert 't("error.viewerCannotStart")' in script
+    assert "Наблюдатель не может запускать аудиты" in i18n
+    assert 'const locale = "ru"' in i18n
     assert 'role="alertdialog"' in html
     assert 'id="stop-audit-button"' in html
+
+
+def test_i18n_russian_default_matches_english_fallback_keys():
+    i18n = (FRONTEND / "i18n.js").read_text(encoding="utf-8")
+    russian = _locale_keys(i18n, "ru")
+    english = _locale_keys(i18n, "en")
+    assert russian == english
+    assert "login.title" in russian
+    assert "scope.hint" in russian
+    assert "error.invalid_credentials" in russian
 
 
 def test_root_is_public_and_static_assets_load(api_context):
@@ -46,11 +84,16 @@ def test_root_is_public_and_static_assets_load(api_context):
     page = http_request(app, "GET", "/", auth=False)
     css = http_request(app, "GET", "/static/style.css", auth=False)
     script = http_request(app, "GET", "/static/app.js", auth=False)
+    i18n = http_request(app, "GET", "/static/i18n.js", auth=False)
 
     assert page.status_code == 200
     assert css.status_code == 200
     assert script.status_code == 200
+    assert i18n.status_code == 200
     assert "min-height: 44px" in css.text
+    assert 'lang="ru"' in page.text
+    assert "Войти" in page.text
+    assert "const locale = \"ru\"" in i18n.text
     for name in SCREENS:
         assert f'data-screen="{name}"' in page.text
 

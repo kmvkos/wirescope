@@ -25,6 +25,9 @@ function defaultDraft() {
         interface: "",
         vlan: "",
         targets: "",
+        extras: "",
+        proposed: [],
+        proposal: null,
         profile: "passive",
         duration: 30,
         authorized: false,
@@ -160,6 +163,26 @@ function parseTargets(text) {
         .split(/[\s,]+/)
         .map((item) => item.trim())
         .filter(Boolean);
+}
+
+function combinedTargets() {
+    const extras = parseTargets(state.draft.extras || "");
+    const seen = new Set();
+    const result = [];
+    (state.draft.proposed || []).concat(extras).forEach((item) => {
+        if (!seen.has(item)) {
+            seen.add(item);
+            result.push(item);
+        }
+    });
+    return result;
+}
+
+function applyVlanScanInterface(proposal) {
+    if (!proposal || proposal.source !== "vlan_hints" || !proposal.interface) {
+        return;
+    }
+    state.draft.interface = proposal.interface;
 }
 
 function displayError(error) {
@@ -324,11 +347,81 @@ async function showInterfaces() {
     });
 }
 
-function showScope() {
+async function showScope() {
     showScreen("scope");
     $("scope-vlan").value = state.draft.vlan;
-    $("scope-targets").value = state.draft.targets;
+    $("scope-targets").value = state.draft.extras || "";
     setError("scope-error", "");
+    $("scope-reason").textContent = t("scope.loading");
+    $("scope-proposal").replaceChildren();
+    try {
+        const proposal = await api(
+            "GET",
+            `/api/scope/proposal?interface=${encodeURIComponent(state.draft.interface)}`
+        );
+        state.draft.proposed = proposal.canonical_targets || [];
+        state.draft.proposal = proposal;
+        if (!state.draft.vlan && (proposal.vlan_ids || []).length) {
+            state.draft.vlan = proposal.vlan_ids
+                .map((id) => `VLAN ${id}`)
+                .join(", ");
+            $("scope-vlan").value = state.draft.vlan;
+        }
+        saveDraft();
+        renderScopeProposal(proposal);
+    } catch (error) {
+        state.draft.proposed = [];
+        state.draft.proposal = null;
+        $("scope-reason").textContent = "";
+        setError("scope-error", displayError(error));
+    }
+}
+
+function renderScopeProposal(proposal) {
+    const reason = $("scope-reason");
+    const list = $("scope-proposal");
+    list.replaceChildren();
+    const networks = (proposal.canonical_targets || []).join(", ");
+    if (proposal.source === "interface_prefix") {
+        reason.textContent = t("scope.derivedFromAddress", {
+            iface: proposal.interface,
+            addresses: (proposal.assigned_addresses || []).join(", ") || t("common.dash"),
+            networks,
+        });
+    } else if (proposal.source === "vlan_hints") {
+        reason.textContent = t("scope.derivedFromVlan", {
+            vlans: (proposal.vlan_ids || []).join(", ") || t("common.dash"),
+            networks,
+        });
+    } else if (proposal.source === "route_hints") {
+        reason.textContent = t("scope.derivedFromRoute", { networks });
+    } else {
+        reason.textContent = t("scope.emptyProposal");
+    }
+    (proposal.networks || []).forEach((item) => {
+        list.append(listItem(item.cidr, scopeOriginLabel(item)));
+    });
+    (proposal.rejected || []).forEach((item) => {
+        list.append(
+            listItem(
+                t("scope.rejectedTitle", { value: item.value }),
+                I18N.token("error", item.code)
+            )
+        );
+    });
+}
+
+function scopeOriginLabel(item) {
+    if (item.origin === "vlan") {
+        return t("scope.originVlan", {
+            id: item.vlan_id || t("common.dash"),
+            iface: item.interface || t("common.dash"),
+        });
+    }
+    if (item.origin === "route") {
+        return t("scope.originRoute");
+    }
+    return t("scope.originAssigned");
 }
 
 function showProfile() {
@@ -345,7 +438,7 @@ function showProfile() {
 
 function showConfirm() {
     showScreen("confirm");
-    const targets = parseTargets(state.draft.targets);
+    const targets = combinedTargets();
     const rows = [
         [t("confirm.interface"), state.draft.interface || t("common.dash")],
         [t("confirm.vlan"), state.draft.vlan || t("common.none")],
@@ -384,7 +477,7 @@ async function startAudit() {
         setError("confirm-error", t("error.selectInterface"));
         return;
     }
-    const targets = parseTargets(state.draft.targets);
+    const targets = combinedTargets();
     if (state.draft.profile !== "passive" && !targets.length) {
         setError("confirm-error", t("error.activeScopeRequired"));
         return;
@@ -394,6 +487,7 @@ async function startAudit() {
         return;
     }
     state.draft.authorized = true;
+    state.draft.targets = targets.join("\n");
     saveDraft();
     const audit = await api("POST", "/api/audits", {
         profile: state.draft.profile,
@@ -401,6 +495,10 @@ async function startAudit() {
         scope: {
             vlan: state.draft.vlan || null,
             targets,
+            proposed: state.draft.proposed,
+            derived_from: (
+                state.draft.proposal && state.draft.proposal.source
+            ) || "manual",
             confirmed: true,
         },
     });
@@ -464,7 +562,7 @@ async function enqueueStage(stage) {
     if (stage === "discovery") {
         return api("POST", `/api/audits/${auditId}/discovery`, {
             interface: state.draft.interface,
-            scope: parseTargets(state.draft.targets),
+            scope: combinedTargets(),
             profile: state.draft.profile === "passive"
                 ? "discovery"
                 : state.draft.profile,
@@ -857,12 +955,14 @@ function bindUi() {
                     setError("interface-error", t("error.selectAllowedInterface"));
                     return;
                 }
-                showScope();
+                await showScope();
                 return;
             }
             if (target === "profile") {
                 state.draft.vlan = $("scope-vlan").value.trim();
-                state.draft.targets = $("scope-targets").value;
+                state.draft.extras = $("scope-targets").value;
+                applyVlanScanInterface(state.draft.proposal);
+                state.draft.targets = combinedTargets().join("\n");
                 saveDraft();
                 showProfile();
                 return;
@@ -908,12 +1008,12 @@ function bindUi() {
         });
     });
 
-    $("interface-next").addEventListener("click", () => {
+    $("interface-next").addEventListener("click", async () => {
         if (!state.draft.interface) {
             setError("interface-error", t("error.selectAllowedInterface"));
             return;
         }
-        showScope();
+        await showScope();
     });
 
     $("start-audit-button").addEventListener("click", async () => {

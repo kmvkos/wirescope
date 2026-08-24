@@ -45,7 +45,7 @@ from engine.interfaces import (
     InterfaceValidationError,
 )
 from engine.routes import RouteResolver, RouteValidationError
-from engine.scope import ScopeValidationError, ScopeValidator
+from engine.scope import ScopeProposal, ScopeValidationError, ScopeValidator
 from findings.models import FindingStatus, Severity
 from findings.store import FindingNotFound, FindingStore, InvalidFindingState
 from inventory.models import AssetRecord, AssetState, DeviceClassHint
@@ -275,6 +275,70 @@ def create_app(
         except InterfaceValidationError as exc:
             raise _interface_http_error(exc) from exc
         return InterfaceListResponse(interfaces=discovery.interfaces)
+
+    @application.get(
+        "/api/scope/proposal",
+        response_model=ScopeProposal,
+    )
+    def api_scope_proposal(
+        interface: str = Query(min_length=1, max_length=64),
+    ) -> ScopeProposal:
+        try:
+            discovery = active_interfaces.discover()
+        except InterfaceValidationError as exc:
+            raise _interface_http_error(exc) from exc
+        selected = next(
+            (
+                item
+                for item in discovery.interfaces
+                if item.name == interface
+            ),
+            None,
+        )
+        if selected is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "unknown_interface",
+                    "message": f"Unknown network interface: {interface}",
+                },
+            )
+        environment = environment_provider() or {}
+        peers = [
+            {
+                "name": item.name,
+                "ipv4": list(item.ipv4),
+                "ipv6": list(item.ipv6),
+            }
+            for item in discovery.interfaces
+        ]
+        if not any(peer["name"] == selected.name for peer in peers):
+            peers.append(
+                {
+                    "name": selected.name,
+                    "ipv4": list(selected.ipv4),
+                    "ipv6": list(selected.ipv6),
+                }
+            )
+        env_ifaces = environment.get("interfaces") or []
+        known = {peer["name"] for peer in peers}
+        for item in env_ifaces:
+            name = str(item.get("name") or "")
+            if not name or name in known:
+                continue
+            peers.append(
+                {
+                    "name": name,
+                    "ipv4": list(item.get("ipv4") or []),
+                    "ipv6": list(item.get("ipv6") or []),
+                }
+            )
+        return ScopeValidator(active_settings).propose(
+            interface_name=selected.name,
+            assigned=[*selected.ipv4, *selected.ipv6],
+            peers=peers,
+            routes=list(environment.get("routes") or []),
+        )
 
     @application.post(
         "/api/audits",

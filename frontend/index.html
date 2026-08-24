@@ -139,7 +139,9 @@
             hidden
         >
             <h2 data-i18n="scope.title">Сеть / VLAN / область</h2>
-            <p class="hint" data-i18n="scope.hint">Подтвердите уполномоченный диапазон — не произвольную маску. Пассивные подсказки (адреса, VLAN) не равны разрешению на активное сканирование; оператор явно подтверждает CIDR или хосты.</p>
+            <p class="hint" data-i18n="scope.hint">Выведенная область — уполномоченный L3-диапазон ЭТОГО интерфейса, не весь интернет. Пассивные подсказки сами по себе не дают права на сканирование; подтвердите сети ниже.</p>
+            <p id="scope-reason" class="hint"></p>
+            <div id="scope-proposal" class="list" aria-live="polite"></div>
             <label for="scope-vlan" data-i18n="scope.vlan">Примечание VLAN / сегмент</label>
             <input
                 id="scope-vlan"
@@ -148,18 +150,22 @@
                 data-i18n-placeholder="scope.vlanPlaceholder"
                 placeholder="Необязательно, напр. VLAN 20"
             >
-            <label for="scope-targets" data-i18n="scope.targets">Уполномоченные цели</label>
-            <textarea
-                id="scope-targets"
-                rows="3"
-                maxlength="4000"
-                data-i18n-placeholder="scope.targetsPlaceholder"
-                placeholder="Один CIDR или хост на строку"
-            ></textarea>
+            <details class="advanced">
+                <summary data-i18n="scope.advanced">Дополнительно</summary>
+                <p class="hint" data-i18n="scope.advancedHint">Необязательно. Раньше основной ввод был «один CIDR или хост на строку»: каждая строка — цель вроде 192.168.10.0/24 или 10.0.0.5. Сейчас это только добавка к выведенным сетям.</p>
+                <label for="scope-targets" data-i18n="scope.targets">Дополнительные цели</label>
+                <textarea
+                    id="scope-targets"
+                    rows="2"
+                    maxlength="4000"
+                    data-i18n-placeholder="scope.targetsPlaceholder"
+                    placeholder="Необязательно: доп. CIDR или хост на строку"
+                ></textarea>
+            </details>
             <p id="scope-error" class="error" role="alert" hidden></p>
             <div class="actions">
                 <button type="button" class="secondary" data-nav="interface" data-i18n="action.back">Назад</button>
-                <button type="button" class="primary" data-nav="profile" data-i18n="action.next">Далее</button>
+                <button type="button" class="primary" data-nav="profile" data-i18n="scope.confirmAction">Подтвердить область</button>
             </div>
         </section>
 

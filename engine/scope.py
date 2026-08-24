@@ -205,3 +205,277 @@ class ScopeValidator:
         if network.prefixlen == network.max_prefixlen:
             return str(network.network_address)
         return str(network)
+
+    def propose(
+        self,
+        *,
+        interface_name: str,
+        assigned: list[str],
+        peers: list[dict[str, Any]] | None = None,
+        routes: list[dict[str, Any]] | None = None,
+    ) -> "ScopeProposal":
+        rejected: list[RejectedCandidate] = []
+        selected = _eligible_networks(
+            self,
+            assigned,
+            origin="assigned",
+            interface_name=interface_name,
+            rejected=rejected,
+        )
+        if selected:
+            return _proposal(
+                interface_name=interface_name,
+                source=ScopeProposalSource.INTERFACE_PREFIX,
+                networks=selected,
+                rejected=rejected,
+            )
+
+        vlan_by_iface: dict[str, list[ProposedNetwork]] = {}
+        for peer in peers or []:
+            name = str(peer.get("name") or "")
+            vlan_id = _vlan_id_for(interface_name, name)
+            if vlan_id is None:
+                continue
+            addresses = [
+                *list(peer.get("ipv4") or []),
+                *list(peer.get("ipv6") or []),
+            ]
+            child_networks = _eligible_networks(
+                self,
+                addresses,
+                origin="vlan",
+                interface_name=name,
+                vlan_id=vlan_id,
+                rejected=rejected,
+            )
+            if child_networks:
+                vlan_by_iface.setdefault(name, []).extend(child_networks)
+        if vlan_by_iface:
+            chosen_iface = next(iter(vlan_by_iface))
+            return _proposal(
+                interface_name=chosen_iface,
+                source=ScopeProposalSource.VLAN_HINTS,
+                networks=vlan_by_iface[chosen_iface],
+                rejected=rejected,
+            )
+
+        route_networks: list[ProposedNetwork] = []
+        for route in routes or []:
+            if str(route.get("dev") or "") != interface_name:
+                continue
+            if route.get("gateway"):
+                continue
+            destination = _route_destination(route)
+            if destination is None:
+                continue
+            route_networks.extend(
+                _eligible_networks(
+                    self,
+                    [destination],
+                    origin="route",
+                    interface_name=interface_name,
+                    rejected=rejected,
+                )
+            )
+        if route_networks:
+            return _proposal(
+                interface_name=interface_name,
+                source=ScopeProposalSource.ROUTE_HINTS,
+                networks=route_networks,
+                rejected=rejected,
+            )
+
+        return _proposal(
+            interface_name=interface_name,
+            source=ScopeProposalSource.EMPTY,
+            networks=[],
+            rejected=rejected,
+        )
+
+    def _proposal_limit(self, version: int) -> int:
+        limit = max(
+            self.settings.active_discovery_max_targets,
+            self.settings.active_standard_max_targets,
+            self.settings.active_deep_max_targets,
+        )
+        if version == 6:
+            return min(limit, self.settings.active_ipv6_max_targets)
+        return limit
+
+
+class ScopeProposalSource(str, Enum):
+    INTERFACE_PREFIX = "interface_prefix"
+    VLAN_HINTS = "vlan_hints"
+    ROUTE_HINTS = "route_hints"
+    EMPTY = "empty"
+
+
+class ProposedNetwork(BaseModel):
+    cidr: str
+    origin: str
+    assigned: str | None = None
+    vlan_id: int | None = None
+    interface: str | None = None
+
+
+class RejectedCandidate(BaseModel):
+    value: str
+    code: str
+
+
+class ScopeProposal(BaseModel):
+    interface: str
+    source: ScopeProposalSource
+    networks: list[ProposedNetwork]
+    canonical_targets: list[str]
+    assigned_addresses: list[str]
+    vlan_ids: list[int]
+    rejected: list[RejectedCandidate]
+
+
+def _proposal(
+    *,
+    interface_name: str,
+    source: ScopeProposalSource,
+    networks: list[ProposedNetwork],
+    rejected: list[RejectedCandidate],
+) -> ScopeProposal:
+    unique: list[ProposedNetwork] = []
+    seen: set[str] = set()
+    for item in networks:
+        if item.cidr in seen:
+            continue
+        seen.add(item.cidr)
+        unique.append(item)
+    return ScopeProposal(
+        interface=interface_name,
+        source=source,
+        networks=unique,
+        canonical_targets=[item.cidr for item in unique],
+        assigned_addresses=[
+            item.assigned for item in unique if item.assigned
+        ],
+        vlan_ids=sorted(
+            {
+                item.vlan_id
+                for item in unique
+                if item.vlan_id is not None
+            }
+        ),
+        rejected=rejected,
+    )
+
+
+def _eligible_networks(
+    validator: ScopeValidator,
+    values: list[str],
+    *,
+    origin: str,
+    interface_name: str,
+    rejected: list[RejectedCandidate],
+    vlan_id: int | None = None,
+) -> list[ProposedNetwork]:
+    found: list[ProposedNetwork] = []
+    for raw in values:
+        value = str(raw).strip()
+        if not value:
+            continue
+        try:
+            network = _assigned_network(value)
+        except ScopeValidationError as exc:
+            rejected.append(RejectedCandidate(value=value, code=exc.code.value))
+            continue
+        if network.is_loopback or network.is_link_local:
+            rejected.append(
+                RejectedCandidate(value=value, code="not_global_unicast")
+            )
+            continue
+        if (
+            not validator.settings.active_allow_large_scopes
+            and network.num_addresses > validator._proposal_limit(network.version)
+        ):
+            host = (
+                _host_fallback(value)
+                if origin == "assigned" and network.version == 6
+                else None
+            )
+            if host is None:
+                rejected.append(
+                    RejectedCandidate(
+                        value=value,
+                        code=ScopeValidationCode.LIMIT_EXCEEDED.value,
+                    )
+                )
+                continue
+            network = host
+        found.append(
+            ProposedNetwork(
+                cidr=ScopeValidator._display_value(network),
+                origin=origin,
+                assigned=value if origin == "assigned" else None,
+                vlan_id=vlan_id,
+                interface=interface_name,
+            )
+        )
+    return found
+
+
+def _assigned_network(
+    raw: str,
+) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+    value = raw.strip()
+    try:
+        if "/" in value:
+            network = ipaddress.ip_interface(value).network
+        else:
+            address = ipaddress.ip_address(value)
+            network = ipaddress.ip_network(
+                f"{address}/{address.max_prefixlen}",
+                strict=True,
+            )
+    except ValueError as exc:
+        raise ScopeValidationError(
+            ScopeValidationCode.INVALID_TARGET,
+            f"Invalid IP target: {raw}",
+        ) from exc
+    if network.prefixlen == 0 or network.is_unspecified or network.is_multicast:
+        raise ScopeValidationError(
+            ScopeValidationCode.PROHIBITED_TARGET,
+            f"Unspecified or multicast target is prohibited: {raw}",
+        )
+    return network
+
+
+def _vlan_id_for(parent: str, child: str) -> int | None:
+    name = child.split("@", 1)[0]
+    prefix = f"{parent}."
+    if not name.startswith(prefix):
+        return None
+    suffix = name[len(prefix):]
+    if suffix.isdigit():
+        vlan_id = int(suffix)
+        if 0 <= vlan_id <= 4095:
+            return vlan_id
+    return None
+
+
+def _host_fallback(
+    raw: str,
+) -> ipaddress.IPv4Network | ipaddress.IPv6Network | None:
+    host = raw.split("/", 1)[0].strip()
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    if address.is_unspecified or address.is_multicast or address.is_loopback:
+        return None
+    if address.is_link_local:
+        return None
+    return ipaddress.ip_network(f"{address}/{address.max_prefixlen}", strict=True)
+
+
+def _route_destination(route: dict[str, Any]) -> str | None:
+    destination = route.get("dst")
+    if destination in (None, "", "default", "unspecified", "0.0.0.0/0", "::/0"):
+        return None
+    return str(destination)

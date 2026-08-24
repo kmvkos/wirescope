@@ -190,6 +190,21 @@ textarea {
     resize: vertical;
 }
 
+details.advanced {
+    background: #1b2026;
+    border-radius: 10px;
+    padding: 4px 10px 10px;
+}
+
+details.advanced summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+}
+
 .actions {
     display: flex;
     gap: 8px;

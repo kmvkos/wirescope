@@ -42,7 +42,7 @@ frontend/
 └── enhancements.css
 ```
 
-`app.js` содержит основной wizard и существующие рабочие экраны. Новый `enhancements.js` подключается отдельно и добавляет operator-insights без переписывания основного workflow.
+`app.js` содержит основной wizard и существующие рабочие экраны. `enhancements.js` подключается отдельно и добавляет operator-insights без переписывания основного workflow.
 
 ## Основной audit flow
 
@@ -88,7 +88,7 @@ Findings
 
 ## Обзор WireScope
 
-Дополнительная панель **«Обзор»** доступна поверх существующего wizard и позволяет выбрать любой сохранённый audit.
+После успешного входа дополнительная панель **«Обзор»** доступна поверх существующего wizard и позволяет выбрать любой сохранённый audit. На login-screen кнопка не показывается.
 
 ### Вкладка «Обзор»
 
@@ -166,7 +166,6 @@ server-like
 workstation-like
 network-device-like
 printer-like
-network-device-like
 iot-like
 unknown
 ```
@@ -240,6 +239,8 @@ GUI умеет:
 - экспортировать JSON;
 - экспортировать Markdown.
 
+Markdown-кнопка добавляется модулем `enhancements.js` рядом с существующим JSON export и использует канонический `/api/v1` export endpoint.
+
 PDF пока возвращает `422 pdf_not_available`.
 
 ## Ошибки
@@ -269,4 +270,4 @@ wirescope-kiosk    может рестартовать независимо
 
 ## Тестирование
 
-Backend/API GUI contracts тестируются fixture-based. Optional Playwright tests помечены `browser` и пропускаются, если Playwright/Chromium не установлен. Основной CI также компилирует Python sources и запускает default `pytest` suite.
+Backend/API GUI contracts тестируются fixture-based. Static regression tests отдельно проверяют, что `enhancements.js/.css` реально подключены к `index.html`, evidence viewer использует audit-scoped URL, а Markdown export остаётся интегрированным. Optional Playwright tests помечены `browser` и пропускаются, если Playwright/Chromium не установлен. Основной CI также компилирует Python sources и запускает default `pytest` suite.

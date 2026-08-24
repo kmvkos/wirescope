@@ -15,6 +15,13 @@ from jobs.service import EntityNotFound
 router = APIRouter()
 
 
+def _missing(message: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"code": "not_found", "message": message},
+    )
+
+
 @router.get("/capabilities")
 def capabilities(services: AppServices = Depends(get_services)) -> dict:
     return capability_inventory(services.settings)
@@ -33,7 +40,7 @@ def audit_dashboard(
     try:
         return dashboard(services, audit_id)
     except EntityNotFound as exc:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
+        raise _missing(str(exc)) from exc
 
 
 @router.get("/audits/{audit_id}/correlations")
@@ -45,7 +52,7 @@ def audit_correlations(
         services.jobs.get_audit(audit_id)
         return correlation_summary(services.inventory, audit_id)
     except EntityNotFound as exc:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
+        raise _missing(str(exc)) from exc
 
 
 @router.get("/audits/{audit_id}/diff")
@@ -57,7 +64,7 @@ def compare_audits(
     try:
         return audit_diff(services, against, audit_id)
     except EntityNotFound as exc:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
+        raise _missing(str(exc)) from exc
 
 
 @router.get("/audits/{audit_id}/findings/{finding_id}/evidence")
@@ -73,7 +80,7 @@ def finding_evidence(
             include_events=False,
         )
     except FindingNotFound as exc:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
+        raise _missing(str(exc)) from exc
 
     items = []
     for artifact_id in finding.evidence_artifact_ids:
@@ -93,28 +100,36 @@ def finding_evidence(
                 "size": artifact.size,
                 "sha256": artifact.sha256,
                 "created_at": artifact.created_at,
-                "url": f"/api/v1/artifacts/{artifact.id}",
+                "url": f"/api/v1/audits/{audit_id}/artifacts/{artifact.id}",
             }
         )
     return {"finding_id": finding_id, "items": items}
 
 
-@router.get("/artifacts/{artifact_id}")
+@router.get("/audits/{audit_id}/artifacts/{artifact_id}")
 def artifact_content(
+    audit_id: str,
     artifact_id: str,
     services: AppServices = Depends(get_services),
 ) -> Response:
     try:
+        services.jobs.get_audit(audit_id)
         artifact = services.jobs.artifact(artifact_id)
+        if artifact.audit_id != audit_id:
+            raise _missing(f"Artifact not found in audit: {artifact_id}")
         payload = services.evidence.read_bytes(artifact)
     except EntityNotFound as exc:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
+        raise _missing(str(exc)) from exc
     except JobExecutionError as exc:
-        raise HTTPException(status_code=503, detail=exc.error.model_dump(mode="json")) from exc
+        raise HTTPException(
+            status_code=503,
+            detail=exc.error.model_dump(mode="json"),
+        ) from exc
 
+    content_type = artifact.content_type or "application/octet-stream"
     text_like = (
-        artifact.content_type.startswith("text/")
-        or artifact.content_type in {
+        content_type.startswith("text/")
+        or content_type in {
             "application/json",
             "application/xml",
             "application/x-ndjson",
@@ -123,7 +138,7 @@ def artifact_content(
     disposition = "inline" if text_like else "attachment"
     return Response(
         content=payload,
-        media_type=artifact.content_type,
+        media_type=content_type,
         headers={
             "Content-Disposition": f'{disposition}; filename="{artifact.id}"',
             "X-WireScope-SHA256": artifact.sha256,

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import Request
 
 from auth.service import AuthService
+from backend.audit_log import AuditLogService
 from config.settings import Settings
 from engine.interfaces import InterfaceService
 from engine.network import NetworkService
@@ -34,6 +35,7 @@ class AppServices:
     findings: FindingStore
     reports: ReportStore
     auth: AuthService
+    audit_log: AuditLogService
     network: NetworkService
     environment_provider: Callable[[], dict[str, Any]]
     module_registry: ModuleRegistry

@@ -62,6 +62,8 @@ def test_create_audit_job_progress_events_and_completion(job_service):
         "progress",
         "job_completed",
     ]
+    assert final.updated_at is not None
+    assert final.updated_at >= job.created_at
 
 
 def test_completed_audit_accepts_follow_on_jobs_and_merges_summary(job_service):

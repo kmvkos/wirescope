@@ -9,27 +9,27 @@
 <body>
 <header class="hero">
 <p class="eyebrow">Отчёт аудита WireScope</p>
-<h1>Выявлены открытые находки высокой серьёзности</h1>
+<h1>Есть слабые места высокой важности</h1>
 <p class="meta">Аудит 11111111-1111-4000-8000-111111111111 · сформирован 2026-08-24T12:00:00Z · схема audit-report v1</p>
 </header>
 <section id="executive-summary">
-<h2>Итоговая сводка</h2>
-<p class="callout">Пассивный захват для этого аудита не сохранён. Зафиксировано 1 активный хост.</p>
-<p class="callout">Открытых находок: 1. По серьёзности: высокие — 1.</p>
-<p class="callout">Заметные экспозиции: слабые алгоритмы SSH.</p>
+<h2>Выводы</h2>
+<p class="callout">Прослушивание для этого аудита не сохранено. Зафиксировано 1 активный хост.</p>
+<p class="callout">Открытых слабых мест: 1. По важности: высокие — 1.</p>
+<p class="callout">На что обратить внимание: слабые алгоритмы SSH.</p>
 <p class="callout">Nmap не запускался.</p>
-<p class="hint">Для этого аудита пассивный захват не сохранён.</p>
+<p class="hint">Прослушивание для этого аудита не сохранено.</p>
 <div class="stats">
 <div class="stat"><span class="label">Кадры</span><span class="value">—</span></div>
 <div class="stat"><span class="label">L3-адрес на NIC захвата</span><span class="value">да</span></div>
 <div class="stat"><span class="label">Тегированные VLAN</span><span class="value">нет (тегов 802.1Q не видно)</span></div>
-<div class="stat"><span class="label">Активы</span><span class="value">1</span></div>
+<div class="stat"><span class="label">Устройства</span><span class="value">1</span></div>
 <div class="stat"><span class="label">Службы</span><span class="value">1</span></div>
-<div class="stat"><span class="label">Находки</span><span class="value">1</span></div>
+<div class="stat"><span class="label">Слабые места</span><span class="value">1</span></div>
 <div class="stat"><span class="label">Открытые</span><span class="value">1</span></div>
 </div>
 <div class="stats"><div class="stat"><span class="label">критическая</span><span class="value severity-critical">0</span></div><div class="stat"><span class="label">высокая</span><span class="value severity-high">1</span></div><div class="stat"><span class="label">средняя</span><span class="value severity-medium">0</span></div><div class="stat"><span class="label">низкая</span><span class="value severity-low">0</span></div><div class="stat"><span class="label">инфо</span><span class="value severity-info">0</span></div></div>
-<p>Уполномоченная область: да. Обнаруженные пассивные датчики: llmnr.</p>
+<p>Подтверждённая сеть: да. Обнаруженные пассивные датчики: llmnr.</p>
 <p class="hint">VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден</p>
 </section>
 <section id="environment">
@@ -40,7 +40,7 @@
 </section>
 <section id="passive">
 <h2>Пассивная оценка сегмента</h2>
-<p class="callout">Для этого аудита пассивный захват не сохранён.</p>
+<p class="callout">Прослушивание для этого аудита не сохранено.</p>
 <p class="hint">VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден</p>
 <p>Интерфейс захвата: eth0. L3-адрес на NIC захвата: да. Адреса: 192.0.2.10/24.</p>
 <p>Кадры: —. Длительность, с: —. Видимость: не зафиксировано. Подсказка типа порта: не зафиксировано.</p>
@@ -57,25 +57,25 @@
 <table><thead><tr><th>Протокол</th><th>Состояние</th><th>Срабатывания</th><th>Имена</th></tr></thead><tbody><tr><td>mdns</td><td>absent</td><td>0</td><td>—</td></tr><tr><td>llmnr</td><td>absent</td><td>0</td><td>—</td></tr><tr><td>nbns</td><td>absent</td><td>0</td><td>—</td></tr></tbody></table>
 </section>
 <section id="scope">
-<h2>Область</h2>
+<h2>Сеть для сканирования</h2>
 <p>Подтверждена: да. Профиль: standard. Интерфейс: eth0. Число адресов: 1. Тайминг: T3.</p>
 <p>Цели: 192.0.2.10.</p>
-<h3>Снимок области аудита</h3>
+<h3>Снимок сети аудита</h3>
 <pre>{
   &quot;site&quot;: &quot;lab&quot;
 }</pre>
 </section>
 <section id="assets">
-<h2>Активы</h2>
+<h2>Устройства</h2>
 <table><thead><tr><th>ID</th><th>Состояние</th><th>MAC</th><th>Производитель</th><th>Адреса</th><th>Имена</th></tr></thead><tbody><tr><td>asset-1</td><td>responsive</td><td>00:11:22:33:44:55</td><td>Example</td><td>192.0.2.10</td><td>linux.example.test</td></tr></tbody></table>
 </section>
 <section id="services">
 <h2>Службы</h2>
-<table><thead><tr><th>Актив</th><th>Протокол</th><th>Порт</th><th>Состояние</th><th>Служба</th><th>Продукт</th></tr></thead><tbody><tr><td>asset-1</td><td>tcp</td><td>22</td><td>open</td><td>ssh</td><td>OpenSSH 9.2</td></tr></tbody></table>
+<table><thead><tr><th>Устройство</th><th>Протокол</th><th>Порт</th><th>Состояние</th><th>Служба</th><th>Продукт</th></tr></thead><tbody><tr><td>asset-1</td><td>tcp</td><td>22</td><td>open</td><td>ssh</td><td>OpenSSH 9.2</td></tr></tbody></table>
 </section>
 <section id="findings">
-<h2>Находки</h2>
-<article class="finding severity-high"><h3>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</h3><p class="meta">WS-SSH-WEAK-ALGORITHMS · высокая · открыта · уверенность высокая</p><p>Weak algorithms were observed.</p><p><strong>Обоснование.</strong> ssh_algorithms listed weak ciphers.</p><p><strong>Рекомендация.</strong> Disable legacy algorithms.</p><p class="meta">Актив asset-1 · Служба svc-1 · наблюдения 1 · доказательства 1</p><pre>{
+<h2>Слабые места</h2>
+<article class="finding severity-high"><h3>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</h3><p class="meta">WS-SSH-WEAK-ALGORITHMS · высокая · открыта · уверенность высокая</p><p>Weak algorithms were observed.</p><p><strong>Обоснование.</strong> ssh_algorithms listed weak ciphers.</p><p><strong>Рекомендация.</strong> Disable legacy algorithms.</p><p class="meta">Устройство asset-1 · Служба svc-1 · наблюдения 1 · доказательства 1</p><pre>{
   &quot;weak_algorithms&quot;: {
     &quot;kex&quot;: [
       &quot;diffie-hellman-group1-sha1&quot;
@@ -85,7 +85,7 @@
 </section>
 <section id="recommendations">
 <h2>Рекомендации</h2>
-<ol><li><strong>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</strong> (WS-SSH-WEAK-ALGORITHMS, высокая): Disable legacy algorithms. — 1 находка(и)</li></ol>
+<ol><li><strong>Weak SSH &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</strong> (WS-SSH-WEAK-ALGORITHMS, высокая): Disable legacy algorithms. — 1 шт.</li></ol>
 </section>
 <section id="evidence">
 <h2>Ссылки на доказательства</h2>
@@ -97,7 +97,7 @@
 <ul>
 <li>Продукт: WireScope 0.1.0</li>
 <li>ID отчёта: 00000000-0000-4000-8000-000000000001</li>
-<li>Хеш источника: 929a2d59f6f66418a7cbc1be4a4ce46e223d1753780b6b2f33892daf89debd1d</li>
+<li>Хеш источника: 81151bf5b7558a825eeee38579aa01deeee936d961554ed8c015483fd0a8653c</li>
 <li>ID задания: 22222222-2222-4000-8000-222222222222</li>
 <li>Исполнитель: auditor</li>
 <li>Статус аудита: running</li>

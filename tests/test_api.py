@@ -65,8 +65,11 @@ def test_enqueue_passive_job_and_paginated_listing(api_context):
     assert listing.status_code == 200
     assert listing.json()["total"] == 1
     assert listing.json()["items"][0]["result_available"] is False
+    assert listing.json()["items"][0]["progress"] == 0
+    assert listing.json()["items"][0]["updated_at"]
     audit_jobs = request(app, "GET", f"/api/audits/{audit_id}/jobs")
     assert audit_jobs.json()["items"][0]["id"] == job_id
+    assert audit_jobs.json()["items"][0]["updated_at"]
 
 
 def test_passive_job_rejects_out_of_range_duration(api_context):

@@ -193,7 +193,7 @@ def test_report_job_reproduces_from_persisted_data(
     assert "<nmaprun>" not in html
     assert SSH_WEAK["title"] in html
     assert SSH_WEAK["recommendation"] in html
-    assert "Итоговая сводка" in html
+    assert "Выводы" in html
     assert "слабые алгоритмы SSH" in html
     assert "Пассивная оценка сегмента" in html
     assert "VLAN в кадре виден только при 802.1Q" in html

@@ -1358,6 +1358,7 @@ def _job_response(job: JobRecord) -> JobResponse:
         created_at=job.created_at,
         started_at=job.started_at,
         finished_at=job.finished_at,
+        updated_at=job.updated_at or job.finished_at or job.started_at or job.created_at,
         progress=job.progress,
         stage=job.stage,
         message=job.message,

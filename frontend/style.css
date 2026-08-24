@@ -331,6 +331,137 @@ details.advanced summary {
     white-space: pre-wrap;
 }
 
+.progress-hud {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.progress-ring-wrap {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+}
+
+.progress-ring-wrap svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.progress-ring-track,
+.progress-ring-value {
+    fill: none;
+    stroke-width: 3.2;
+}
+
+.progress-ring-track {
+    stroke: #252b32;
+}
+
+.progress-ring-value {
+    stroke: #2f6fed;
+    stroke-linecap: round;
+    stroke-dasharray: 97.4;
+    stroke-dashoffset: 97.4;
+    transition: stroke-dashoffset 0.35s ease;
+}
+
+.progress-ring-wrap.indeterminate svg {
+    animation: progress-spin 1.1s linear infinite;
+}
+
+.progress-ring-wrap.indeterminate .progress-ring-value {
+    stroke-dasharray: 24 97.4;
+    stroke-dashoffset: 0;
+    transition: none;
+}
+
+.progress-ring-wrap.done .progress-ring-value {
+    stroke: #72e49a;
+}
+
+.progress-ring-wrap.failed .progress-ring-value {
+    stroke: #ff7d7d;
+}
+
+#progress-ring-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+.progress-hud-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.progress-hud-copy .hint {
+    margin-top: 2px;
+}
+
+.progress-jobs-title {
+    margin: 4px 0 0;
+}
+
+.job-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.job-list li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    background: #1b2026;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+.job-list strong {
+    font-size: 13px;
+}
+
+.job-list .job-meta {
+    color: #929aa5;
+    text-align: right;
+}
+
+.job-list li.job-live {
+    outline: 1px solid #2f6fed;
+}
+
+.job-list li.job-live span:nth-child(2) {
+    color: #72e49a;
+}
+
+.job-list li.job-error span:nth-child(2) {
+    color: #ff7d7d;
+}
+
+.job-list li.job-pending {
+    opacity: 0.7;
+}
+
+@keyframes progress-spin {
+    to {
+        transform: rotate(270deg);
+    }
+}
+
 .progress-bar {
     height: 16px;
     background: #252b32;
@@ -431,6 +562,15 @@ iframe {
 
     iframe {
         min-height: 480px;
+    }
+
+    .progress-ring-wrap {
+        width: 96px;
+        height: 96px;
+    }
+
+    #progress-ring-label {
+        font-size: 16px;
     }
 }
 

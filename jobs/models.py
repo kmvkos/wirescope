@@ -91,6 +91,7 @@ class JobRecord(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    updated_at: datetime | None = None
     progress: int
     stage: str
     message: str | None

@@ -570,12 +570,12 @@ _LABELS = {
     "audit": "Аудит",
     "generated": "сформирован",
     "schema": "схема",
-    "executive_summary": "Итоговая сводка",
-    "assets": "Активы",
+    "executive_summary": "Выводы",
+    "assets": "Устройства",
     "services": "Службы",
-    "findings": "Находки",
+    "findings": "Слабые места",
     "open": "Открытые",
-    "confirmed_scope": "Уполномоченная область",
+    "confirmed_scope": "Подтверждённая сеть",
     "detected_sensors": "Обнаруженные пассивные датчики",
     "none_recorded": "не зафиксировано",
     "yes": "да",
@@ -619,7 +619,7 @@ _LABELS = {
     "routers": "Маршрутизаторы",
     "naming": "Имена mDNS / LLMNR / NBNS",
     "hits": "Срабатывания",
-    "scope": "Область",
+    "scope": "Сеть для сканирования",
     "confirmed": "Подтверждена",
     "profile": "Профиль",
     "address_count": "Число адресов",
@@ -627,25 +627,25 @@ _LABELS = {
     "targets": "Цели",
     "none": "нет",
     "none_period": "Нет.",
-    "audit_scope_snapshot": "Снимок области аудита",
-    "no_assets": "Для этого аудита активы не сохранены.",
+    "audit_scope_snapshot": "Снимок сети аудита",
+    "no_assets": "Для этого аудита устройства не сохранены.",
     "vendor": "Производитель",
     "names": "Имена",
     "no_services": "Для этого аудита службы не сохранены.",
-    "asset": "Актив",
+    "asset": "Устройство",
     "proto": "Протокол",
     "port": "Порт",
     "service": "Служба",
     "product": "Продукт",
-    "no_findings": "Для этого аудита находки не сохранены.",
+    "no_findings": "Для этого аудита слабых мест не сохранено.",
     "confidence": "уверенность",
     "rationale": "Обоснование",
     "recommendation": "Рекомендация",
     "observations": "наблюдения",
     "evidence": "доказательства",
     "recommendations": "Рекомендации",
-    "no_recommendations": "Рекомендаций по открытым находкам нет.",
-    "finding_count": "находка(и)",
+    "no_recommendations": "Рекомендаций по открытым слабым местам нет.",
+    "finding_count": "шт.",
     "evidence_note": (
         "Сырой вывод инструментов остаётся в контролируемом хранилище. "
         "В отчёте только идентификаторы, типы, размеры и SHA-256."
@@ -684,19 +684,19 @@ _LABELS = {
 
 _HEADLINES = {
     "Open critical findings require attention": (
-        "Открытые критические находки требуют внимания"
+        "Есть критические слабые места — разберите в первую очередь"
     ),
     "Open high-severity findings were identified": (
-        "Выявлены открытые находки высокой серьёзности"
+        "Есть слабые места высокой важности"
     ),
     "Open medium-severity findings were identified": (
-        "Выявлены открытые находки средней серьёзности"
+        "Есть слабые места средней важности"
     ),
-    "Open findings were recorded": "Зафиксированы открытые находки",
+    "Open findings were recorded": "Зафиксированы слабые места",
     "No open findings were recorded for the confirmed scope": (
-        "По подтверждённой области открытых находок нет"
+        "По подтверждённой сети открытых слабых мест нет"
     ),
-    "No open findings were recorded": "Открытых находок не зафиксировано",
+    "No open findings were recorded": "Открытых слабых мест не зафиксировано",
     "Capture completed with no frames": (
         "Захват завершён: кадров нет. Сегмент мог быть тихим."
     ),
@@ -707,7 +707,7 @@ _HEADLINES = {
         "Зафиксированы пассивные наблюдения"
     ),
     "No hosts, services, or findings were recorded": (
-        "Хосты, службы и находки не зафиксированы"
+        "Хосты, службы и слабые места не зафиксированы"
     ),
 }
 
@@ -721,7 +721,7 @@ _SEGMENT_NOTES = {
     ),
     "Network traffic was observed": "Наблюдался сетевой трафик.",
     "No passive capture is stored for this audit": (
-        "Для этого аудита пассивный захват не сохранён."
+        "Прослушивание для этого аудита не сохранено."
     ),
 }
 

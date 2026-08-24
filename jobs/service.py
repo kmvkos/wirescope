@@ -1,11 +1,11 @@
 """Transactional durable audit and job service."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from jobs.models import (
     ArtifactRecord,
@@ -731,6 +731,31 @@ class JobService:
         )
 
     @staticmethod
+    def _later(left: datetime, right: datetime | None) -> datetime:
+        if right is None:
+            return left
+        if left.tzinfo is None:
+            left = left.replace(tzinfo=timezone.utc)
+        if right.tzinfo is None:
+            right = right.replace(tzinfo=timezone.utc)
+        return right if right > left else left
+
+    @staticmethod
+    def _job_updated_at(model: JobModel) -> datetime:
+        latest = model.created_at
+        for value in (model.started_at, model.finished_at):
+            latest = JobService._later(latest, value)
+        session = object_session(model)
+        if session is not None:
+            event_at = session.scalar(
+                select(func.max(JobEventModel.created_at)).where(
+                    JobEventModel.job_id == model.id
+                )
+            )
+            latest = JobService._later(latest, event_at)
+        return latest
+
+    @staticmethod
     def _job_record(model: JobModel) -> JobRecord:
         error = None
         if model.error_code and model.error_category and model.error_message:
@@ -751,6 +776,7 @@ class JobService:
             created_at=model.created_at,
             started_at=model.started_at,
             finished_at=model.finished_at,
+            updated_at=JobService._job_updated_at(model),
             progress=model.progress,
             stage=model.stage,
             message=model.message,

@@ -1,6 +1,14 @@
 const ACTIVE_KEY = "wirescope.activeAudit";
 const DRAFT_KEY = "wirescope.draft";
 const TERMINAL = new Set(["completed", "failed", "cancelled", "interrupted"]);
+const STAGE_JOB_TYPES = {
+    passive: ["passive", "passive_discovery"],
+    discovery: ["discovery", "active_discovery"],
+    protocol: ["protocol", "protocol_audit"],
+    findings: ["findings", "findings_evaluation"],
+    report: ["report", "report_generation"],
+};
+const RING_CIRCUMFERENCE = 97.4;
 const PIPELINES = {
     passive: ["passive"],
     discovery: ["passive", "discovery"],
@@ -17,6 +25,11 @@ const state = {
     pipelineIndex: 0,
     pollDelay: 1000,
     pollTimer: null,
+    progressClock: null,
+    lastPollAt: null,
+    auditClockStart: null,
+    currentJob: null,
+    jobsSnapshot: [],
     stopping: false,
     network: null,
     networkIface: "",
@@ -594,6 +607,10 @@ async function startAudit() {
     state.pipeline = PIPELINES[state.draft.profile] || ["passive"];
     state.pipelineIndex = 0;
     state.jobId = null;
+    state.auditClockStart = Date.now();
+    state.lastPollAt = null;
+    state.currentJob = null;
+    state.jobsSnapshot = [];
     saveActive();
     showScreen("progress");
     await runPipeline();
@@ -684,6 +701,21 @@ function stopPolling() {
         clearTimeout(state.pollTimer);
         state.pollTimer = null;
     }
+    if (state.progressClock) {
+        clearInterval(state.progressClock);
+        state.progressClock = null;
+    }
+}
+
+function startProgressClock() {
+    if (state.progressClock) {
+        return;
+    }
+    state.progressClock = setInterval(() => {
+        if (state.currentJob) {
+            renderProgressTiming(state.currentJob, state.jobsSnapshot);
+        }
+    }, 1000);
 }
 
 function sleep(ms) {
@@ -692,13 +724,116 @@ function sleep(ms) {
     });
 }
 
+function parseTime(value) {
+    if (!value) {
+        return NaN;
+    }
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? NaN : ms;
+}
+
+function formatElapsed(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatClock(ms) {
+    try {
+        return new Date(ms).toLocaleTimeString("ru-RU", { hour12: false });
+    } catch {
+        return String(ms);
+    }
+}
+
+function humanPhase(job) {
+    const type = String((job && job.type) || "");
+    const stage = String((job && job.stage) || "");
+    if (type.includes("report")) {
+        return t("progress.phase.report");
+    }
+    if (type.includes("finding")) {
+        return t("progress.phase.findings");
+    }
+    if (type.includes("protocol")) {
+        return t("progress.phase.services");
+    }
+    if (type.includes("active") || type === "discovery") {
+        return t("progress.phase.hosts");
+    }
+    if (
+        stage === "discovering_hosts" ||
+        stage === "hosts_discovered" ||
+        stage === "scanning_tcp" ||
+        stage === "fingerprinting_services" ||
+        stage === "udp_discovery"
+    ) {
+        return t("progress.phase.hosts");
+    }
+    if (
+        stage === "evaluating_rules" ||
+        stage === "persisting_findings" ||
+        stage === "loading_inputs"
+    ) {
+        return t("progress.phase.findings");
+    }
+    if (stage === "building_report" || stage === "persisting_report") {
+        return t("progress.phase.report");
+    }
+    if (
+        stage === "matching_services" ||
+        stage === "summarizing" ||
+        String(stage).startsWith("auditing_")
+    ) {
+        return t("progress.phase.services");
+    }
+    return t("progress.phase.listen");
+}
+
+function overallPercent(job, jobs) {
+    const planned = state.pipeline.length;
+    const current = Number(job && job.progress) || 0;
+    if (planned > 1) {
+        return Math.min(
+            100,
+            Math.round((state.pipelineIndex * 100 + current) / planned)
+        );
+    }
+    if (jobs && jobs.length > 1) {
+        const done = jobs.filter((item) => item.status === "completed").length;
+        const running = jobs.find((item) => item.status === "running");
+        const piece = running ? Number(running.progress) || 0 : current;
+        return Math.min(100, Math.round((done * 100 + piece) / jobs.length));
+    }
+    return current;
+}
+
 async function pollJob(jobId) {
     state.pollDelay = 1000;
     $("progress-warning").hidden = true;
+    startProgressClock();
     while (true) {
         try {
             const job = await api("GET", `/api/jobs/${jobId}`);
-            renderProgress(job);
+            state.lastPollAt = Date.now();
+            state.currentJob = job;
+            let jobs = state.jobsSnapshot;
+            try {
+                const page = await api(
+                    "GET",
+                    `/api/audits/${job.audit_id}/jobs?limit=20`
+                );
+                jobs = page.items || [];
+                state.jobsSnapshot = jobs;
+            } catch {
+                // Keep the last job list; a failed list fetch must not stop polling.
+            }
+            renderProgress(job, jobs);
             state.pollDelay = 1000;
             if (TERMINAL.has(job.status)) {
                 return job;
@@ -709,20 +844,147 @@ async function pollJob(jobId) {
             state.pollDelay = Math.min(state.pollDelay * 2, 5000);
             $("progress-warning").hidden = false;
             $("progress-warning").textContent = t("progress.pollFailed");
+            renderProgressTiming(state.currentJob, state.jobsSnapshot);
         }
         await sleep(state.pollDelay);
     }
 }
 
-function renderProgress(job) {
-    $("progress-stage").textContent = t("progress.stageLine", {
-        type: I18N.jobType(job.type),
-        stage: I18N.stage(job.stage),
-        status: I18N.status(job.status),
-    });
+function renderProgress(job, jobs) {
+    const percent = overallPercent(job, jobs || state.jobsSnapshot);
+    const queued = job.status === "queued";
+    const indeterminate = queued || (
+        job.status === "running" && percent === 0 && !(job.progress > 0)
+    );
+    const ring = $("progress-ring");
+    const arc = $("progress-ring-value");
+    ring.classList.toggle("indeterminate", Boolean(indeterminate));
+    ring.classList.toggle("done", job.status === "completed");
+    ring.classList.toggle("failed", job.status === "failed" || job.status === "cancelled");
+    ring.setAttribute("aria-valuenow", String(percent));
+    ring.setAttribute("aria-busy", TERMINAL.has(job.status) ? "false" : "true");
+    if (indeterminate) {
+        $("progress-ring-label").textContent = "…";
+        arc.style.strokeDashoffset = "0";
+    } else {
+        $("progress-ring-label").textContent = t("progress.percent", { value: percent });
+        arc.style.strokeDashoffset = String(
+            RING_CIRCUMFERENCE * (1 - percent / 100)
+        );
+    }
+    $("progress-stage").textContent = humanPhase(job);
     $("progress-message").textContent = I18N.jobMessage(job.message);
-    $("progress-fill").style.width = `${job.progress || 0}%`;
-    $("progress-bar").setAttribute("aria-valuenow", String(job.progress || 0));
+    $("progress-fill").style.width = `${percent}%`;
+    $("progress-bar").setAttribute("aria-valuenow", String(percent));
+    renderProgressTiming(job, jobs || state.jobsSnapshot);
+    renderJobList(job, jobs || state.jobsSnapshot);
+}
+
+function renderProgressTiming(job, jobs) {
+    if (!job) {
+        return;
+    }
+    const now = Date.now();
+    const jobStart = parseTime(job.started_at) || parseTime(job.created_at) || now;
+    let totalStart = jobStart;
+    (jobs || []).forEach((item) => {
+        const created = parseTime(item.created_at);
+        if (!Number.isNaN(created) && created < totalStart) {
+            totalStart = created;
+        }
+    });
+    if (state.auditClockStart && state.auditClockStart < totalStart) {
+        totalStart = state.auditClockStart;
+    }
+    $("progress-timing").textContent = [
+        t("progress.elapsedJob", { time: formatElapsed(now - jobStart) }),
+        t("progress.elapsedTotal", { time: formatElapsed(now - totalStart) }),
+    ].join(" · ");
+    const pollAt = state.lastPollAt;
+    if (!pollAt) {
+        $("progress-activity").textContent = "";
+        return;
+    }
+    const silent = Math.floor((now - pollAt) / 1000);
+    if (silent >= 8) {
+        $("progress-activity").textContent = t("progress.noReply", { seconds: silent });
+        return;
+    }
+    const updated = parseTime(job.updated_at);
+    const staleFrom = Number.isNaN(updated) ? pollAt : updated;
+    const stale = Math.floor((now - staleFrom) / 1000);
+    if (!TERMINAL.has(job.status) && stale >= 45) {
+        $("progress-activity").textContent = t("progress.noChange", { seconds: stale });
+        return;
+    }
+    $("progress-activity").textContent = t("progress.lastPoll", {
+        when: formatClock(pollAt),
+    });
+}
+
+function renderJobList(currentJob, jobs) {
+    const list = $("progress-jobs");
+    list.replaceChildren();
+    const items = (jobs || []).slice().sort((a, b) => {
+        return (parseTime(a.created_at) || 0) - (parseTime(b.created_at) || 0);
+    });
+    const planned = state.pipeline.length ? state.pipeline : items.map((job) => job.type);
+    const used = new Set();
+    const rows = [];
+    planned.forEach((stage) => {
+        const aliases = STAGE_JOB_TYPES[stage] || [stage];
+        const match = items.find(
+            (job) => !used.has(job.id) && aliases.includes(job.type)
+        );
+        if (match) {
+            used.add(match.id);
+            rows.push(match);
+        } else {
+            rows.push({
+                type: aliases[aliases.length - 1] || stage,
+                placeholder: true,
+            });
+        }
+    });
+    items.forEach((job) => {
+        if (!used.has(job.id)) {
+            rows.push(job);
+        }
+    });
+    rows.forEach((job) => {
+        const item = document.createElement("li");
+        const name = document.createElement("strong");
+        name.textContent = I18N.jobType(job.type);
+        const status = document.createElement("span");
+        const meta = document.createElement("span");
+        meta.className = "job-meta";
+        if (job.placeholder) {
+            item.className = "job-pending";
+            status.textContent = t("progress.waitingStage");
+            meta.textContent = "";
+        } else {
+            status.textContent = I18N.status(job.status);
+            if (job.status === "running" || job.status === "queued") {
+                item.className = "job-live";
+            } else if (
+                job.status === "failed" ||
+                job.status === "cancelled" ||
+                job.status === "interrupted"
+            ) {
+                item.className = "job-error";
+            }
+            if (job.status === "running") {
+                meta.textContent = t("progress.percent", { value: job.progress || 0 });
+            } else if (job.stage) {
+                meta.textContent = I18N.stage(job.stage);
+            }
+            if (currentJob && job.id === currentJob.id) {
+                item.setAttribute("aria-current", "true");
+            }
+        }
+        item.append(name, status, meta);
+        list.append(item);
+    });
 }
 
 function renderEvents(events) {
@@ -731,7 +993,7 @@ function renderEvents(events) {
     events.slice().reverse().forEach((event) => {
         const item = document.createElement("li");
         const stage = event.stage || event.event_type;
-        item.textContent = `${I18N.stage(stage)}: ${I18N.jobMessage(event.message)}`;
+        item.textContent = `${I18N.stage(stage)} · ${I18N.jobMessage(event.message)}`;
         list.append(item);
     });
 }
@@ -966,14 +1228,25 @@ async function submitPasswordChange() {
 
 async function openAudit(auditId) {
     state.auditId = auditId;
+    const audit = await api("GET", `/api/audits/${auditId}`);
+    state.pipeline = PIPELINES[audit.profile] || [];
     const jobs = await api("GET", `/api/audits/${auditId}/jobs?limit=20`);
     const running = (jobs.items || []).find(
         (job) => job.status === "queued" || job.status === "running"
     );
     if (running) {
         state.jobId = running.id;
-        state.pipeline = [running.type];
-        state.pipelineIndex = 0;
+        state.jobsSnapshot = jobs.items || [];
+        if (!state.pipeline.length) {
+            state.pipeline = [running.type];
+        }
+        state.pipelineIndex = Math.max(
+            0,
+            state.pipeline.findIndex((stage) => {
+                const aliases = STAGE_JOB_TYPES[stage] || [stage];
+                return aliases.includes(running.type);
+            })
+        );
         saveActive();
         showScreen("progress");
         const job = await pollJob(running.id);
@@ -1044,7 +1317,7 @@ async function showSummary() {
         [
             t("summary.jobs"),
             (jobs.items || [])
-                .map((job) => `${I18N.jobType(job.type)}:${I18N.status(job.status)}`)
+                .map((job) => `${I18N.jobType(job.type)} · ${I18N.status(job.status)}`)
                 .join(", "),
         ],
     ];

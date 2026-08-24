@@ -158,7 +158,7 @@ def test_report_html_snapshot_and_escaping():
     assert "alert(" not in html or "&quot;xss&quot;" in html
     assert "nmaprun" not in html
     assert "../" not in html
-    assert "Итоговая сводка" in html
+    assert "Выводы" in html
     assert "Ссылки на доказательства" in html
     assert "Рекомендации" in html
 
@@ -563,7 +563,7 @@ def test_executive_conclusion_is_russian_narrative():
     assert "высокие — 1" in summary.summary
     assert "Nmap не запускался" in summary.summary
     html = render_html(report)
-    assert "Итоговая сводка" in html
+    assert "Выводы" in html
     assert summary.summary.split("\n\n")[0] in html
 
 
@@ -584,7 +584,7 @@ def test_executive_conclusion_quiet_and_empty_inventory_is_not_all_clear():
     )
     text = report.executive_summary.summary
     assert "Сегмент тихий" in text
-    assert "Открытых находок нет" in text
+    assert "Открытых слабых мест нет" in text
     assert "Nmap не запускался" in text
     assert "всё чисто" not in text
 
@@ -668,6 +668,6 @@ def test_executive_conclusion_includes_vlan_caveat_without_l3():
     assert "Нет L3-адреса" in text or "нет L3-адреса" in text
     assert "access-порт" in text
     html = render_html(report)
-    assert "Итоговая сводка" in html
+    assert "Выводы" in html
     assert "VLAN 10, 20" in html
 

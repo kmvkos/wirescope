@@ -17,7 +17,7 @@
     <header>
         <div>
             <h1>WireScope</h1>
-            <p id="header-subtitle" data-i18n="brand.subtitle">Сетевой аудиторский комплекс</p>
+            <p id="header-subtitle" data-i18n="brand.subtitle">Аудит сети</p>
         </div>
         <div class="header-meta">
             <div
@@ -48,8 +48,8 @@
             hidden
         >
             <h2 data-i18n="login.title">Вход</h2>
-            <p class="hint" data-i18n="login.hint">Локальный сеанс оператора. Аудиты продолжаются, если этот экран перезапустится.</p>
-            <p class="hint" data-i18n="login.noMgmtNetwork">Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.</p>
+            <p class="hint" data-i18n="login.hint">Сеанс на этом устройстве. Если экран перезапустится, аудит не остановится.</p>
+            <p class="hint" data-i18n="login.noMgmtNetwork">Откройте интерфейс прямо здесь. Отдельная сеть до вашего ПК не нужна.</p>
             <form id="login-form" autocomplete="username">
                 <label for="login-username" data-i18n="login.username">Имя пользователя</label>
                 <input
@@ -158,7 +158,7 @@
             hidden
         >
             <h2 data-i18n="password.title">Сменить пароль</h2>
-            <p class="hint" data-i18n="password.hint">Этот сеанс останется. Другие сеансы этого пользователя будут завершены.</p>
+            <p class="hint" data-i18n="password.hint">Этот сеанс останется. Остальные сеансы этого пользователя будут закрыты.</p>
             <form id="password-form" method="post" action="#" autocomplete="off">
                 <label for="password-current" data-i18n="password.current">Текущий пароль</label>
                 <input
@@ -208,8 +208,8 @@
             data-screen="environment"
             hidden
         >
-            <h2 data-i18n="environment.title">Окружение</h2>
-            <p class="hint" data-i18n="environment.hint">Контекст узла перед выбором интерфейса аудита.</p>
+            <h2 data-i18n="environment.title">Устройство</h2>
+            <p class="hint" data-i18n="environment.hint">Проверьте узел перед выбором интерфейса.</p>
             <div class="grid" id="environment-grid"></div>
             <div class="card compact">
                 <h3 data-i18n="environment.dns">DNS</h3>
@@ -248,8 +248,8 @@
             data-screen="scope"
             hidden
         >
-            <h2 data-i18n="scope.title">Сеть / VLAN / область</h2>
-            <p class="hint" data-i18n="scope.hint">Выведенная область — уполномоченный L3-диапазон ЭТОГО интерфейса, не весь интернет. Пассивные подсказки сами по себе не дают права на сканирование; подтвердите сети ниже.</p>
+            <h2 data-i18n="scope.title">Сеть и VLAN</h2>
+            <p class="hint" data-i18n="scope.hint">Ниже — сеть этого интерфейса, не весь интернет. Прослушивание само по себе не даёт права сканировать: подтвердите диапазоны.</p>
             <p id="scope-reason" class="hint"></p>
             <div id="scope-proposal" class="list" aria-live="polite"></div>
             <label for="scope-vlan" data-i18n="scope.vlan">Примечание VLAN / сегмент</label>
@@ -275,7 +275,7 @@
             <p id="scope-error" class="error" role="alert" hidden></p>
             <div class="actions">
                 <button type="button" class="secondary" data-nav="interface" data-i18n="action.back">Назад</button>
-                <button type="button" class="primary" data-nav="profile" data-i18n="scope.confirmAction">Подтвердить область</button>
+                <button type="button" class="primary" data-nav="profile" data-i18n="scope.confirmAction">Подтвердить сеть для сканирования</button>
             </div>
         </section>
 
@@ -289,22 +289,22 @@
             <div class="choice-list" id="profile-list">
                 <button type="button" class="choice" data-profile="passive">
                     <strong data-i18n="profile.passive.title">Пассивный</strong>
-                    <span data-i18n="profile.passive.hint">Только захват и датчики. Без Nmap.</span>
+                    <span data-i18n="profile.passive.hint">Только слушаем сеть. Без Nmap.</span>
                 </button>
                 <button type="button" class="choice" data-profile="discovery">
-                    <strong data-i18n="profile.discovery.title">Обнаружение</strong>
-                    <span data-i18n="profile.discovery.hint">Пассив, затем уполномоченное обнаружение хостов.</span>
+                    <strong data-i18n="profile.discovery.title">Поиск устройств</strong>
+                    <span data-i18n="profile.discovery.hint">Сначала слушаем сеть, затем ищем хосты в подтверждённой сети.</span>
                 </button>
                 <button type="button" class="choice" data-profile="standard">
                     <strong data-i18n="profile.standard.title">Стандарт</strong>
-                    <span data-i18n="profile.standard.hint">Обнаружение, аудит протоколов, находки, отчёт.</span>
+                    <span data-i18n="profile.standard.hint">Поиск, проверка служб, слабые места, отчёт.</span>
                 </button>
                 <button type="button" class="choice" data-profile="deep">
                     <strong data-i18n="profile.deep.title">Глубокий</strong>
-                    <span data-i18n="profile.deep.hint">Более глубокий Nmap, затем аудиты, находки, отчёт.</span>
+                    <span data-i18n="profile.deep.hint">Более глубокий Nmap, затем проверка служб, слабые места, отчёт.</span>
                 </button>
             </div>
-            <label for="scope-duration" data-i18n="profile.duration">Длительность пассива (секунды)</label>
+            <label for="scope-duration" data-i18n="profile.duration">Сколько слушать сеть, с</label>
             <input
                 id="scope-duration"
                 type="number"
@@ -326,12 +326,12 @@
             data-screen="confirm"
             hidden
         >
-            <h2 data-i18n="confirm.title">Подтверждение аудита</h2>
-            <p class="hint" data-i18n="confirm.hint">Запуск ставит задания в очередь. Закрытие этого экрана их не останавливает.</p>
+            <h2 data-i18n="confirm.title">Проверьте и запустите</h2>
+            <p class="hint" data-i18n="confirm.hint">Запуск ставит задания в очередь. Закрытие экрана их не остановит.</p>
             <dl id="confirm-summary" class="summary-list"></dl>
             <label class="check">
                 <input id="confirm-authorize" type="checkbox">
-                <span data-i18n="confirm.authorize">Подтверждаю интерфейс, профиль и уполномоченную область.</span>
+                <span data-i18n="confirm.authorize">Подтверждаю интерфейс, профиль и сеть для сканирования.</span>
             </label>
             <p id="confirm-error" class="error" role="alert" hidden></p>
             <div class="actions">
@@ -346,11 +346,40 @@
             data-screen="progress"
             hidden
         >
-            <h2 data-i18n="progress.title">Ход выполнения</h2>
-            <p id="progress-stage" class="stage" data-i18n="progress.queued">В очереди</p>
+            <h2 data-i18n="progress.title">Аудит</h2>
+            <div class="progress-hud">
+                <div
+                    class="progress-ring-wrap indeterminate"
+                    id="progress-ring"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                    data-i18n-aria="progress.title"
+                >
+                    <svg viewBox="0 0 36 36" aria-hidden="true">
+                        <circle class="progress-ring-track" cx="18" cy="18" r="15.5"></circle>
+                        <circle
+                            class="progress-ring-value"
+                            id="progress-ring-value"
+                            cx="18"
+                            cy="18"
+                            r="15.5"
+                        ></circle>
+                    </svg>
+                    <span id="progress-ring-label">…</span>
+                </div>
+                <div class="progress-hud-copy">
+                    <p id="progress-stage" class="stage" data-i18n="progress.queued">В очереди</p>
+                    <p id="progress-message" class="hint" data-i18n="progress.waiting">Ждём исполнителя…</p>
+                    <p id="progress-timing" class="hint"></p>
+                    <p id="progress-activity" class="hint"></p>
+                </div>
+            </div>
             <div
                 class="progress-bar"
                 role="progressbar"
+                aria-hidden="true"
                 aria-valuemin="0"
                 aria-valuemax="100"
                 aria-valuenow="0"
@@ -358,7 +387,8 @@
             >
                 <div id="progress-fill"></div>
             </div>
-            <p id="progress-message" class="hint" data-i18n="progress.waiting">Ожидание исполнителя…</p>
+            <h3 class="progress-jobs-title" data-i18n="progress.jobsTitle">Задания</h3>
+            <ul id="progress-jobs" class="job-list"></ul>
             <ol id="progress-events" class="event-list"></ol>
             <p id="progress-warning" class="warning" hidden></p>
             <div class="actions">
@@ -377,17 +407,17 @@
             data-screen="summary"
             hidden
         >
-            <h2 data-i18n="summary.title">Сводка</h2>
-            <h3 id="summary-conclusion-title" class="section-kicker" hidden data-i18n="summary.conclusion">Итоговая сводка</h3>
+            <h2 data-i18n="summary.title">Итог</h2>
+            <h3 id="summary-conclusion-title" class="section-kicker" hidden data-i18n="summary.conclusion">Выводы</h3>
             <p id="summary-conclusion" class="callout" hidden></p>
             <dl id="summary-list" class="summary-list"></dl>
             <p id="summary-note" class="hint" hidden></p>
             <p id="summary-vlan-note" class="hint" data-i18n="summary.vlanTagNote">VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден</p>
             <div class="nav-grid">
-                <button type="button" class="secondary" data-open="assets" data-i18n="nav.assets">Активы</button>
+                <button type="button" class="secondary" data-open="assets" data-i18n="nav.assets">Устройства</button>
                 <button type="button" class="secondary" data-open="observations" data-i18n="nav.observations">Наблюдения</button>
                 <button type="button" class="secondary" data-open="assessment" data-i18n="nav.assessment">Оценка</button>
-                <button type="button" class="secondary" data-open="findings" data-i18n="nav.findings">Находки</button>
+                <button type="button" class="secondary" data-open="findings" data-i18n="nav.findings">Слабые места</button>
                 <button type="button" class="secondary" data-open="report" data-i18n="nav.report">Отчёт</button>
             </div>
             <div class="actions">
@@ -401,7 +431,7 @@
             data-screen="assets"
             hidden
         >
-            <h2 data-i18n="assets.title">Активы</h2>
+            <h2 data-i18n="assets.title">Устройства</h2>
             <div id="asset-list" class="list"></div>
             <h3 data-i18n="assets.services">Службы</h3>
             <div id="service-list" class="list"></div>
@@ -417,7 +447,7 @@
             hidden
         >
             <h2 data-i18n="observations.title">Наблюдения</h2>
-            <p class="hint" data-i18n="observations.hint">Факты датчиков и протокольных модулей. Это не находки.</p>
+            <p class="hint" data-i18n="observations.hint">Факты с датчиков и проверки служб. Это ещё не слабые места.</p>
             <div id="observation-list" class="list"></div>
             <div class="actions">
                 <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
@@ -444,8 +474,8 @@
             data-screen="findings"
             hidden
         >
-            <h2 data-i18n="findings.title">Находки</h2>
-            <p class="hint" data-i18n="findings.hint">Результаты правил с серьёзностью. Отдельно от сырых наблюдений.</p>
+            <h2 data-i18n="findings.title">Слабые места</h2>
+            <p class="hint" data-i18n="findings.hint">Что нашли правила, с важностью. Это не сырой список наблюдений.</p>
             <div id="finding-list" class="list"></div>
             <div class="actions">
                 <button type="button" class="secondary" data-nav="summary" data-i18n="action.back">Назад</button>
@@ -480,7 +510,7 @@
                     class="primary"
                     id="generate-report-button"
                     data-i18n="action.generate"
-                >Сформировать</button>
+                >Собрать отчёт</button>
             </div>
             <iframe
                 id="report-frame"

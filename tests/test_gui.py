@@ -51,10 +51,22 @@ def test_frontend_defines_kiosk_workflow_screens():
         assert f'data-screen="{name}"' in html
     assert 'lang="ru"' in html
     assert "/static/i18n.js" in html
-    assert "Сеть / VLAN / область" in html
-    assert "уполномоченный диапазон" in html or "уполномоченный L3-диапазон" in html
+    assert "Сеть и VLAN" in html
+    assert "сеть этого интерфейса" in html
     assert 'id="scope-proposal"' in html
     assert 'data-i18n="scope.confirmAction"' in html
+    assert "Подтвердить сеть для сканирования" in html
+    assert 'id="progress-ring"' in html
+    assert 'id="progress-jobs"' in html
+    assert 'id="progress-timing"' in html
+    assert 'id="progress-activity"' in html
+    assert "progress-ring-wrap" in css
+    assert "@keyframes progress-spin" in css
+    assert "startProgressClock" in script
+    assert "humanPhase" in script
+    assert "renderJobList" in script
+    assert "progress.noReply" in script
+    assert "progress.noReply" in i18n
     assert "<details class=\"advanced\">" in html
     assert 'id="scope-targets"' in html
     assert "Будем сканировать эти сети" in i18n
@@ -117,13 +129,13 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert 't("error.apiUnreachable"' in script
     assert 'location.protocol === "https:"' in script
     assert "Захват завершён без кадров" in i18n
-    assert "Итоговая сводка" in i18n
+    assert "Выводы" in i18n
     assert "VLAN в кадре виден только при 802.1Q" in i18n
     assert "id=\"summary-note\"" in html
     assert "id=\"summary-conclusion\"" in html
     assert "id=\"summary-vlan-note\"" in html
     assert "required" not in html.split('id="scope-targets"')[1].split("</textarea>")[0]
-    assert "Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск" in i18n
+    assert "Откройте интерфейс прямо здесь" in i18n
     assert "login.noMgmtNetwork" in i18n
     assert 'data-i18n="login.noMgmtNetwork"' in html
     assert 'const locale = "ru"' in i18n
@@ -145,7 +157,15 @@ def test_i18n_russian_default_matches_english_fallback_keys():
     assert "error.secureCookieOverHttp" in russian
     assert "соединение отклонено" in i18n
     assert "login.noMgmtNetwork" in russian
-    assert "Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск" in i18n
+    assert "Откройте интерфейс прямо здесь" in i18n
+    assert "Прослушивание" in i18n
+    assert "Поиск устройств" in i18n
+    assert "слушаем сеть" in i18n
+    assert "нет ответа {seconds} с" in i18n
+    assert "Подтвердить сеть для сканирования" in i18n
+    assert "Слабые места" in i18n
+    assert "progress.phase.listen" in russian
+    assert "progress.jobsTitle" in russian
     assert "password.title" in russian
     assert "password.success" in russian
     assert "action.changePassword" in russian

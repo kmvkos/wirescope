@@ -57,7 +57,7 @@ VLAN_CAVEAT = (
 )
 
 _EMPTY_NOT_CLEAR = (
-    "Пустой список протокольных находок при видимых хостах — это не "
+    "Пустой список слабых мест при видимых хостах — это не "
     "«всё чисто»: инвентарь без найденных слабых протоколов не доказывает "
     "отсутствие риска."
 )
@@ -133,7 +133,7 @@ def _posture_paragraph(source: ReportSource, passive: ReportPassive) -> str:
         if vlans:
             posture = f"{posture}; найдены VLAN {_format_vlans(vlans)}"
     elif not passive.available:
-        posture = "Пассивный захват для этого аудита не сохранён"
+        posture = "Прослушивание для этого аудита не сохранено"
     else:
         posture = "Состояние сегмента по пассивному захвату не определено"
     return f"{posture}. {host_text}."
@@ -157,12 +157,12 @@ def _severity_paragraph(
             parts.append(f"{_SEVERITY_RU[name]} — {total}")
     if not findings:
         return (
-            "Открытых находок нет (критические — 0, высокие — 0, "
+            "Открытых слабых мест нет (критические — 0, высокие — 0, "
             "средние — 0, низкие — 0)."
         )
     listed = ", ".join(parts) if parts else "по критическим/высоким/средним/низким — 0"
     return (
-        f"Открытых находок: {open_total}. По серьёзности: {listed}."
+        f"Открытых слабых мест: {open_total}. По важности: {listed}."
     )
 
 
@@ -189,7 +189,7 @@ def _exposures_paragraph(findings: list[ReportFinding]) -> str:
             if len(titles) >= 4:
                 break
         labels = titles
-    return f"Заметные экспозиции: {', '.join(labels)}."
+    return f"На что обратить внимание: {', '.join(labels)}."
 
 
 _MGMT_LABELS = {
@@ -230,11 +230,11 @@ def _caveats_paragraph(
     if finding_count == 0 and hosts > 0:
         bits.append(_EMPTY_NOT_CLEAR)
         if not findings_ran:
-            bits.append("Оценка находок не выполнялась.")
+            bits.append("Оценка слабых мест не выполнялась.")
         elif not protocol_ran:
             bits.append(
-                "Протокольный аудит не запускался, поэтому отсутствие "
-                "находок не означает безопасную конфигурацию служб."
+                "Проверка служб не запускалась, поэтому отсутствие "
+                "слабых мест не означает безопасную конфигурацию."
             )
     no_l3 = passive.had_l3_address is False
     no_dhcp = not passive.dhcp.observed

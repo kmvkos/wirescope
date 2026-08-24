@@ -3,7 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.models import (
@@ -29,6 +29,9 @@ from backend.models import (
     ProtocolAuditRequest,
     ProtocolObservationResponse,
     ReadinessResponse,
+    ReportJobRequest,
+    ReportPageResponse,
+    ReportResponse,
     ServicePageResponse,
 )
 from config.settings import Settings, get_settings
@@ -60,6 +63,7 @@ from persistence.database import Database
 from persistence.schema import migrations_current
 from protocol_audits.registry import default_registry
 from protocol_audits.store import ProtocolObservationStore
+from reports.store import ReportNotFound, ReportStore
 from storage.evidence import EvidenceStore
 
 
@@ -74,6 +78,7 @@ def create_app(
     inventory_service: InventoryService | None = None,
     observation_store: ProtocolObservationStore | None = None,
     finding_store: FindingStore | None = None,
+    report_store: ReportStore | None = None,
     environment_provider: Callable[[], dict[str, Any]] = get_environment,
 ) -> FastAPI:
     active_settings = settings or get_settings()
@@ -98,6 +103,7 @@ def create_app(
         active_database
     )
     active_findings = finding_store or FindingStore(active_database)
+    active_reports = report_store or ReportStore(active_database)
     module_registry = default_registry()
 
     application = FastAPI(
@@ -118,6 +124,7 @@ def create_app(
     application.state.inventory = active_inventory
     application.state.observations = active_observations
     application.state.findings = active_findings
+    application.state.reports = active_reports
 
     @application.get("/api/health", response_model=HealthResponse)
     @application.get("/api/status", response_model=HealthResponse)
@@ -812,6 +819,144 @@ def create_app(
                 },
             ) from exc
 
+    @application.post(
+        "/api/audits/{audit_id}/reports",
+        response_model=JobAcceptedResponse,
+        status_code=202,
+    )
+    def enqueue_report(
+        audit_id: str,
+        request: ReportJobRequest,
+    ) -> JobAcceptedResponse:
+        try:
+            audit = active_jobs.get_audit(audit_id)
+            job = active_jobs.create_job(
+                audit_id=audit.id,
+                job_type="report_generation",
+                target=audit.interface,
+                parameters={"actor": request.actor},
+                priority=request.priority,
+                resource_key=f"audit:{audit.id}",
+                resource_group="report",
+                resource_limit=active_settings.max_report_jobs,
+            )
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_state_transition",
+                    "message": str(exc),
+                },
+            ) from exc
+        return JobAcceptedResponse(
+            audit_id=audit.id,
+            job_id=job.id,
+            status=job.status,
+            status_url=f"/api/jobs/{job.id}",
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/reports",
+        response_model=ReportPageResponse,
+    )
+    def list_reports(
+        audit_id: str,
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> ReportPageResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        page = active_reports.list_reports(
+            audit_id=audit_id,
+            limit=limit,
+            offset=offset,
+        )
+        return ReportPageResponse(
+            items=[_report_response(item) for item in page.items],
+            limit=page.limit,
+            offset=page.offset,
+            total=page.total,
+        )
+
+    @application.get(
+        "/api/audits/{audit_id}/reports/{report_id}",
+        response_model=ReportResponse,
+    )
+    def get_report(audit_id: str, report_id: str) -> ReportResponse:
+        try:
+            active_jobs.get_audit(audit_id)
+            return _report_response(active_reports.get(audit_id, report_id))
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except ReportNotFound as exc:
+            raise _not_found(exc) from exc
+
+    @application.get("/api/audits/{audit_id}/reports/{report_id}/export")
+    def export_report(
+        audit_id: str,
+        report_id: str,
+        format: str = Query(default="json"),
+    ) -> Response:
+        requested = format.strip().lower()
+        if requested == "pdf":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "pdf_not_available",
+                    "message": (
+                        "PDF export is deferred until the HTML report "
+                        "contract stabilizes"
+                    ),
+                },
+            )
+        if requested not in {"json", "html"}:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "unsupported_report_format",
+                    "message": "format must be json or html",
+                },
+            )
+        try:
+            active_jobs.get_audit(audit_id)
+            report = active_reports.get(audit_id, report_id)
+            artifact_id = (
+                report.json_artifact_id
+                if requested == "json"
+                else report.html_artifact_id
+            )
+            artifact = active_jobs.artifact(artifact_id)
+            if artifact.audit_id != audit_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "artifact_audit_mismatch",
+                        "message": "Report artifact does not belong to audit",
+                    },
+                )
+            payload = active_evidence.read_bytes(artifact)
+        except EntityNotFound as exc:
+            raise _not_found(exc) from exc
+        except ReportNotFound as exc:
+            raise _not_found(exc) from exc
+        except JobExecutionError as exc:
+            raise _job_execution_http_error(exc) from exc
+        filename = f"wirescope-report-{report.id}.{requested}"
+        disposition = "inline" if requested == "html" else "attachment"
+        return Response(
+            content=payload,
+            media_type=artifact.content_type,
+            headers={
+                "Content-Disposition": (
+                    f'{disposition}; filename="{filename}"'
+                ),
+            },
+        )
+
     @application.get(
         "/api/audits/{audit_id}/jobs",
         response_model=JobPageResponse,
@@ -1018,6 +1163,17 @@ def _finding_response(finding, *, include_events: bool = True) -> FindingRespons
     if not include_events:
         payload["state_events"] = []
     return FindingResponse(**payload)
+
+
+def _report_response(report) -> ReportResponse:
+    payload = report.model_dump(mode="json")
+    payload["json_url"] = (
+        f"/api/audits/{report.audit_id}/reports/{report.id}/export?format=json"
+    )
+    payload["html_url"] = (
+        f"/api/audits/{report.audit_id}/reports/{report.id}/export?format=html"
+    )
+    return ReportResponse(**payload)
 
 
 def _not_found(error: EntityNotFound) -> HTTPException:

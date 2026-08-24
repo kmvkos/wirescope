@@ -178,16 +178,27 @@ class EvidenceStore:
                 f"Could not import artifact: {exc}",
             ) from exc
 
-    def read_json(self, artifact: ArtifactRecord) -> dict[str, Any]:
+    def read_bytes(self, artifact: ArtifactRecord) -> bytes:
         path = self.path_for(artifact)
         try:
             payload = path.read_bytes()
             if hashlib.sha256(payload).hexdigest() != artifact.sha256:
                 raise ValueError("Artifact checksum mismatch")
-            value = json.loads(payload)
+            return payload
+        except Exception as exc:
+            raise self._storage_error(
+                "artifact_read_failed",
+                f"Could not read artifact: {exc}",
+            ) from exc
+
+    def read_json(self, artifact: ArtifactRecord) -> dict[str, Any]:
+        try:
+            value = json.loads(self.read_bytes(artifact))
             if not isinstance(value, dict):
                 raise ValueError("Artifact root must be an object")
             return value
+        except JobExecutionError:
+            raise
         except Exception as exc:
             raise self._storage_error(
                 "artifact_read_failed",

@@ -249,3 +249,32 @@ class FindingPageResponse(BaseModel):
     offset: int
     total: int
 
+
+class ReportJobRequest(BaseModel):
+    actor: str | None = Field(default=None, max_length=128)
+    priority: int = Field(default=0, ge=-100, le=100)
+
+
+class ReportResponse(BaseModel):
+    id: str
+    audit_id: str
+    job_id: str | None
+    schema_name: str
+    schema_version: int
+    generated_at: datetime
+    actor: str | None
+    source_hash: str
+    summary: dict[str, Any]
+    json_artifact_id: str
+    html_artifact_id: str
+    created_at: datetime
+    json_url: str
+    html_url: str
+
+
+class ReportPageResponse(BaseModel):
+    items: list[ReportResponse]
+    limit: int
+    offset: int
+    total: int
+

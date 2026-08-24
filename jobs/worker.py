@@ -16,6 +16,7 @@ from jobs.handlers import (
     FindingsEvaluationHandler,
     PassiveDiscoveryHandler,
     ProtocolAuditHandler,
+    ReportGenerationHandler,
 )
 from jobs.maintenance import MaintenanceService
 from jobs.models import AuditRecord, ErrorCategory, JobError, JobRecord
@@ -257,6 +258,7 @@ def build_registry() -> HandlerRegistry:
     registry.register("active_discovery", ActiveDiscoveryHandler())
     registry.register("protocol_audit", ProtocolAuditHandler())
     registry.register("findings_evaluation", FindingsEvaluationHandler())
+    registry.register("report_generation", ReportGenerationHandler())
     return registry
 
 

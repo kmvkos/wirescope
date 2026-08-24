@@ -2,11 +2,7 @@
 
 **Русский** · [English](en/REPORTING_MODEL.md)
 
-Отчёт WireScope строится из уже сохранённых данных аудита. Генерация отчёта не запускает Nmap, protocol modules или passive capture повторно.
-
-Это важно: report должен быть воспроизводимым представлением audit state, а не ещё одной скрытой стадией сканирования.
-
-## Откуда берутся данные
+Отчёт WireScope строится только из уже сохранённого состояния аудита. Генерация report не запускает Nmap, protocol modules или passive capture повторно.
 
 ```text
 audit metadata
@@ -18,135 +14,102 @@ audit metadata
 + findings
 + artifact metadata
         ↓
-report view model
-schema: audit-report v1
+audit-report v1
         ↓
-HTML + JSON
-        ↓
-EvidenceStore + reports history
+JSON
+├── self-contained HTML
+└── Markdown
 ```
 
-JSON schema находится здесь:
+JSON `audit-report` v1 остаётся каноническим документом. HTML и Markdown — представления над тем же persisted state.
+
+Schema:
 
 ```text
 reports/schema/audit-report-v1.json
 ```
 
-## Что входит в report
+## Содержимое report
 
-### Итоговая сводка
+### Executive summary
 
-Содержит основные цифры и короткое текстовое резюме:
+Содержит:
 
 - число assets/services/findings;
-- количество кадров passive capture;
-- был ли L3 address на capture NIC;
-- реально увиденные 802.1Q VLAN IDs;
-- segment note;
+- open findings;
 - highest open severity;
-- headline/summary.
+- headline и короткое summary;
+- базовые passive показатели.
 
-Русская narrative-сводка детерминированная. Она строится из persisted data и не использует LLM для «додумывания» текста или CVE.
+Narrative генерируется детерминированно из persisted data. LLM не используется для придумывания CVE или недостающих фактов.
 
-### Environment
+### Environment и scope
 
-- hostname;
-- capture interface;
-- L3 presence;
-- обнаруженные interfaces;
-- default route;
-- DNS.
+Report фиксирует environment snapshot, capture interface и подтверждённый active scope. Отсутствующий L3 path не делает passive-only report невалидным.
 
-### Passive assessment
+### Passive data
 
-- duration и frame count;
-- 802.1Q tags, которые действительно были в кадрах;
-- LLDP/CDP neighbors;
-- STP;
-- ARP;
-- DHCP;
-- mDNS/LLMNR/NBNS summaries;
-- assessment conclusions с confidence.
+Включаются frame count, visibility/segment notes, действительно увиденные 802.1Q tags, LLDP/CDP, STP, ARP/DHCP и другие нормализованные passive observations.
 
-### Scope
-
-Отдельно сохраняются audit scope и confirmed active-scan snapshot.
+Untagged traffic не получает выдуманный VLAN ID. LLDP/CDP native/voice VLAN остаётся neighbor metadata.
 
 ### Inventory
 
-Assets и services из persisted inventory.
+Assets и services берутся из persisted inventory вместе с доступными vendor/OS/device-class hints.
 
 ### Findings
 
-В report попадают как open, так и `suppressed`/`accepted_risk` findings, чтобы отчёт не терял контекст принятого решения.
-
-Recommendations строятся по открытым findings.
+В report входят open, suppressed и accepted-risk findings, чтобы экспорт не терял контекст решений оператора. Recommendations строятся из текущих findings.
 
 ### Evidence references
 
-Основной report не встраивает сырые PCAP/XML/stdout.
-
-Для evidence показываются metadata:
+Raw PCAP/XML/stdout не встраиваются в основной report. Сохраняются ссылки и metadata:
 
 - artifact id;
-- type;
+- artifact type;
 - content type;
 - size;
 - SHA-256.
 
-Внешнему JSON не отдаётся внутренний filesystem `relative_path`.
+Внешний report не раскрывает внутренний filesystem `relative_path`.
 
 ## Генерация
 
 Запрос:
 
 ```text
-POST /api/audits/{id}/reports
+POST /api/v1/audits/{id}/reports
 ```
 
-создаёт durable job:
-
-```text
-report_generation
-```
+создаёт durable job `report_generation`.
 
 Worker:
 
-1. загружает audit/inventory/findings/artifact metadata;
+1. загружает persisted audit state;
 2. строит `audit-report` v1;
-3. валидирует JSON по опубликованной schema;
+3. валидирует документ;
 4. рендерит self-contained HTML;
-5. экранирует значения перед вставкой в HTML;
-6. пишет JSON и HTML через `EvidenceStore`;
-7. регистрирует report history row;
-8. сохраняет `source_hash`.
+5. пишет JSON и HTML через `EvidenceStore`;
+6. регистрирует report history row;
+7. сохраняет `source_hash`.
 
-Report job использует audit-level lock и `report` resource group. Interface lock ему не нужен: сеть он не использует.
+Report generation не требует interface lock, потому что сеть не используется.
 
 ## `source_hash`
 
-`source_hash` отражает содержимое исходного persisted state, а не случайные поля конкретной генерации.
+`source_hash` зависит от содержимого исходного persisted state, а не от report id, generation timestamp или job id.
 
-Если inventory, findings, scope и evidence не изменились, повторная генерация должна получать тот же source hash, даже если меняются:
-
-- report id;
-- generation timestamp;
-- job id;
-- runtime metadata.
-
-Это позволяет понять, был ли отчёт реально построен по другому состоянию аудита.
+Если inventory, findings, scope и evidence не изменились, повторная генерация должна иметь тот же source hash.
 
 ## Export API
 
-Основные endpoints:
-
 ```text
-POST /api/audits/{id}/reports
-GET  /api/audits/{id}/reports
-GET  /api/audits/{id}/reports/{report_id}
-GET  /api/audits/{id}/reports/{report_id}/export?format=json
-GET  /api/audits/{id}/reports/{report_id}/export?format=html
+GET /api/v1/audits/{id}/reports/{report_id}/export?format=json
+GET /api/v1/audits/{id}/reports/{report_id}/export?format=html
+GET /api/v1/audits/{id}/reports/{report_id}/export?format=markdown
 ```
+
+`format=md` принимается как alias для Markdown.
 
 PDF пока не реализован:
 
@@ -154,88 +117,57 @@ PDF пока не реализован:
 format=pdf → 422 pdf_not_available
 ```
 
-Export разрешает файл только через artifact id, зарегистрированный в report row. `EvidenceStore.path_for` проверяет, что реальный путь остаётся внутри evidence root.
-
 ## HTML
 
-HTML self-contained: для просмотра не требуется отдельный frontend bundle или API call за содержимым отчёта.
-
-Все динамические значения экранируются, чтобы data из сети — hostname, HTTP title, certificate subject и т. п. — не могла превратиться в HTML/JS injection внутри report.
+HTML self-contained и не требует frontend bundle или дополнительных API requests для просмотра. Динамические значения экранируются перед вставкой, чтобы hostname, HTTP title, certificate subject и другие данные из сети не могли стать HTML/JS injection.
 
 ## JSON
 
-JSON — машинно-читаемый export того же audit state.
+JSON — стабильный машинно-читаемый `audit-report` v1 и source of truth для остальных export formats.
 
-Ключи и rule IDs остаются английскими и стабильными. Человекоориентированные finding title/description/recommendation могут быть русскими, поскольку текущий operator GUI и основной report ориентированы на русскоязычного оператора.
+Ключи schema и rule IDs остаются стабильными. Человекоориентированные title/description/recommendation могут быть русскими.
 
-## Silent tap и interface без IP
+## Markdown
 
-Passive report остаётся полезным, даже если capture interface не получил IPv4/IPv6 адрес.
+Markdown формируется из сохранённого JSON report и не регистрирует новую scanner stage.
 
-`dumpcap` не требует L3 address, поэтому можно получить:
+Он содержит:
 
-- frame count;
-- quiet/active segment indication;
-- реально присутствующие 802.1Q tags;
-- LLDP/CDP;
-- STP;
-- ARP;
-- DHCP;
-- mDNS/LLMNR/NBNS.
+- audit metadata;
+- executive summary;
+- scope;
+- passive summary;
+- assets;
+- services;
+- findings;
+- recommendations;
+- evidence references.
 
-### VLAN на access port
+Markdown предназначен для Git, тикетов, wiki/Confluence-подобных систем и ручного включения в техническую документацию.
 
-Если switch access-port отправляет untagged frames, WireScope не может честно определить VLAN ID только из этих кадров.
+## Evidence access
 
-Поэтому report не делает что-то вроде:
+Evidence можно просматривать отдельно от report через audit-scoped API:
 
 ```text
-VLAN 10 detected
+GET /api/v1/audits/{audit_id}/findings/{finding_id}/evidence
+GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
-если `10` не присутствовал как 802.1Q tag или отдельный neighbor fact.
-
-Уntagged traffic всё равно анализируется, просто VLAN ID остаётся неизвестен.
-
-LLDP/CDP advertised native/voice VLAN — это neighbor metadata, а не доказательство 802.1Q tag в самом traffic stream. В report эти вещи не смешиваются.
-
-## Active data в report
-
-Nmap inventory появляется в report только если active discovery действительно запускался и сохранял результаты.
-
-Если L3 path отсутствует, passive-only audit остаётся валидным. Report не пытается «достроить» отсутствующие active данные.
+Backend проверяет принадлежность artifact конкретному audit перед выдачей. Ответ содержит `X-WireScope-SHA256`.
 
 ## История reports
 
-Повторная генерация не перезаписывает старый report. В `reports` хранится history.
-
-Это полезно, если:
-
-- findings были re-evaluated;
-- finding перевели в accepted risk;
-- inventory изменился;
-- появился новый evidence artifact;
-- нужен предыдущий export для сравнения.
+Новая генерация не перезаписывает старую запись. Report history позволяет сравнивать экспорты после re-evaluation findings, изменения accepted-risk состояния, inventory или evidence.
 
 ## Тестирование
 
-Reporting тестируется fixture-based.
-
-Report generation:
-
-- не требует live network;
-- не вызывает scanner providers;
-- проверяет JSON schema;
-- проверяет HTML escaping;
-- проверяет path boundary evidence store;
-- проверяет стабильность source hash.
-
-Обычный `pytest` не должен касаться живой сети ради генерации report.
+Reporting tests не требуют live network. Проверяются schema, HTML escaping, evidence path boundary, source hash и Markdown rendering.
 
 ## Ограничения
 
-На текущей версии:
+Сейчас не реализованы:
 
-- PDF нет;
-- отдельного шаблонизатора/локализации report на несколько языков пока нет: основной человекочитаемый output русскоязычный;
-- report не заменяет raw evidence: он ссылается на него по artifact id/hash, но не пытается включить всё содержимое в один файл.
+- PDF export;
+- отдельная многоязычная template-система report;
+- embedding всех raw evidence внутрь одного файла — report намеренно ссылается на artifacts по id/hash.

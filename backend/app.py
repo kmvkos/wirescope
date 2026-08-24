@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from auth.service import AuthService
+from backend.audit_log import AuditLogService, audit_id_from_path, operational_action
 from backend.dependencies import AppServices
 from backend.routers import api_router
 from backend.security import auth_guard
@@ -67,6 +68,7 @@ def create_app(
     active_reports = report_store or ReportStore(active_database)
     active_auth = auth_service or AuthService(active_database, active_settings)
     active_auth.bootstrap()
+    active_audit_log = AuditLogService(active_database)
     active_network = network_service or NetworkService(active_settings)
 
     services = AppServices(
@@ -81,6 +83,7 @@ def create_app(
         findings=active_findings,
         reports=active_reports,
         auth=active_auth,
+        audit_log=active_audit_log,
         network=active_network,
         environment_provider=environment_provider,
         module_registry=default_registry(),
@@ -109,10 +112,47 @@ def create_app(
     application.state.findings = active_findings
     application.state.reports = active_reports
     application.state.auth = active_auth
+    application.state.audit_log = active_audit_log
     application.state.network = active_network
 
-    # /api/v1 is canonical. /api remains a compatibility alias while the
-    # current frontend and external clients migrate.
+    @application.middleware("http")
+    async def operational_audit_middleware(request: Request, call_next):
+        action = operational_action(request.method, request.url.path)
+        if action is None:
+            return await call_next(request)
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            user = getattr(request.state, "user", None)
+            actor = getattr(request.state, "audit_actor", None)
+            role = getattr(request.state, "audit_role", None)
+            if user is not None:
+                actor = actor or user.username
+                role = role or user.role.value
+            try:
+                active_audit_log.record(
+                    action=action,
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=status_code,
+                    actor=actor,
+                    role=role,
+                    client_ip=(
+                        request.client.host if request.client is not None else None
+                    ),
+                    audit_id=audit_id_from_path(request.url.path),
+                )
+            except Exception:
+                # Audit logging must never turn an otherwise valid operator
+                # action into an application outage. Diagnostics will expose
+                # database/migration health separately.
+                pass
+
+    # /api/v1 is canonical. /api remains a compatibility alias for existing
+    # installations and external clients during the v1 transition.
     application.include_router(api_router, prefix="/api/v1")
     application.include_router(
         api_router,
@@ -129,16 +169,7 @@ def create_app(
     @application.get("/", response_class=HTMLResponse)
     def root() -> HTMLResponse:
         index = active_settings.frontend_dir / "index.html"
-        html = index.read_text(encoding="utf-8")
-        html = html.replace(
-            "</head>",
-            '<link rel="stylesheet" href="/static/enhancements.css">\n</head>',
-        )
-        html = html.replace(
-            "</body>",
-            '<script src="/static/enhancements.js" defer></script>\n</body>',
-        )
-        return HTMLResponse(html)
+        return HTMLResponse(index.read_text(encoding="utf-8"))
 
     return application
 

@@ -75,7 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install_cmd.add_argument("--tls-cert", default="", help="Direct TLS certificate path")
     install_cmd.add_argument("--tls-key", default="", help="Direct TLS private key path")
-    install_cmd.add_argument("--skip-packages", action="store_true")
+    install_cmd.add_argument(
+        "--skip-packages",
+        action="store_true",
+        help="Skip apt/dnf/zypper (enable kiosk without reinstalling packages)",
+    )
     install_cmd.add_argument(
         "--skip-apt",
         action="store_true",
@@ -86,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     install_cmd.add_argument(
         "--with-kiosk",
         action="store_true",
-        help="Install cage or xinit plus Chromium (not a desktop; tty1 kiosk)",
+        help="Install cage or xinit plus Chromium if missing (not a desktop; tty1 kiosk)",
     )
     install_cmd.add_argument(
         "--enable-kiosk",
@@ -220,8 +224,6 @@ def cmd_install(args: argparse.Namespace) -> int:
         tls_keyfile=Path(args.tls_key) if args.tls_key else None,
     )
     report = install(config, RealHost())
-    for step in report.steps:
-        print(f"ok: {step}")
     for warning in report.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     if report.admin_password_path:
@@ -347,6 +349,10 @@ def cmd_tls_selfsigned(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    raise SystemExit(args.handler(args))
+    try:
+        parser = build_parser()
+        args = parser.parse_args(argv)
+        raise SystemExit(args.handler(args))
+    except KeyboardInterrupt:
+        print("установка прервана / install interrupted", file=sys.stderr)
+        raise SystemExit(130)

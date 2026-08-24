@@ -174,15 +174,36 @@ firewalld. See [SECURITY_MODEL.md](SECURITY_MODEL.md).
 
 ## This Debian VM
 
-Run as root from the checkout. This does not rewrite Git history and keeps
-mutable state out of the source tree.
+Stay logged in as the Linux user `wirescope` (the OS account). Do not log in
+as the WireScope GUI user `auditor` for this step.
+
+`sudo` prompts for the **wirescope** Linux password (not the GUI password).
+
+First-time kiosk install. Chromium is large (5–15 minutes). Watch apt output.
+Do not press Ctrl+C:
 
 ```bash
 sudo /opt/wirescope/packaging/install.sh \
   --project-root /opt/wirescope \
   --generate-admin-password \
-  --bind-host 127.0.0.1
+  --bind-host 127.0.0.1 \
+  --with-kiosk --enable-kiosk
 ```
+
+Already-installed packages are skipped. `--with-kiosk` does not pull GNOME or
+XFCE; boot kiosk is Chromium on tty1.
+
+If packages already exist and you only want to enable the kiosk:
+
+```bash
+sudo /opt/wirescope/packaging/install.sh --skip-packages --enable-kiosk
+# or, after units exist:
+sudo systemctl enable --now wirescope-kiosk
+```
+
+After success, reboot with the **VM console attached** (not SSH-only). tty1
+shows Chromium; sign into the WireScope GUI as `auditor`. SSH from the host
+still works for admin; the kiosk takes the local screen only.
 
 From another PC on this VM: install with `--trust-proxy --bind-host 127.0.0.1`,
 enable Caddy or nginx from `/etc/wirescope/proxy/`, open
@@ -292,7 +313,7 @@ are the same on all supported families.
 Useful flags:
 
 - `--dry-run` — print the plan without changing the system
-- `--skip-packages` / `--skip-apt` — reuse already installed packages
+- `--skip-packages` / `--skip-apt` — skip apt/dnf/zypper (enable kiosk without reinstalling)
 - `--skip-pip` — reuse the existing venv
 - `--no-start` — write units but do not `systemctl enable --now`
 - `--no-optional-providers` — base capture/decode tools only
@@ -345,6 +366,25 @@ sudo journalctl -u wirescope-api -u wirescope-worker -e
 недоступен, проверьте группу `wireshark` и перезапустите службы:
 `systemctl restart wirescope-api wirescope-worker` или
 `systemctl --user restart wirescope-api wirescope-worker`.
+
+### Эта Debian VM (последовательность)
+
+1. Оставайтесь в Linux под пользователем `wirescope`, не `auditor`.
+2. `sudo` спрашивает пароль Linux-пользователя **wirescope**.
+3. Полная установка киоска (Chromium 5–15 минут). Смотрите вывод apt, не
+   нажимайте Ctrl+C:
+
+   `sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk`
+
+4. Если пакеты уже стоят и нужен только киоск:
+
+   `sudo /opt/wirescope/packaging/install.sh --skip-packages --enable-kiosk`
+
+   или `sudo systemctl enable --now wirescope-kiosk`.
+
+5. После успеха перезагрузите ВМ с подключённой **консолью** (не только SSH).
+   На tty1 откроется Chromium; в GUI войдите как `auditor`.
+6. SSH с хоста для админки работает; киоск занимает только локальный экран.
 
 ## Production paths
 

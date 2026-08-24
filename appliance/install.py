@@ -109,6 +109,7 @@ def _exec_user(config: InstallConfig) -> str | None:
 
 def _note(report: InstallReport, message: str) -> None:
     report.steps.append(message)
+    print(f"ok: {message}", flush=True)
 
 
 def install(config: InstallConfig, host: Host) -> InstallReport:
@@ -218,8 +219,13 @@ def _install_packages(
         kiosk=config.install_kiosk,
     )
     required_missing: list[str] = []
+    optional_names: list[str] = []
+    kiosk_names: list[str] = []
+    skipped: list[str] = []
     for candidates in selection.required_groups:
-        if any(host.package_installed(name) for name in candidates):
+        installed = _installed_member(host, candidates)
+        if installed is not None:
+            skipped.append(installed)
             continue
         chosen = _first_available(host, candidates)
         if chosen is None:
@@ -227,9 +233,10 @@ def _install_packages(
                 "required package unavailable: " + " / ".join(candidates)
             )
         required_missing.append(chosen)
-    optional_names: list[str] = []
     for candidates in selection.optional_groups:
-        if any(host.package_installed(name) for name in candidates):
+        installed = _installed_member(host, candidates)
+        if installed is not None:
+            skipped.append(installed)
             continue
         chosen = _first_available(host, candidates)
         if chosen is None:
@@ -238,9 +245,10 @@ def _install_packages(
             )
         else:
             optional_names.append(chosen)
-    kiosk_names: list[str] = []
     for candidates in selection.kiosk_groups:
-        if any(host.package_installed(name) for name in candidates):
+        installed = _installed_member(host, candidates)
+        if installed is not None:
+            skipped.append(installed)
             continue
         chosen = _first_available(host, candidates)
         if chosen is None:
@@ -249,15 +257,35 @@ def _install_packages(
             )
         else:
             kiosk_names.append(chosen)
+    if skipped:
+        _note(
+            report,
+            "already installed, skipping: " + ", ".join(dict.fromkeys(skipped)),
+        )
     names = tuple(required_missing + optional_names + kiosk_names)
     if not names:
         _note(report, "OS packages already installed")
         return
-    result = host.install_packages(names)
+    _note(report, "installing missing packages: " + ", ".join(names))
+    if any(name.startswith("chromium") for name in names):
+        print(
+            "Chromium is large; apt/dnf output follows (5–15 min). "
+            "Do not Ctrl+C.",
+            flush=True,
+        )
+    try:
+        result = host.install_packages(names)
+    except HostError as exc:
+        raise InstallError(str(exc)) from exc
     if not result.ok:
         raise InstallError(
-            f"{report.platform.package_manager} install failed: "
-            + (result.stderr.strip() or result.stdout.strip())
+            f"{report.platform.package_manager} install failed "
+            f"(exit {result.returncode}; see output above)"
+            + (
+                ": " + (result.stderr.strip() or result.stdout.strip())
+                if (result.stderr or result.stdout).strip()
+                else ""
+            )
         )
     still_missing = [
         " / ".join(candidates)
@@ -269,6 +297,13 @@ def _install_packages(
             "required packages missing after install: " + ", ".join(still_missing)
         )
     _note(report, "installed packages: " + ", ".join(names))
+
+
+def _installed_member(host: Host, candidates: tuple[str, ...]) -> str | None:
+    for name in candidates:
+        if host.package_installed(name):
+            return name
+    return None
 
 
 def _first_available(host: Host, candidates: tuple[str, ...]) -> str | None:

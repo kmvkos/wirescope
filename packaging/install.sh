@@ -4,6 +4,7 @@ set -eu
 # Run as root (sudo) for system units, or pass --user-install.
 here=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 if [ -x "$here/.venv/bin/python" ]; then
     python="$here/.venv/bin/python"
 else

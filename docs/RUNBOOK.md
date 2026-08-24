@@ -157,15 +157,23 @@ Capture NIC addressing is independent. Restarting the kiosk does not stop
 API or worker.
 
 ```bash
+# Stay logged in as Linux user wirescope. sudo asks the wirescope password.
+# Chromium takes 5–15 min; watch apt output, do not Ctrl+C.
 sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk
 sudo systemctl status wirescope-kiosk
+# packages already present; enable kiosk only:
+sudo /opt/wirescope/packaging/install.sh --skip-packages --enable-kiosk
+# or:
+sudo systemctl enable --now wirescope-kiosk
 # optional: user unit after a graphical login
 systemctl --user enable --now wirescope-kiosk
 ```
 
-`--with-kiosk` installs cage (preferred) or xinit plus Chromium, not a full
-desktop. `--enable-kiosk` enables the system unit on `multi-user.target`
-even without a current `DISPLAY`. Missing Chromium leaves the unit disabled.
+`--with-kiosk` installs cage (preferred) or xinit plus Chromium if missing,
+not a full desktop. Already-installed packages are skipped. `--enable-kiosk`
+enables the system unit on `multi-user.target` even without a current
+`DISPLAY`. Missing Chromium leaves the unit disabled. Reboot with the VM
+console attached so tty1 shows the kiosk; SSH from the host still works.
 Live Raspberry Pi OS Lite tests stay unused (`pytest -m live_pi` with
 `WIRESCOPE_LIVE_PI=1`).
 

@@ -11,7 +11,21 @@ Chromium), not a full desktop. They are not required on headless servers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Mapping
+
+APT_LOCK_FRONTEND = "/var/lib/dpkg/lock-frontend"
+APT_LOCK_WAIT_SECONDS = 180
+
+APT_NONINTERACTIVE_OPTIONS: tuple[str, ...] = (
+    "-y",
+    "-o",
+    "Dpkg::Options::=--force-confdef",
+    "-o",
+    "Dpkg::Options::=--force-confold",
+    "-o",
+    "DPkg::Lock::Timeout=180",
+)
 
 
 FORBIDDEN_DEFAULT_PACKAGES = frozenset({"nuclei", "nikto", "nuclei-templates"})
@@ -239,11 +253,40 @@ def packages_by_family() -> dict[str, PackageSelection]:
     }
 
 
+def package_install_env(
+    manager: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    env = dict(os.environ if environ is None else environ)
+    if manager == "apt":
+        env["DEBIAN_FRONTEND"] = "noninteractive"
+        env["DEBCONF_NONINTERACTIVE_SEEN"] = "true"
+        env["APT_LISTCHANGES_FRONTEND"] = "none"
+        env["NEEDRESTART_MODE"] = "l"
+        env["NEEDRESTART_SUSPEND"] = "1"
+    return env
+
+
+def apt_lock_timeout_message(lock_path: str, holders: str) -> str:
+    detail = holders.strip() or "(busy)"
+    return (
+        "установка ждет блокировку apt / install is waiting on an apt lock: "
+        f"fuser {lock_path} → {detail}. "
+        "Дождитесь завершения apt/unattended-upgrades и повторите."
+    )
+
+
 def package_install_argv(manager: str, names: tuple[str, ...]) -> list[str]:
     if manager == "apt":
         if not names:
             return ["apt-get"]
-        return ["apt-get", "install", "-y", "--no-install-recommends", *names]
+        return [
+            "apt-get",
+            *APT_NONINTERACTIVE_OPTIONS,
+            "install",
+            "--no-install-recommends",
+            *names,
+        ]
     if manager == "dnf":
         if not names:
             return ["dnf"]

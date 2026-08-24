@@ -229,3 +229,13 @@ def test_cli_enable_kiosk_does_not_require_desktop_flags():
     )
     assert args.enable_kiosk is True
     assert args.user_kiosk is False
+
+
+def test_cli_skip_packages_enable_kiosk():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["install", "--skip-packages", "--enable-kiosk", "--bind-host", "127.0.0.1"]
+    )
+    assert args.skip_packages is True
+    assert args.enable_kiosk is True
+    assert args.with_kiosk is False

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import fcntl
 import os
 import pwd
 import grp
@@ -11,10 +12,19 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from typing import Mapping, Protocol
 
 from appliance.detect import Platform, detect_platform
-from appliance.packages import package_install_argv, package_query_available_argv, package_query_installed_argv
+from appliance.packages import (
+    APT_LOCK_FRONTEND,
+    APT_LOCK_WAIT_SECONDS,
+    apt_lock_timeout_message,
+    package_install_argv,
+    package_install_env,
+    package_query_available_argv,
+    package_query_installed_argv,
+)
 
 
 class HostError(RuntimeError):
@@ -271,10 +281,89 @@ class RealHost:
     def install_packages(self, names: tuple[str, ...]) -> CommandResult:
         manager = self._package_manager()
         argv = package_install_argv(manager, names)
-        env = dict(os.environ)
+        env = package_install_env(manager)
+        print("running: " + " ".join(argv), flush=True)
         if manager == "apt":
-            env["DEBIAN_FRONTEND"] = "noninteractive"
-        return self.run(argv, env=env)
+            self._wait_for_dpkg_lock()
+        return self._run_visible(argv, env=env)
+
+    def _dpkg_lock_busy(self) -> bool:
+        if not os.path.exists(APT_LOCK_FRONTEND):
+            return False
+        try:
+            fd = os.open(APT_LOCK_FRONTEND, os.O_RDWR)
+        except OSError:
+            return False
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return False
+        except BlockingIOError:
+            return True
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
+    def _fuser_lock(self, lock_path: str) -> str:
+        fuser = self.which("fuser") or "fuser"
+        try:
+            result = subprocess.run(
+                [fuser, lock_path],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=False,
+            )
+        except OSError:
+            return ""
+        return ((result.stdout or "") + (result.stderr or "")).strip()
+
+    def _wait_for_dpkg_lock(
+        self,
+        timeout: float = APT_LOCK_WAIT_SECONDS,
+        interval: float = 2.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        warned = False
+        while self._dpkg_lock_busy():
+            holders = self._fuser_lock(APT_LOCK_FRONTEND)
+            if not warned:
+                print(
+                    "ожидание блокировки apt / waiting for apt lock: "
+                    f"fuser {APT_LOCK_FRONTEND} {holders}",
+                    flush=True,
+                )
+                warned = True
+            if time.monotonic() >= deadline:
+                raise HostError(
+                    apt_lock_timeout_message(APT_LOCK_FRONTEND, holders)
+                )
+            time.sleep(interval)
+
+    def _run_visible(
+        self,
+        argv: list[str],
+        *,
+        env: Mapping[str, str] | None = None,
+    ) -> CommandResult:
+        command = _require_argv(argv)
+        completed = subprocess.run(
+            list(command),
+            cwd=None,
+            env=dict(env) if env is not None else None,
+            stdin=subprocess.DEVNULL,
+            stdout=None,
+            stderr=None,
+            shell=False,
+        )
+        return CommandResult(
+            argv=command,
+            returncode=completed.returncode,
+            stdout="",
+            stderr="",
+        )
 
     def _capability_binary(self, name: str) -> str:
         found = self.which(name)

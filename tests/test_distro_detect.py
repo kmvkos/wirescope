@@ -130,7 +130,11 @@ def test_package_names_differ_by_family():
     assert "libcap-progs" in suse.required
     assert debian.kiosk == ()
     assert "nuclei" not in rhel.all_selected
-    assert package_install_argv("apt", ("tshark",))[0] == "apt-get"
+    apt_cmd = package_install_argv("apt", ("tshark",))
+    assert apt_cmd[0] == "apt-get"
+    assert "-y" in apt_cmd
+    assert any("force-confdef" in part for part in apt_cmd)
+    assert any("force-confold" in part for part in apt_cmd)
     assert package_install_argv("dnf", ("wireshark-cli",))[:3] == [
         "dnf",
         "install",

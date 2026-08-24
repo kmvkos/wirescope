@@ -295,6 +295,70 @@ def test_with_kiosk_installs_minimal_display_packages(tmp_path):
     assert any("kiosk" in step.lower() for step in report.steps)
 
 
+def test_with_kiosk_skips_already_installed_packages(tmp_path):
+    host = _host()
+    host.packages.update(
+        {
+            "cage",
+            "xserver-xorg",
+            "xinit",
+            "openbox",
+            "chromium",
+            "bind9-dnsutils",
+            "smbclient",
+            "snmp",
+            "ldap-utils",
+            "ssh-audit",
+        }
+    )
+    config = _config(tmp_path, install_kiosk=True, start_services=False, skip_pip=True)
+    report = install(config, host)
+    apt = [item for item in host.commands if item and item[0] == "apt-get"]
+    assert apt == []
+    assert any("already installed" in step for step in report.steps)
+
+
+def test_with_kiosk_installs_only_missing_packages(tmp_path):
+    host = _host()
+    host.packages.update(
+        {
+            "chromium",
+            "xinit",
+            "xserver-xorg",
+            "openbox",
+            "bind9-dnsutils",
+            "smbclient",
+            "snmp",
+            "ldap-utils",
+            "ssh-audit",
+        }
+    )
+    config = _config(tmp_path, install_kiosk=True, start_services=False, skip_pip=True)
+    install(config, host)
+    apt = [item for item in host.commands if item and item[0] == "apt-get"]
+    assert apt
+    assert "cage" in apt[0]
+    assert "chromium" not in apt[0]
+
+
+def test_enable_kiosk_skip_packages_does_not_call_apt(tmp_path):
+    host = _host()
+    host.binaries["chromium"] = "/usr/bin/chromium"
+    config = _config(
+        tmp_path,
+        apply_packages=False,
+        enable_kiosk=True,
+        install_kiosk=False,
+        display=_headless(),
+        skip_pip=True,
+    )
+    report = install(config, host)
+    apt = [item for item in host.commands if item and item[0] == "apt-get"]
+    assert apt == []
+    assert any("skip OS packages" in step for step in report.steps)
+    assert "wirescope-kiosk.service" in report.started
+
+
 def test_enable_kiosk_without_display_enables_system_boot_unit(tmp_path):
     host = _host()
     host.binaries["chromium"] = "/usr/bin/chromium"

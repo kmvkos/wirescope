@@ -107,3 +107,27 @@ def test_storage_failure_is_structured(
         )
 
     assert captured.value.error.category == ErrorCategory.STORAGE
+
+
+def test_path_for_rejects_paths_outside_the_evidence_root(
+    job_service,
+    evidence_store,
+):
+    audit, job = audit_and_job(job_service)
+    artifact = evidence_store.put_json(
+        audit_id=audit.id,
+        job_id=job.id,
+        artifact_type="test_result",
+        document={"schema": "test", "schema_version": 1},
+        retention_class=RetentionClass.AUDIT,
+        schema_name="test",
+        schema_version=1,
+    )
+    escaped = artifact.model_copy(
+        update={"relative_path": "../outside.json"}
+    )
+    with pytest.raises(JobExecutionError) as captured:
+        evidence_store.path_for(escaped)
+    assert captured.value.error.code == "unsafe_artifact_path"
+    with pytest.raises(JobExecutionError):
+        evidence_store.read_bytes(escaped)

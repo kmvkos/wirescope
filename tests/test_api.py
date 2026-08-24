@@ -541,3 +541,40 @@ def test_findings_api_lists_and_records_status_changes(api_context):
     assert job.resource_key == f"audit:{audit_id}"
     assert job.resource_group == "findings"
     assert "raw_flags" not in job.parameters
+
+
+def test_reports_api_enqueues_lists_and_rejects_pdf(api_context):
+    app, service, evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+    empty = request(app, "GET", f"/api/audits/{audit_id}/reports")
+    assert empty.status_code == 200
+    assert empty.json()["total"] == 0
+
+    queued = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/reports",
+        json={"actor": "auditor", "priority": 1, "output_path": "/etc/passwd"},
+    )
+    assert queued.status_code == 202
+    job = service.get_job(queued.json()["job_id"])
+    assert job.type == "report_generation"
+    assert job.resource_key == f"audit:{audit_id}"
+    assert job.resource_group == "report"
+    assert job.parameters == {"actor": "auditor"}
+    assert "output_path" not in job.parameters
+
+    missing = request(
+        app,
+        "GET",
+        f"/api/audits/{audit_id}/reports/00000000-0000-4000-8000-000000000099",
+    )
+    assert missing.status_code == 404
+    pdf = request(
+        app,
+        "GET",
+        f"/api/audits/{audit_id}/reports/"
+        "00000000-0000-4000-8000-000000000099/export?format=pdf",
+    )
+    assert pdf.status_code == 422
+    assert pdf.json()["detail"]["code"] == "pdf_not_available"

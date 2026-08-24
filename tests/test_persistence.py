@@ -39,6 +39,7 @@ def test_migrations_build_working_schema_from_empty_database(
             "protocol_observations",
             "findings",
             "finding_state_events",
+            "reports",
             "workers",
         } <= tables
         assert migrations_current(database, settings.project_root)

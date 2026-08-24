@@ -1,0 +1,183 @@
+{
+  "schema": "audit-report",
+  "schema_version": 1,
+  "report_id": "00000000-0000-4000-8000-000000000001",
+  "generated_at": "2026-08-24T12:00:00Z",
+  "source_hash": "426eda6d721808e1754a01558bf86d3840779fd0e19a54bf836233b881c8ada8",
+  "audit": {
+    "id": "11111111-1111-4000-8000-111111111111",
+    "status": "running",
+    "profile": "standard",
+    "interface": "eth0",
+    "actor": "auditor",
+    "created_at": "2026-08-24T12:00:00Z",
+    "started_at": "2026-08-24T12:00:00Z",
+    "finished_at": null,
+    "summary": {
+      "schema": "findings-summary",
+      "schema_version": 1
+    }
+  },
+  "executive_summary": {
+    "headline": "Open high-severity findings were identified",
+    "asset_count": 1,
+    "service_count": 1,
+    "finding_count": 1,
+    "open_finding_count": 1,
+    "by_severity": {
+      "critical": 0,
+      "high": 1,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "by_status": {
+      "open": 1,
+      "suppressed": 0,
+      "accepted_risk": 0
+    },
+    "highest_open_severity": "high",
+    "confirmed_scope": true,
+    "detected_sensors": [
+      "llmnr"
+    ]
+  },
+  "environment": {
+    "hostname": "wirescope-test",
+    "interfaces": [
+      {
+        "name": "eth0",
+        "state": "UP",
+        "mac": "00:11:22:33:44:55",
+        "ipv4": [
+          "192.0.2.10/24"
+        ],
+        "ipv6": []
+      }
+    ],
+    "default_route": {
+      "gateway": "192.0.2.1",
+      "interface": "eth0"
+    },
+    "dns": [
+      "192.0.2.53"
+    ]
+  },
+  "scope": {
+    "confirmed": true,
+    "audit_scope": {
+      "site": "lab"
+    },
+    "profile": "standard",
+    "interface": "eth0",
+    "targets": [
+      "192.0.2.10"
+    ],
+    "address_count": 1,
+    "address_families": [
+      4
+    ],
+    "timing_policy": "T3",
+    "snapshot_hash": "abc123"
+  },
+  "assets": [
+    {
+      "id": "asset-1",
+      "state": "responsive",
+      "mac": "00:11:22:33:44:55",
+      "vendor": "Example",
+      "device_class_hint": "server-like",
+      "os_name": "Linux",
+      "addresses": [
+        "192.0.2.10"
+      ],
+      "names": [
+        "linux.example.test"
+      ]
+    }
+  ],
+  "services": [
+    {
+      "id": "svc-1",
+      "asset_id": "asset-1",
+      "protocol": "tcp",
+      "port": 22,
+      "state": "open",
+      "service_name": "ssh",
+      "product": "OpenSSH",
+      "version": "9.2",
+      "tunnel": null
+    }
+  ],
+  "findings": [
+    {
+      "id": "finding-1",
+      "rule_id": "WS-SSH-WEAK-ALGORITHMS",
+      "rule_version": "1",
+      "family": "ssh",
+      "title": "Weak SSH <script>alert(\"xss\")</script>",
+      "severity": "high",
+      "confidence": "high",
+      "status": "open",
+      "asset_id": "asset-1",
+      "service_id": "svc-1",
+      "description": "Weak algorithms were observed.",
+      "rationale": "ssh_algorithms listed weak ciphers.",
+      "recommendation": "Disable legacy algorithms.",
+      "observation_ids": [
+        "obs-1"
+      ],
+      "evidence_artifact_ids": [
+        "evidence-1"
+      ],
+      "data": {
+        "weak_algorithms": {
+          "kex": [
+            "diffie-hellman-group1-sha1"
+          ]
+        }
+      }
+    }
+  ],
+  "recommendations": [
+    {
+      "rule_id": "WS-SSH-WEAK-ALGORITHMS",
+      "title": "Weak SSH <script>alert(\"xss\")</script>",
+      "severity": "high",
+      "recommendation": "Disable legacy algorithms.",
+      "finding_ids": [
+        "finding-1"
+      ],
+      "affected_asset_ids": [
+        "asset-1"
+      ]
+    }
+  ],
+  "evidence_references": [
+    {
+      "id": "evidence-1",
+      "artifact_type": "protocol_stdout",
+      "content_type": "text/plain",
+      "size": 12,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "schema_name": null,
+      "schema_version": null,
+      "created_at": "2026-08-24T12:00:00Z"
+    }
+  ],
+  "metadata": {
+    "product": "WireScope",
+    "version": "0.1.0",
+    "job_id": "22222222-2222-4000-8000-222222222222",
+    "actor": "auditor",
+    "raw_provider_output_excluded": true,
+    "truncated": false,
+    "input_limits": {
+      "assets": 10000,
+      "services": 10000,
+      "findings": 10000,
+      "evidence_references": 10000
+    },
+    "warnings": []
+  }
+}

@@ -13,6 +13,7 @@
     "audit",
     "executive_summary",
     "environment",
+    "passive",
     "scope",
     "assets",
     "services",
@@ -66,7 +67,12 @@
         "by_status",
         "highest_open_severity",
         "confirmed_scope",
-        "detected_sensors"
+        "detected_sensors",
+        "frame_count",
+        "had_l3_address",
+        "tagged_vlan_ids",
+        "segment_status",
+        "segment_note"
       ],
       "properties": {
         "headline": { "type": "string", "minLength": 1 },
@@ -90,15 +96,35 @@
         "detected_sensors": {
           "type": "array",
           "items": { "type": "string" }
-        }
+        },
+        "frame_count": { "type": ["integer", "null"], "minimum": 0 },
+        "had_l3_address": { "type": ["boolean", "null"] },
+        "tagged_vlan_ids": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 4095 }
+        },
+        "segment_status": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "quiet",
+            "very_low",
+            "tagged_vlans",
+            "untagged_traffic",
+            "active"
+          ]
+        },
+        "segment_note": { "type": "string", "minLength": 1 }
       }
     },
     "environment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hostname", "interfaces", "default_route", "dns"],
+      "required": ["hostname", "capture_interface", "had_l3_address", "interfaces", "default_route", "dns"],
       "properties": {
         "hostname": { "type": ["string", "null"] },
+        "capture_interface": { "type": ["string", "null"] },
+        "had_l3_address": { "type": ["boolean", "null"] },
         "interfaces": {
           "type": "array",
           "items": {
@@ -129,6 +155,159 @@
           ]
         },
         "dns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "passive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available",
+        "capture_interface",
+        "capture_interface_state",
+        "capture_mac",
+        "capture_ipv4",
+        "capture_ipv6",
+        "had_l3_address",
+        "duration_seconds",
+        "frame_count",
+        "visibility",
+        "visibility_rationale",
+        "segment_status",
+        "segment_note",
+        "tagged_vlan_ids",
+        "tagged_frame_count",
+        "untagged_traffic_observed",
+        "port_type_hint",
+        "vlan_tag_note",
+        "neighbors",
+        "stp",
+        "arp_host_count",
+        "arp_bindings",
+        "dhcp",
+        "naming",
+        "detected_sensors"
+      ],
+      "properties": {
+        "available": { "type": "boolean" },
+        "capture_interface": { "type": ["string", "null"] },
+        "capture_interface_state": { "type": ["string", "null"] },
+        "capture_mac": { "type": ["string", "null"] },
+        "capture_ipv4": { "type": "array", "items": { "type": "string" } },
+        "capture_ipv6": { "type": "array", "items": { "type": "string" } },
+        "had_l3_address": { "type": ["boolean", "null"] },
+        "duration_seconds": { "type": ["number", "null"] },
+        "frame_count": { "type": ["integer", "null"], "minimum": 0 },
+        "visibility": { "type": ["string", "null"] },
+        "visibility_rationale": { "type": ["string", "null"] },
+        "segment_status": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "quiet",
+            "very_low",
+            "tagged_vlans",
+            "untagged_traffic",
+            "active"
+          ]
+        },
+        "segment_note": { "type": "string", "minLength": 1 },
+        "tagged_vlan_ids": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 4095 }
+        },
+        "tagged_frame_count": { "type": "integer", "minimum": 0 },
+        "untagged_traffic_observed": { "type": "boolean" },
+        "port_type_hint": { "type": ["string", "null"] },
+        "vlan_tag_note": {
+          "type": "string",
+          "const": "VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден"
+        },
+        "neighbors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "protocol",
+              "name",
+              "port_id",
+              "native_vlan",
+              "voice_vlan",
+              "pvid"
+            ],
+            "properties": {
+              "protocol": { "type": "string", "minLength": 1 },
+              "name": { "type": ["string", "null"] },
+              "port_id": { "type": ["string", "null"] },
+              "native_vlan": { "type": ["integer", "null"] },
+              "voice_vlan": { "type": ["integer", "null"] },
+              "pvid": { "type": ["integer", "null"] }
+            }
+          }
+        },
+        "stp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bpdus_observed", "root_bridge_ids", "bridge_ids"],
+          "properties": {
+            "bpdus_observed": { "type": "integer", "minimum": 0 },
+            "root_bridge_ids": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "bridge_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "arp_host_count": { "type": "integer", "minimum": 0 },
+        "arp_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ipv4", "mac"],
+            "properties": {
+              "ipv4": { "type": "string", "minLength": 1 },
+              "mac": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "dhcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed",
+            "server_count",
+            "servers",
+            "routers",
+            "subnet_masks"
+          ],
+          "properties": {
+            "observed": { "type": "boolean" },
+            "server_count": { "type": "integer", "minimum": 0 },
+            "servers": { "type": "array", "items": { "type": "string" } },
+            "routers": { "type": "array", "items": { "type": "string" } },
+            "subnet_masks": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "naming": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status", "hits", "names", "addresses"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "status": { "type": "string", "minLength": 1 },
+              "hits": { "type": "integer", "minimum": 0 },
+              "names": { "type": "array", "items": { "type": "string" } },
+              "addresses": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "detected_sensors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "scope": {

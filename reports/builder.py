@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from findings.models import FindingStatus, SEVERITY_RANK, Severity
+from engine.segment import tagged_vlan_headline
 from reports.models import (
     REPORT_INPUT_LIMIT,
     REPORT_SCHEMA,
@@ -24,6 +25,7 @@ from reports.models import (
     SEVERITY_VALUES,
     STATUS_VALUES,
 )
+from reports.passive import project_passive
 
 
 def build_audit_report(
@@ -47,6 +49,12 @@ def build_audit_report(
         by_status[item.status] = by_status.get(item.status, 0) + 1
     highest = _highest_severity(open_findings)
     confirmed = bool(source.confirmed_scope)
+    passive = project_passive(
+        environment=source.environment,
+        audit_interface=source.audit_interface,
+        audit_summary=source.audit_summary,
+        passive_result=source.passive_result,
+    )
     report = AuditReport(
         schema=REPORT_SCHEMA,
         schema_version=REPORT_SCHEMA_VERSION,
@@ -69,9 +77,11 @@ def build_audit_report(
                 open_findings,
                 highest,
                 confirmed,
-                frame_count=_frame_count(source),
+                frame_count=passive.frame_count,
                 asset_count=len(source.assets),
-                detected_sensors=source.detected_sensors,
+                detected_sensors=source.detected_sensors or passive.detected_sensors,
+                tagged_vlan_ids=passive.tagged_vlan_ids,
+                untagged_traffic_observed=passive.untagged_traffic_observed,
             ),
             asset_count=len(source.assets),
             service_count=len(source.services),
@@ -81,9 +91,21 @@ def build_audit_report(
             by_status=by_status,
             highest_open_severity=highest,
             confirmed_scope=confirmed,
-            detected_sensors=list(source.detected_sensors),
+            detected_sensors=list(
+                source.detected_sensors or passive.detected_sensors
+            ),
+            frame_count=passive.frame_count,
+            had_l3_address=passive.had_l3_address,
+            tagged_vlan_ids=list(passive.tagged_vlan_ids),
+            segment_status=passive.segment_status,
+            segment_note=passive.segment_note,
         ),
-        environment=_environment(source.environment),
+        environment=_environment(
+            source.environment,
+            capture_interface=passive.capture_interface,
+            had_l3_address=passive.had_l3_address,
+        ),
+        passive=passive,
         scope=_scope(source),
         assets=list(source.assets),
         services=list(source.services),
@@ -133,9 +155,17 @@ def source_hash_for(report: AuditReport) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _environment(raw: dict[str, Any] | None) -> ReportEnvironment:
+def _environment(
+    raw: dict[str, Any] | None,
+    *,
+    capture_interface: str | None = None,
+    had_l3_address: bool | None = None,
+) -> ReportEnvironment:
     if not raw:
-        return ReportEnvironment()
+        return ReportEnvironment(
+            capture_interface=capture_interface,
+            had_l3_address=had_l3_address,
+        )
     interfaces: list[ReportEnvironmentInterface] = []
     for item in raw.get("interfaces") or []:
         if not isinstance(item, dict):
@@ -161,6 +191,8 @@ def _environment(raw: dict[str, Any] | None) -> ReportEnvironment:
         }
     return ReportEnvironment(
         hostname=_optional_str(raw.get("hostname")),
+        capture_interface=capture_interface,
+        had_l3_address=had_l3_address,
         interfaces=interfaces,
         default_route=route,
         dns=_string_list(raw.get("dns")),
@@ -242,6 +274,8 @@ def _headline(
     frame_count: int | None = None,
     asset_count: int = 0,
     detected_sensors: list[str] | None = None,
+    tagged_vlan_ids: list[int] | None = None,
+    untagged_traffic_observed: bool = False,
 ) -> str:
     if highest == Severity.CRITICAL.value:
         return "Open critical findings require attention"
@@ -253,6 +287,10 @@ def _headline(
         return "Open findings were recorded"
     if frame_count == 0 and asset_count == 0:
         return "Capture completed with no frames"
+    if tagged_vlan_ids:
+        return tagged_vlan_headline(tagged_vlan_ids)
+    if untagged_traffic_observed and asset_count == 0:
+        return "Untagged traffic was observed; VLAN ID is unknown"
     if confirmed:
         return "No open findings were recorded for the confirmed scope"
     if asset_count == 0 and detected_sensors:
@@ -260,15 +298,6 @@ def _headline(
     if asset_count == 0:
         return "No hosts, services, or findings were recorded"
     return "No open findings were recorded"
-
-
-def _frame_count(source: ReportSource) -> int | None:
-    raw = source.audit_summary.get("frame_count")
-    if isinstance(raw, int):
-        return raw
-    if isinstance(raw, str) and raw.isdigit():
-        return int(raw)
-    return None
 
 
 def _highest_severity(findings: list[ReportFinding]) -> str | None:

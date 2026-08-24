@@ -723,12 +723,43 @@ async function showSummary() {
         ? audit.summary.detected_sensors
         : [];
     const frames = audit.summary && audit.summary.frame_count;
+    const tagged = Array.isArray(audit.summary && audit.summary.tagged_vlan_ids)
+        ? audit.summary.tagged_vlan_ids
+        : [];
+    const neighbors = Array.isArray(audit.summary && audit.summary.neighbors)
+        ? audit.summary.neighbors
+        : [];
+    const hadL3 = audit.summary && audit.summary.had_l3_address;
+    const visibility = audit.summary && audit.summary.visibility;
+    const duration = audit.summary && audit.summary.duration_seconds;
+    const arpHosts = audit.summary && audit.summary.arp_hosts;
+    const neighborText = neighbors.length
+        ? neighbors.map((item) => {
+            const name = item.name || t("common.unknown");
+            const port = item.port_id ? ` ${item.port_id}` : "";
+            const native = item.native_vlan != null ? ` native ${item.native_vlan}` : "";
+            const voice = item.voice_vlan != null ? ` voice ${item.voice_vlan}` : "";
+            const pvid = item.pvid != null ? ` PVID ${item.pvid}` : "";
+            return `${item.protocol || "L2"} ${name}${port}${native}${voice}${pvid}`.trim();
+        }).join("; ")
+        : t("common.dash");
+    const l3Text = hadL3 === true
+        ? t("summary.hasL3")
+        : hadL3 === false
+            ? t("summary.noL3")
+            : t("common.dash");
     const rows = [
         [t("summary.audit"), audit.id],
         [t("summary.status"), I18N.status(audit.status)],
         [t("summary.profile"), I18N.profile(audit.profile)],
         [t("summary.interface"), audit.interface || t("common.dash")],
+        [t("summary.l3"), l3Text],
         [t("summary.frames"), frames === undefined || frames === null ? t("common.dash") : String(frames)],
+        [t("summary.duration"), duration === undefined || duration === null ? t("common.dash") : t("common.seconds", { value: duration })],
+        [t("summary.vlans"), tagged.length ? tagged.join(", ") : t("summary.noTaggedVlans")],
+        [t("summary.visibility"), visibility || t("common.dash")],
+        [t("summary.neighbors"), neighborText],
+        [t("summary.arp"), arpHosts === undefined || arpHosts === null ? t("common.dash") : String(arpHosts)],
         [t("summary.sensors"), sensors.length ? sensors.join(", ") : t("common.dash")],
         [t("summary.assets"), String(inventory.assets)],
         [t("summary.services"), String(inventory.services)],
@@ -751,9 +782,16 @@ async function showSummary() {
     });
     const note = $("summary-note");
     if (note) {
-        if (frames === 0) {
+        const status = audit.summary && audit.summary.segment_status;
+        if (frames === 0 || status === "quiet") {
             note.hidden = false;
             note.textContent = t("summary.emptyCapture");
+        } else if (status === "tagged_vlans" && tagged.length) {
+            note.hidden = false;
+            note.textContent = t("summary.segmentTagged", { vlans: tagged.join(", ") });
+        } else if (status === "untagged_traffic") {
+            note.hidden = false;
+            note.textContent = t("summary.segmentUntagged");
         } else if (Number(frames) > 0 && inventory.assets === 0) {
             note.hidden = false;
             note.textContent = t("summary.framesWithoutAssets");
@@ -859,6 +897,53 @@ async function showAssessment() {
         }),
         String(visibility.value || visibility.rationale || t("assessment.noVisibility"))
     ));
+    const layer2 = assessment.layer2 || {};
+    const vlans = Array.isArray(layer2.tagged_vlans_observed)
+        ? layer2.tagged_vlans_observed
+        : [];
+    list.append(listItem(
+        t("assessment.vlans"),
+        vlans.length ? vlans.join(", ") : t("assessment.noVlans")
+    ));
+    const portHint = layer2.port_type_hint || {};
+    if (portHint.value) {
+        list.append(listItem(
+            t("assessment.portHint", {
+                confidence: I18N.confidence(portHint.confidence || "unknown"),
+            }),
+            String(portHint.value)
+        ));
+    }
+    const neighbors = Array.isArray(layer2.neighbors) ? layer2.neighbors : [];
+    if (!neighbors.length) {
+        list.append(listItem(t("assessment.noNeighbors"), t("summary.vlanTagNote")));
+    }
+    neighbors.forEach((item) => {
+        list.append(listItem(
+            t("assessment.neighbors", { protocol: item.protocol || "L2" }),
+            t("assessment.neighborMeta", {
+                port: item.port_id || item.system_name || item.device_id || t("common.dash"),
+                native: item.native_vlan == null ? t("common.dash") : item.native_vlan,
+                voice: item.voice_vlan == null ? t("common.dash") : item.voice_vlan,
+                pvid: item.pvid == null ? t("common.dash") : item.pvid,
+            })
+        ));
+    });
+    const stp = layer2.stp || {};
+    if (stp.bpdus_observed) {
+        const roots = (stp.root_bridge_ids || []).join(", ") || t("common.dash");
+        list.append(listItem(
+            t("assessment.stp"),
+            t("assessment.stpMeta", { bpdus: stp.bpdus_observed, root: roots })
+        ));
+    }
+    const ipv4 = assessment.ipv4 || {};
+    if (ipv4.observed_hosts && ipv4.observed_hosts.length) {
+        list.append(listItem(
+            t("assessment.arp"),
+            ipv4.observed_hosts.map((item) => item.ipv4).filter(Boolean).join(", ")
+        ));
+    }
     (assessment.infrastructure || []).forEach((item) => {
         list.append(listItem(
             I18N.confidence(item.confidence || "unknown"),

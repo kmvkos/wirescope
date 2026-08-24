@@ -111,6 +111,8 @@ class PassivePipeline:
             assessment = build_assessment(capture, sensors)
             return PassiveResult(
                 interface=interface.name,
+                interface_ipv4=list(interface.ipv4),
+                interface_ipv6=list(interface.ipv6),
                 requested_duration_seconds=duration,
                 capture=capture,
                 sensors=sensors,
@@ -162,6 +164,8 @@ class PassivePipeline:
 
         return PassiveResult(
             interface=interface.name,
+            interface_ipv4=list(interface.ipv4),
+            interface_ipv6=list(interface.ipv6),
             requested_duration_seconds=duration,
             capture=capture,
             sensors=sensors,

@@ -44,6 +44,7 @@ def render_html(report: AuditReport) -> str:
         "</header>\n"
         f"{_summary_section(report)}"
         f"{_environment_section(report)}"
+        f"{_passive_section(report)}"
         f"{_scope_section(report)}"
         f"{_assets_section(report.assets)}"
         f"{_services_section(report.services)}"
@@ -73,10 +74,26 @@ def _summary_section(report: AuditReport) -> str:
         else _l("none_recorded")
     )
     confirmed = _l("yes") if summary.confirmed_scope else _l("no")
+    l3 = _l3_label(summary.had_l3_address)
+    vlans = (
+        ", ".join(_t(item) for item in summary.tagged_vlan_ids)
+        if summary.tagged_vlan_ids
+        else _l("no_tagged_vlans")
+    )
+    frames = (
+        _t(summary.frame_count) if summary.frame_count is not None else "—"
+    )
     return (
         '<section id="executive-summary">\n'
         f"<h2>{_l('executive_summary')}</h2>\n"
+        f"<p class=\"callout\">{_t(_segment_note(summary.segment_note))}</p>\n"
         '<div class="stats">\n'
+        f"<div class=\"stat\"><span class=\"label\">{_l('frames')}</span>"
+        f"<span class=\"value\">{frames}</span></div>\n"
+        f"<div class=\"stat\"><span class=\"label\">{_l('l3_address')}</span>"
+        f"<span class=\"value\">{l3}</span></div>\n"
+        f"<div class=\"stat\"><span class=\"label\">{_l('tagged_vlans')}</span>"
+        f"<span class=\"value\">{vlans}</span></div>\n"
         f"<div class=\"stat\"><span class=\"label\">{_l('assets')}</span>"
         f"<span class=\"value\">{_t(summary.asset_count)}</span></div>\n"
         f"<div class=\"stat\"><span class=\"label\">{_l('services')}</span>"
@@ -89,6 +106,7 @@ def _summary_section(report: AuditReport) -> str:
         f'<div class="stats">{severity_cells}</div>\n'
         f"<p>{_l('confirmed_scope')}: {confirmed}. "
         f"{_l('detected_sensors')}: {sensors}.</p>\n"
+        f"<p class=\"hint\">{_l('vlan_tag_note')}</p>\n"
         "</section>\n"
     )
 
@@ -124,13 +142,152 @@ def _environment_section(report: AuditReport) -> str:
     )
     dns = ", ".join(_t(item) for item in env.dns) or _l("not_recorded")
     hostname = _t(env.hostname) or _l("not_recorded")
+    capture = _t(env.capture_interface) or _l("not_recorded")
+    l3 = _l3_label(env.had_l3_address)
     return (
         '<section id="environment">\n'
         f"<h2>{_l('environment')}</h2>\n"
+        f"<p><strong>{_l('capture_interface')}</strong>: {capture}. "
+        f"<strong>{_l('l3_address')}</strong>: {l3}.</p>\n"
         f"<p>{_l('hostname')}: {hostname}. "
         f"{_l('default_route')}: {route_text}. DNS: {dns}.</p>\n"
         f"{table}\n"
         "</section>\n"
+    )
+
+
+def _passive_section(report: AuditReport) -> str:
+    passive = report.passive
+    l3 = _l3_label(passive.had_l3_address)
+    frames = (
+        _t(passive.frame_count) if passive.frame_count is not None else "—"
+    )
+    duration = (
+        _t(passive.duration_seconds)
+        if passive.duration_seconds is not None
+        else "—"
+    )
+    vlans = (
+        ", ".join(_t(item) for item in passive.tagged_vlan_ids)
+        if passive.tagged_vlan_ids
+        else _l("no_tagged_vlans")
+    )
+    visibility = _t(passive.visibility) or _l("not_recorded")
+    port_hint = _t(passive.port_type_hint) or _l("not_recorded")
+    addresses = ", ".join(
+        _t(item) for item in [*passive.capture_ipv4, *passive.capture_ipv6]
+    ) or _l("none_recorded")
+    neighbor_body = _neighbor_table(passive.neighbors)
+    naming_rows = []
+    for item in passive.naming:
+        names = ", ".join(_t(name) for name in item.names) or "—"
+        naming_rows.append(
+            "<tr>"
+            f"<td>{_t(item.name)}</td>"
+            f"<td>{_t(item.status)}</td>"
+            f"<td>{_t(item.hits)}</td>"
+            f"<td>{names}</td>"
+            "</tr>"
+        )
+    naming_table = (
+        "<table><thead><tr>"
+        f"<th>{_l('protocol')}</th><th>{_l('state')}</th>"
+        f"<th>{_l('hits')}</th><th>{_l('names')}</th>"
+        "</tr></thead><tbody>"
+        + "".join(naming_rows)
+        + "</tbody></table>"
+        if naming_rows
+        else f"<p>{_l('none_recorded')}</p>"
+    )
+    arp_text = (
+        ", ".join(
+            f"{_t(item.get('ipv4'))} ({_t(item.get('mac'))})"
+            for item in passive.arp_bindings
+        )
+        or _l("none_recorded")
+    )
+    dhcp = passive.dhcp
+    dhcp_text = (
+        f"{_l('servers')}: "
+        + (
+            ", ".join(_t(item) for item in dhcp.servers)
+            or _l("none_recorded")
+        )
+        + f". {_l('routers')}: "
+        + (
+            ", ".join(_t(item) for item in dhcp.routers)
+            or _l("none_recorded")
+        )
+    )
+    stp = passive.stp
+    stp_roots = (
+        ", ".join(_t(item) for item in stp.root_bridge_ids)
+        or _l("none_recorded")
+    )
+    return (
+        '<section id="passive">\n'
+        f"<h2>{_l('passive')}</h2>\n"
+        f"<p class=\"callout\">{_t(_segment_note(passive.segment_note))}</p>\n"
+        f"<p class=\"hint\">{_l('vlan_tag_note')}</p>\n"
+        "<p>"
+        f"{_l('capture_interface')}: {_t(passive.capture_interface) or '—'}. "
+        f"{_l('l3_address')}: {l3}. "
+        f"{_l('addresses')}: {addresses}."
+        "</p>\n"
+        "<p>"
+        f"{_l('frames')}: {frames}. "
+        f"{_l('duration')}: {duration}. "
+        f"{_l('visibility')}: {visibility}. "
+        f"{_l('port_hint')}: {port_hint}."
+        "</p>\n"
+        "<p>"
+        f"{_l('tagged_vlans')}: {vlans}. "
+        f"{_l('tagged_frames')}: {_t(passive.tagged_frame_count)}. "
+        f"{_l('untagged')}: "
+        f"{_l('yes') if passive.untagged_traffic_observed else _l('no')}."
+        "</p>\n"
+        f"<h3>{_l('neighbors')}</h3>\n"
+        f"{neighbor_body}\n"
+        f"<h3>STP</h3>\n"
+        f"<p>{_l('stp_bpdus')}: {_t(stp.bpdus_observed)}. "
+        f"{_l('stp_root')}: {stp_roots}.</p>\n"
+        f"<h3>ARP</h3>\n"
+        f"<p>{_l('arp_hosts')}: {_t(passive.arp_host_count)}. {arp_text}.</p>\n"
+        f"<h3>DHCP</h3>\n"
+        f"<p>{dhcp_text}</p>\n"
+        f"<h3>{_l('naming')}</h3>\n"
+        f"{naming_table}\n"
+        "</section>\n"
+    )
+
+
+def _neighbor_table(neighbors) -> str:
+    if not neighbors:
+        return f"<p>{_l('no_neighbors')}</p>"
+    rows = []
+    for item in neighbors:
+        vlans = []
+        if item.native_vlan is not None:
+            vlans.append(f"{_l('native_vlan')} {_t(item.native_vlan)}")
+        if item.voice_vlan is not None:
+            vlans.append(f"{_l('voice_vlan')} {_t(item.voice_vlan)}")
+        if item.pvid is not None:
+            vlans.append(f"PVID {_t(item.pvid)}")
+        rows.append(
+            "<tr>"
+            f"<td>{_t(item.protocol)}</td>"
+            f"<td>{_t(item.name)}</td>"
+            f"<td>{_t(item.port_id)}</td>"
+            f"<td>{', '.join(vlans) or '—'}</td>"
+            "</tr>"
+        )
+    return (
+        "<table><thead><tr>"
+        f"<th>{_l('protocol')}</th><th>{_l('neighbor_name')}</th>"
+        f"<th>{_l('port')}</th><th>VLAN</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
     )
 
 
@@ -374,8 +531,27 @@ def _l(key: str) -> str:
     return html.escape(_LABELS.get(key, key), quote=True)
 
 
+def _l3_label(value: bool | None) -> str:
+    if value is True:
+        return _l("yes")
+    if value is False:
+        return _l("no")
+    return _l("not_recorded")
+
+
+def _segment_note(text: str) -> str:
+    if text in _SEGMENT_NOTES:
+        return _SEGMENT_NOTES[text]
+    return _translate_tagged_note(text) or text
+
+
 def _headline(text: str) -> str:
-    return _HEADLINES.get(text, text)
+    if text in _HEADLINES:
+        return _HEADLINES[text]
+    translated = _translate_tagged_note(text)
+    if translated:
+        return translated.rstrip(".")
+    return text
 
 
 _LABELS = {
@@ -394,7 +570,16 @@ _LABELS = {
     "none_recorded": "не зафиксировано",
     "yes": "да",
     "no": "нет",
+    "frames": "Кадры",
+    "l3_address": "L3-адрес на NIC захвата",
+    "tagged_vlans": "Тегированные VLAN",
+    "no_tagged_vlans": "нет (тегов 802.1Q не видно)",
+    "vlan_tag_note": (
+        "VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто "
+        "без тега — тогда ID неизвестен, но трафик этой сети всё равно виден"
+    ),
     "environment": "Окружение",
+    "capture_interface": "Интерфейс захвата",
     "hostname": "Имя хоста",
     "default_route": "Маршрут по умолчанию",
     "gateway": "шлюз",
@@ -404,6 +589,26 @@ _LABELS = {
     "state": "Состояние",
     "addresses": "Адреса",
     "no_interfaces": "Снимок интерфейсов не сохранён.",
+    "passive": "Пассивная оценка сегмента",
+    "duration": "Длительность, с",
+    "visibility": "Видимость",
+    "port_hint": "Подсказка типа порта",
+    "tagged_frames": "Тегированные кадры",
+    "untagged": "Нетегированный трафик",
+    "neighbors": "Соседи CDP/LLDP",
+    "no_neighbors": "Объявлений CDP/LLDP не зафиксировано.",
+    "protocol": "Протокол",
+    "neighbor_name": "Имя / device ID",
+    "port": "Порт",
+    "native_vlan": "native VLAN",
+    "voice_vlan": "voice VLAN",
+    "stp_bpdus": "BPDU",
+    "stp_root": "корневой мост",
+    "arp_hosts": "Узлы ARP",
+    "servers": "Серверы",
+    "routers": "Маршрутизаторы",
+    "naming": "Имена mDNS / LLMNR / NBNS",
+    "hits": "Срабатывания",
     "scope": "Область",
     "confirmed": "Подтверждена",
     "profile": "Профиль",
@@ -476,6 +681,9 @@ _HEADLINES = {
     "Capture completed with no frames": (
         "Захват завершён: кадров нет. Сегмент мог быть тихим."
     ),
+    "Untagged traffic was observed; VLAN ID is unknown": (
+        "Наблюдался нетегированный трафик; ID VLAN неизвестен"
+    ),
     "Passive observations were recorded": (
         "Зафиксированы пассивные наблюдения"
     ),
@@ -483,6 +691,31 @@ _HEADLINES = {
         "Хосты, службы и находки не зафиксированы"
     ),
 }
+
+
+_SEGMENT_NOTES = {
+    "The segment looked quiet: no frames were captured": (
+        "Сегмент выглядел тихим: кадров не зафиксировано."
+    ),
+    "Untagged traffic was observed; VLAN ID is unknown": (
+        "Наблюдался нетегированный трафик; ID VLAN неизвестен."
+    ),
+    "Network traffic was observed": "Наблюдался сетевой трафик.",
+    "No passive capture is stored for this audit": (
+        "Для этого аудита пассивный захват не сохранён."
+    ),
+}
+
+
+def _translate_tagged_note(text: str) -> str | None:
+    prefix = "Saw tagged VLANs "
+    if text.startswith(prefix):
+        return f"В кадрах видны тегированные VLAN {text[len(prefix):]}."
+    prefix_low = "Very little traffic was observed ("
+    if text.startswith(prefix_low) and text.endswith(" frames)"):
+        count = text[len(prefix_low):-len(" frames)")]
+        return f"Очень мало трафика ({count} кадров)."
+    return None
 
 
 _CSS = """
@@ -534,6 +767,12 @@ pre {
 .severity-low, .finding.severity-low { border-color: #1f618d; }
 .stat .value.severity-critical { color: #8b1a1a; }
 .stat .value.severity-high { color: #c0392b; }
+.callout {
+  background: #eef4f8;
+  border-left: 0.3rem solid #1f618d;
+  padding: 0.6rem 0.8rem;
+}
+.hint { color: #4a4a4a; font-size: 0.92rem; }
 @media (max-width: 40rem) {
   body { padding: 0.6rem; }
   table { display: block; overflow-x: auto; }

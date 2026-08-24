@@ -58,9 +58,82 @@ class ReportEnvironment(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     hostname: str | None = None
+    capture_interface: str | None = None
+    had_l3_address: bool | None = None
     interfaces: list[ReportEnvironmentInterface] = Field(default_factory=list)
     default_route: dict[str, str | None] | None = None
     dns: list[str] = Field(default_factory=list)
+
+
+class ReportNeighbor(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    protocol: str
+    name: str | None = None
+    port_id: str | None = None
+    native_vlan: int | None = None
+    voice_vlan: int | None = None
+    pvid: int | None = None
+
+
+class ReportStpSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    bpdus_observed: int = 0
+    root_bridge_ids: list[str] = Field(default_factory=list)
+    bridge_ids: list[str] = Field(default_factory=list)
+
+
+class ReportDhcpSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    observed: bool = False
+    server_count: int = 0
+    servers: list[str] = Field(default_factory=list)
+    routers: list[str] = Field(default_factory=list)
+    subnet_masks: list[str] = Field(default_factory=list)
+
+
+class ReportNamingSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    status: str
+    hits: int = 0
+    names: list[str] = Field(default_factory=list)
+    addresses: list[str] = Field(default_factory=list)
+
+
+class ReportPassive(BaseModel):
+    """Bounded view of the stored passive capture and assessment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    available: bool = False
+    capture_interface: str | None = None
+    capture_interface_state: str | None = None
+    capture_mac: str | None = None
+    capture_ipv4: list[str] = Field(default_factory=list)
+    capture_ipv6: list[str] = Field(default_factory=list)
+    had_l3_address: bool | None = None
+    duration_seconds: float | None = None
+    frame_count: int | None = None
+    visibility: str | None = None
+    visibility_rationale: str | None = None
+    segment_status: str = "unknown"
+    segment_note: str = "No passive capture is stored for this audit"
+    tagged_vlan_ids: list[int] = Field(default_factory=list)
+    tagged_frame_count: int = 0
+    untagged_traffic_observed: bool = False
+    port_type_hint: str | None = None
+    vlan_tag_note: str
+    neighbors: list[ReportNeighbor] = Field(default_factory=list)
+    stp: ReportStpSummary = Field(default_factory=ReportStpSummary)
+    arp_host_count: int = 0
+    arp_bindings: list[dict[str, str]] = Field(default_factory=list)
+    dhcp: ReportDhcpSummary = Field(default_factory=ReportDhcpSummary)
+    naming: list[ReportNamingSummary] = Field(default_factory=list)
+    detected_sensors: list[str] = Field(default_factory=list)
 
 
 class ReportScope(BaseModel):
@@ -162,6 +235,11 @@ class ExecutiveSummary(BaseModel):
     highest_open_severity: str | None = None
     confirmed_scope: bool
     detected_sensors: list[str] = Field(default_factory=list)
+    frame_count: int | None = None
+    had_l3_address: bool | None = None
+    tagged_vlan_ids: list[int] = Field(default_factory=list)
+    segment_status: str = "unknown"
+    segment_note: str = "No passive capture is stored for this audit"
 
 
 class ReportMetadata(BaseModel):
@@ -194,6 +272,7 @@ class AuditReport(BaseModel):
     audit: ReportAuditMetadata
     executive_summary: ExecutiveSummary
     environment: ReportEnvironment
+    passive: ReportPassive
     scope: ReportScope
     assets: list[ReportAsset] = Field(default_factory=list)
     services: list[ReportService] = Field(default_factory=list)
@@ -245,6 +324,7 @@ class ReportSource(BaseModel):
         default_factory=list
     )
     detected_sensors: list[str] = Field(default_factory=list)
+    passive_result: dict[str, Any] | None = None
     warnings: list[str] = Field(default_factory=list)
     truncated: bool = False
 
@@ -264,16 +344,21 @@ __all__ = [
     "ExecutiveSummary",
     "ReportAsset",
     "ReportAuditMetadata",
+    "ReportDhcpSummary",
     "ReportEnvironment",
     "ReportEnvironmentInterface",
     "ReportEvidenceReference",
     "ReportFinding",
     "ReportMetadata",
+    "ReportNamingSummary",
+    "ReportNeighbor",
+    "ReportPassive",
     "ReportRecommendation",
     "ReportRecord",
     "ReportScope",
     "ReportService",
     "ReportSource",
+    "ReportStpSummary",
     "SEVERITY_VALUES",
     "STATUS_VALUES",
 ]

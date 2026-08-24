@@ -97,7 +97,7 @@ def load_report_source(
             "snapshot_hash": confirmed.snapshot_hash,
         }
 
-    detected_sensors, sensor_warning = _detected_sensors(
+    detected_sensors, passive_result, sensor_warning = _load_passive(
         artifacts,
         evidence_store,
     )
@@ -138,6 +138,7 @@ def load_report_source(
         findings=report_findings,
         evidence_references=evidence,
         detected_sensors=detected_sensors,
+        passive_result=passive_result,
         warnings=warnings,
         truncated=truncated,
     )
@@ -251,28 +252,28 @@ def _load_environment(
     return environment, None
 
 
-def _detected_sensors(
+def _load_passive(
     artifacts: list[ArtifactRecord],
     evidence_store: EvidenceStore,
-) -> tuple[list[str], str | None]:
+) -> tuple[list[str], dict[str, Any] | None, str | None]:
     latest = None
     for artifact in reversed(artifacts):
         if artifact.artifact_type == "passive_result":
             latest = artifact
             break
     if latest is None:
-        return [], None
+        return [], None, None
     try:
         document = evidence_store.read_json(latest)
     except JobExecutionError:
-        return [], "Passive result artifact could not be read"
+        return [], None, "Passive result artifact could not be read"
     sensors = (
         (document.get("result") or {}).get("sensors")
         if isinstance(document.get("result"), dict)
         else None
     )
     if not isinstance(sensors, dict):
-        return [], None
+        return [], document if isinstance(document, dict) else None, None
     detected = sorted(
         str(name)
         for name, payload in sensors.items()
@@ -282,7 +283,7 @@ def _detected_sensors(
             or payload.get("status") == "detected"
         )
     )
-    return detected, None
+    return detected, document, None
 
 
 def _artifact_by_id(

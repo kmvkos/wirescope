@@ -10,6 +10,12 @@ from engine.passive_models import (
     PassiveResult,
     PipelineErrorCode,
 )
+from engine.segment import (
+    compact_neighbors,
+    had_l3_address,
+    segment_note,
+    segment_status,
+)
 from inventory.service import InventoryService
 from jobs.errors import JobCancelled, JobExecutionError
 from jobs.models import (
@@ -140,14 +146,55 @@ class PassiveDiscoveryHandler:
         visibility = None
         if result.assessment is not None and result.assessment.visibility is not None:
             visibility = result.assessment.visibility.value
+        layer2 = result.assessment.layer2 if result.assessment else {}
+        tagged = [
+            int(item)
+            for item in (layer2.get("tagged_vlans_observed") or [])
+            if str(item).lstrip("-").isdigit()
+        ]
+        untagged = bool(layer2.get("untagged_traffic_observed"))
+        neighbors = compact_neighbors(layer2.get("neighbors") or [])
+        status = segment_status(
+            frame_count=result.capture.frame_count,
+            tagged_vlan_ids=tagged,
+            untagged_traffic_observed=untagged,
+        )
+        arp = result.sensors.get("arp")
+        dhcp = result.sensors.get("dhcpv4")
         return {
             "schema": "passive-summary",
             "schema_version": 1,
             "result_reference": result_reference,
             "interface": result.interface,
+            "interface_ipv4": list(result.interface_ipv4),
+            "interface_ipv6": list(result.interface_ipv6),
+            "had_l3_address": had_l3_address(
+                result.interface_ipv4,
+                result.interface_ipv6,
+            ),
             "frame_count": result.capture.frame_count,
+            "duration_seconds": result.capture.duration_seconds,
             "hosts_persisted": hosts_persisted,
             "visibility": visibility,
+            "tagged_vlan_ids": tagged,
+            "untagged_traffic_observed": untagged,
+            "segment_status": status,
+            "segment_note": segment_note(
+                status=status,
+                tagged_vlan_ids=tagged,
+                frame_count=result.capture.frame_count,
+            ),
+            "neighbors": neighbors,
+            "arp_hosts": (
+                int((arp.summary or {}).get("unique_ipv4_hosts") or 0)
+                if arp
+                else 0
+            ),
+            "dhcp_server_count": (
+                int((dhcp.summary or {}).get("server_count") or 0)
+                if dhcp
+                else 0
+            ),
             "detected_sensors": sorted(
                 name
                 for name, sensor in result.sensors.items()

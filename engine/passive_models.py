@@ -191,6 +191,8 @@ class PassiveMetrics(BaseModel):
 class PassiveResult(BaseModel):
     schema_version: str = "1.0"
     interface: str
+    interface_ipv4: list[str] = Field(default_factory=list)
+    interface_ipv6: list[str] = Field(default_factory=list)
     requested_duration_seconds: int
     capture: CaptureResult
     sensors: dict[str, SensorResult]

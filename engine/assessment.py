@@ -64,6 +64,7 @@ def build_assessment(
     dhcpv4 = sensors.get("dhcpv4")
     lldp = sensors.get("lldp")
     cdp = sensors.get("cdp")
+    stp = sensors.get("stp")
     ipv6_ra = sensors.get("ipv6_ra")
     ipv6_nd = sensors.get("ipv6_nd")
     dhcpv6 = sensors.get("dhcpv6")
@@ -169,6 +170,11 @@ def build_assessment(
             "untagged_traffic_observed": untagged_observed,
             "port_type_hint": port_hint.model_dump(mode="json"),
             "neighbors": neighbors,
+            "stp": {
+                "bpdus_observed": stp.hits if stp else 0,
+                "root_bridge_ids": _summary_list(stp, "root_bridge_ids"),
+                "bridge_ids": _summary_list(stp, "bridge_ids"),
+            },
         },
         ipv4={
             "activity_observed": bool(arp and arp.detected)

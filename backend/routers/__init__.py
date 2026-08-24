@@ -5,6 +5,7 @@ from . import (
     auth,
     captures,
     findings,
+    insights,
     inventory,
     jobs,
     protocol,
@@ -17,6 +18,7 @@ api_router = APIRouter()
 for router in (
     auth.router,
     system.router,
+    insights.router,
     audits.router,
     captures.router,
     inventory.router,

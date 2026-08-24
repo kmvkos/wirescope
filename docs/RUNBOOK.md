@@ -12,8 +12,8 @@
 systemctl is-active wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
-python3 -m appliance verify --project-root /opt/wirescope
-python3 -m appliance detect
+/opt/wirescope/.venv/bin/python -m appliance verify --project-root /opt/wirescope
+/opt/wirescope/.venv/bin/python -m appliance detect
 ```
 
 Что означают endpoints:
@@ -184,7 +184,8 @@ Python capabilities быть не должно.
 Если `dumpcap -D` не работает от `wirescope`, повторно выполнить installer verification/setup:
 
 ```bash
-sudo python3 -m appliance verify --project-root /opt/wirescope
+sudo /opt/wirescope/.venv/bin/python \
+  -m appliance verify --project-root /opt/wirescope
 ```
 
 и проверить package-specific Wireshark configuration.
@@ -468,7 +469,7 @@ Listen/record PCAP может быстро расходовать место, о
 ## Dependency inventory
 
 ```bash
-python3 -m appliance inventory
+/opt/wirescope/.venv/bin/python -m appliance inventory
 ```
 
 или документ:
@@ -482,8 +483,8 @@ packaging/inventory/DEPENDENCIES.md
 Полезно собрать:
 
 ```bash
-python3 -m appliance detect
-python3 -m appliance verify --project-root /opt/wirescope
+/opt/wirescope/.venv/bin/python -m appliance detect
+/opt/wirescope/.venv/bin/python -m appliance verify --project-root /opt/wirescope
 curl -sS http://127.0.0.1:8000/api/health
 curl -sS http://127.0.0.1:8000/api/ready
 systemctl status wirescope-api wirescope-worker --no-pager

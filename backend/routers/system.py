@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import shutil
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from appliance.netctl import ApplySpec, NetctlError
+from backend.capabilities import capability_inventory
 from backend.dependencies import AppServices, get_services
 from backend.http import interface_http_error, netctl_http_error
 from backend.models import (
@@ -48,23 +48,24 @@ def ready(services: AppServices = Depends(get_services)) -> ReadinessResponse:
     worker_ready = migration_ready and services.jobs.worker_is_ready(
         settings.worker_stale_after_seconds
     )
-    dependencies = {
-        "dumpcap": shutil.which(settings.dumpcap_binary) is not None,
-        "tshark": shutil.which(settings.tshark_binary) is not None,
-        "nmap": shutil.which(settings.nmap_binary) is not None,
+    capabilities = capability_inventory(settings)
+    required_tools = {
+        item["tool"]: bool(item["available"])
+        for item in capabilities["tools"]
+        if item["required_for_core"]
     }
     ready_state = (
         database_ready
         and migration_ready
         and worker_ready
-        and all(dependencies.values())
+        and capabilities["core_ready"]
     )
     response = ReadinessResponse(
         status="ready" if ready_state else "not_ready",
         database=database_ready,
         migrations=migration_ready,
         worker=worker_ready,
-        dependencies=dependencies,
+        dependencies=required_tools,
     )
     if not ready_state:
         raise HTTPException(

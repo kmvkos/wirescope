@@ -1,431 +1,323 @@
 # WireScope architecture
 
-[Русский](../ARCHITECTURE.md) · **English**
+[Русский](../ARCHITECTURE.md)
 
-This document describes the architecture as it exists **now**. The historical M0–M8 development path lives in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+WireScope is a local modular monolith for network inventory, diagnostics, and security auditing. It is designed for a single Linux host or VM: API, worker, SQLite, evidence storage, and the browser UI form one appliance without Redis, Celery, or internal network microservices.
 
-## System shape
+The main design rule is simple: **collect facts first, interpret them later**. Packet sensors, Nmap, and protocol providers produce observations and evidence. Assessment and findings logic interpret that stored data.
 
-WireScope is a local network-audit appliance. It is designed for one Linux host or VM, so the runtime deliberately avoids Redis, Celery, PostgreSQL, and networked microservices.
+## High-level layout
 
 ```text
-browser / local Chromium kiosk
-                │
-                │ HTTP + session cookie
-                ▼
-          FastAPI backend
-                │
-       ┌────────┼─────────────┐
-       │        │             │
-      auth   audits/jobs   read APIs
-                │
-                ▼
-             SQLite
-                ▲
-                │
-        wirescope-worker
-                │
-   ┌────────────┼───────────────────────────┐
-   │            │           │               │
-passive      active      protocol        findings /
-capture      discovery    audits          reports
-   │            │           │
-   ▼            ▼           ▼
-dumpcap/      Nmap       ssh-audit, openssl,
-tshark                  curl, dig, smbclient,
-                         snmpget, ldapsearch
-                │
-                ▼
-          evidence store
+browser / kiosk
+      │ HTTP + session cookie
+      ▼
+FastAPI
+      │
+      ├── backend/routers/
+      │      ├── auth
+      │      ├── system / network / scope
+      │      ├── audits
+      │      ├── captures
+      │      ├── inventory
+      │      ├── protocol audits
+      │      ├── findings
+      │      ├── reports
+      │      └── jobs
+      │
+      ├── domain services
+      │      ├── JobService
+      │      ├── InventoryService
+      │      ├── AuthService
+      │      ├── NetworkService
+      │      └── stores
+      │
+      ├──────────── SQLite WAL
+      │
+      └──────────── evidence store
+                        ▲
+                        │
+                     worker
+                        │
+                        ├── passive discovery
+                        ├── packet capture
+                        ├── active discovery
+                        ├── protocol audits
+                        ├── findings evaluation
+                        └── report generation
 ```
 
-The project is a **modular monolith**. Module and data-contract boundaries matter; network service boundaries do not.
+API and worker are separate processes. The browser or kiosk is a separate client. Restarting Chromium does not affect a running job, and restarting the API does not erase durable job state.
 
-The API and worker are separate processes over one SQLite database and one managed evidence root. The GUI is a third, independent client: either a normal browser or Chromium running in kiosk mode.
+## Backend
 
-## Architectural rules
+### `backend/app.py`
 
-Several rules shape most of the codebase:
+`backend/app.py` is the composition root. It no longer contains the application's large route surface.
 
-1. **Observation and interpretation are separate.** Sensors and scanners record facts; assessments and finding rules interpret them.
-2. **Long-running work uses durable jobs.** Reloading a page must not terminate Nmap or packet capture.
-3. **Scope is validated on the server.** Seeing an address or route is not permission to scan it.
-4. **External tools run without a shell.** Commands are argv arrays; `shell=True` is not used on the provider path.
-5. **Raw evidence is separate from normalized data.** PCAP, XML, stdout/stderr, and generated reports live as files, not large SQLite BLOBs.
-6. **Backend and worker stay unprivileged.** Packet-capture capabilities belong to `dumpcap`, not the Python process.
-7. **Tool failure never means protocol absence.** Missing binaries, timeouts, and parser failures remain explicit errors or partial results.
-8. **SQLite is intentional.** A single appliance does not need distributed infrastructure to coordinate local work.
+It has four responsibilities:
 
-## Module boundaries
+1. construct or accept application services;
+2. collect them into `AppServices`;
+3. attach API routers;
+4. mount the frontend and static files.
 
-### `backend/`
+Dependencies are available as `application.state.services`. Existing `application.state.jobs`, `.inventory`, `.evidence`, and related attributes are retained for compatibility with tests and in-process integrations.
 
-`backend/app.py` assembles the FastAPI application, dependencies, authentication guards, and current HTTP routes. The file is still fairly large; the route layer has not yet been split into separate router modules.
+### `backend/dependencies.py`
 
-The backend:
+`AppServices` is the runtime dependency container used by the FastAPI layer. Routers receive it through `Depends(get_services)` instead of rebuilding services or importing global singletons.
 
-- validates sessions and roles;
-- validates request data;
-- creates audits and jobs;
-- serves inventory, findings, and reports;
-- serves the static frontend;
-- exposes health/readiness;
-- accesses host network configuration through the controlled `NetworkService` boundary.
+This is intentionally not a DI framework. It is only an explicit container for services that already exist for the lifetime of the application.
 
-The backend does **not** own job lifetime. Once queued, a job exists independently of its originating request and browser tab.
+### `backend/routers/`
 
-### `config/`
+HTTP routes are grouped by domain:
 
-`config/settings.py` is the runtime policy source for paths, capture limits, concurrency, Nmap timeouts, scope caps, provider binaries, cookie settings, TLS, and related configuration.
+```text
+backend/routers/
+├── auth.py
+├── system.py
+├── audits.py
+├── captures.py
+├── inventory.py
+├── protocol.py
+├── findings.py
+├── reports.py
+└── jobs.py
+```
 
-The application-level default bind is `127.0.0.1:8000`. The appliance installer CLI currently has a separate `--bind-host 0.0.0.0` default, which is why deployment examples set the desired bind explicitly.
+A router is not a second domain layer. Its job is to parse the HTTP request, call the existing service, and translate the result or error into the API contract.
 
-### `engine/`
+Shared response/error conversion lives in `backend/http.py`; the common authorization guard lives in `backend/security.py`.
 
-This package contains network and passive-analysis core logic without HTTP concerns.
+## API versioning
 
-Important modules:
+The canonical API is published as:
 
-- `environment.py` — hostname, addresses, routes, DNS, host context;
-- `interfaces.py` — interface discovery and interface policy;
-- `network.py` / `segment.py` — network context and appliance-mediated network changes;
-- `routes.py` — route validation for active targets;
-- `scope.py` — canonical target sets, caps, prohibited ranges;
-- `active_profiles.py` — Discovery / Standard / Deep profiles;
-- `passive.py` — capture/decode/sensor pipeline;
-- `assessment.py` — qualified interpretation of passive observations.
+```text
+/api/v1/...
+```
 
-### `providers/`
+For example:
 
-Providers adapt external tools to WireScope's internal contracts.
+```text
+GET  /api/v1/health
+POST /api/v1/audits
+GET  /api/v1/jobs/{job_id}
+```
 
-A provider is responsible for controlled execution and raw/normalized output. It is not responsible for deciding whether an observation is a security finding.
+For a gradual migration, the same `api_router` is also mounted below `/api`. The legacy prefix remains functional for the current frontend and existing clients, but it is excluded from the OpenAPI schema.
 
-For example, the Nmap provider records hosts/services and stores XML evidence. Finding rules later decide whether any resulting service state is actionable.
+There are therefore not two API implementations:
 
-### `sensors/` and `parsers/`
+```text
+/api/v1 ─┐
+         ├── same routers / same handlers / same services
+/api    ─┘
+```
 
-`tshark` decodes a PCAP once into line-oriented EK output. The parser normalizes that stream into packet records, and the passive sensors consume those records in-process.
+The authorization guard normalizes both prefixes and applies the same public/auditor policy. See [API.md](API.md).
 
-Current passive coverage includes:
+## Environment, interfaces, and network
 
-- Ethernet/source MAC;
-- VLAN/QinQ;
-- ARP;
-- LLDP/CDP;
-- STP;
-- DHCPv4/DHCPv6;
-- IPv6 RA/NS/NA;
-- mDNS/LLMNR/NBNS;
-- SSDP.
+`engine/environment.py` discovers Linux host context through ordinary system sources such as `ip -j addr`, `ip -j route`, `/sys/class/net`, resolver configuration, and the hostname.
 
-Sensors do not start additional tshark processes.
+`engine/interfaces.py` owns interface discovery and validation. Unknown, policy-denied, or down interfaces are rejected before capture or scanning starts.
 
-### `jobs/`
+`engine/network.py` and appliance `netctl` handle controlled network configuration changes. The API does not execute arbitrary user-supplied shell commands.
 
-The job subsystem is WireScope's orchestration layer.
+`engine/routes.py` verifies which interface and source address actually route to a confirmed target.
 
-Registered job handlers currently cover:
+## Scope
 
-- `passive_discovery`;
-- `packet_capture`;
-- `active_discovery`;
-- `protocol_audit`;
-- `findings_evaluation`;
-- `report_generation`.
+Observed network data and authorized scope are different things.
 
-`JobService` owns audit/job state transitions. `JobWorker` atomically claims queued work and dispatches it through a handler registry.
+Passive analysis may see an ARP address, DHCP server, LLDP/CDP neighbor, or VLAN tag. None of those observations authorizes active scanning by itself.
 
-The worker is not a hard-coded `if/elif` chain keyed on job type; handlers are registered independently.
+Active discovery follows this path:
 
-### `persistence/`
-
-Persistence uses SQLAlchemy 2 and Alembic. Production schema changes are migrations, not `Base.metadata.create_all()`.
-
-SQLite connections use:
-
-- WAL;
-- foreign keys;
-- configurable busy timeout;
-- `synchronous=FULL` by default;
-- short transactions.
-
-Scanner execution and packet capture must never happen while holding a database transaction open.
-
-### `storage/`
-
-`EvidenceStore` owns file-backed artifacts.
-
-Files are written through a temporary name, flushed, atomically renamed, hashed with SHA-256, and then registered in SQLite. The database keeps artifact metadata, schema/version information, and an internal relative path.
-
-API callers cannot choose arbitrary evidence filesystem paths.
-
-### `inventory/`
-
-Inventory stores assets, addresses, names, services, and provenance.
-
-Correlation is deterministic:
-
-1. exact MAC match;
-2. then exact IP match.
-
-If MAC identity and IP identity disagree, WireScope records the conflict instead of silently merging two assets.
-
-Name provenance is retained. PTR, DHCP, mDNS, LLMNR, NBNS, and Nmap names accumulate rather than overwriting each other as a single authoritative hostname.
-
-### `protocol_audits/`
-
-Protocol audits use a registry of service-aware modules.
-
-Each module declares:
-
-- service predicates;
-- required binary;
-- safety class;
-- argv builder;
-- parser;
-- timeout;
-- normalized observation kinds.
-
-Current modules are SSH, TLS, HTTP, DNS, SMB, SNMP, and LDAP.
-
-A module is dispatched only when an inventory service matches its predicate and the selected asset address is still inside the confirmed scope.
-
-### `findings/`
-
-The rule engine does not start scanners and does not parse raw provider stdout. It reads:
-
-- `protocol_observations`;
-- inventory services;
-- stored passive-result artifacts.
-
-A finding records rule/version, severity, confidence, affected asset/service, rationale, recommendation, and evidence references.
-
-States are `open`, `suppressed`, and `accepted_risk`; state changes are retained separately.
-
-### `reports/`
-
-Reporting builds the versioned `audit-report` v1 model from persisted data.
-
-Report generation writes HTML and JSON to the evidence store and appends report history. It never re-runs network checks while rendering a report.
-
-### `auth/`
-
-Local users are stored in SQLite.
-
-Roles:
-
-- `auditor` — operational read/write access;
-- `viewer` — read-only operational access.
-
-The browser cookie carries a random session token; SQLite stores only its SHA-256 digest. Cookies are HttpOnly and `SameSite=strict`; `Secure` is enabled when direct TLS or a trusted reverse proxy is configured.
-
-### `frontend/`
-
-The frontend remains plain HTML/CSS/JavaScript.
-
-It now handles the audit wizard, job polling, inventory, findings, report preview, network settings, password changes, and listen/record capture. A separate frontend build framework is still not required for runtime.
-
-The compact baseline is a 480×320 kiosk. At 900px and above the layout becomes denser for laptop/desktop use.
-
-### `appliance/` and `packaging/`
-
-These packages turn the Python application into a deployable Linux appliance.
-
-They cover:
-
-- distro and architecture detection;
-- apt/dnf/yum/zypper package mapping;
-- installer and upgrade flow;
-- systemd unit generation;
-- dumpcap capability setup and verification;
-- kiosk integration;
-- backup/restore;
-- dependency inventory;
-- TLS helper;
-- network-control helper;
-- checksums and release helpers.
-
-The installer runs from the Git checkout. A system install keeps mutable data under `/var/lib/wirescope` and configuration under `/etc/wirescope`.
+```text
+operator request
+      ↓
+ScopeValidator
+      ↓
+address-count / prohibited-range checks
+      ↓
+route + interface validation
+      ↓
+immutable confirmed scope
+      ↓
+worker
+      ↓
+Nmap provider
+```
+
+`0.0.0.0/0`, `::/0`, multicast ranges, and uncontrolled IPv6 expansion are rejected. Address limits depend on the selected profile.
 
 ## Passive pipeline
 
+A normal passive audit uses a fixed pipeline:
+
 ```text
 validated interface
-        ↓
-dumpcap: bounded capture
-        ↓
-temporary PCAP
-        ↓
-tshark -T ek -l -n
-        ↓
-line-oriented decode
-        ↓
-PacketRecord
-        ↓
-passive sensors
-        ↓
-SensorResult[]
-        ↓
+      ↓
+dumpcap → bounded PCAP
+      ↓
+tshark -T ek → line-oriented decode
+      ↓
+normalized PacketRecord
+      ↓
+in-process sensors
+      ↓
 assessment
 ```
 
-A normal live passive audit therefore uses two subprocesses: one `dumpcap` and one `tshark`. Adding sensors does not add tshark processes.
+`dumpcap` captures packets. `tshark` decodes an existing PCAP. Sensors do not invoke external tools.
 
-### `SensorResult`
+A single capture is not decoded with a separate tshark process for every protocol. This matters on small appliances and ARM64 hardware.
 
-Each sensor returns:
+Sensor results distinguish `absent`, `detected`, `partial`, and `error`. A parser or tool failure is never converted into “protocol absent”.
 
-- `name`;
-- `status`;
-- `hits`;
-- observations;
-- summary;
-- warnings;
-- structured errors;
-- compatibility flag `detected`.
+## Jobs and worker
 
-Status semantics:
+Long-running operations are durable jobs rather than work performed inside an HTTP request.
 
-- `absent` — parsing succeeded and no evidence matched;
-- `detected` — trustworthy observations were produced;
-- `partial` — observations exist, but part of the analysis failed;
-- `error` — presence/absence cannot be determined reliably.
-
-A parser error therefore never becomes `absent`.
-
-## Confidence model
-
-Assessments and findings use:
-
-- `confirmed`;
-- `high`;
-- `medium`;
-- `low`;
-- `hint`;
-- `unknown`.
-
-`confirmed` is deliberately rare. Direct protocol evidence may justify high confidence; device classification from service patterns remains heuristic.
-
-## Active discovery boundary
-
-Active discovery starts from a strict distinction:
+Main state transitions:
 
 ```text
-observed network data
-        ≠
-authorized scope
+queued → running → completed
+   │        ├────→ failed
+   │        ├────→ cancelled
+   │        └────→ interrupted
+   └─────────────→ cancelled
 ```
 
-Before Nmap runs, the backend:
+`JobService` owns state transitions. The worker atomically claims queued jobs and dispatches them through the handler registry.
 
-1. canonicalizes targets using `ipaddress`;
-2. enforces target-count limits;
-3. rejects unspecified/multicast ranges;
-4. validates the interface;
-5. resolves routes with `ip route get`;
-6. verifies source address and route device;
-7. stores an immutable confirmed-scope snapshot;
-8. re-validates that snapshot in the worker before provider execution.
+Resource locks live in SQLite. Passive capture and active discovery, for example, cannot use the same `interface:<name>` resource concurrently.
 
-See [SCANNING_MODEL.md](SCANNING_MODEL.md).
+After a worker restart, previously running jobs become `interrupted` with `application_restart`; queued jobs remain queued. Arbitrary scanner processes are not automatically resumed or retried.
 
-## Jobs and restart recovery
+## Persistence
 
-Job transitions are:
+SQLite is the local system of record, accessed through SQLAlchemy 2 and Alembic.
 
-```text
-queued  → running
-queued  → cancelled
-running → completed | failed | cancelled | interrupted
-```
+Application connections use:
 
-Terminal jobs never return to `running`.
+- foreign keys;
+- WAL;
+- a busy timeout;
+- short transactions;
+- `synchronous=FULL` by default for appliance deployment.
 
-If the worker disappears while a job is running, startup recovery changes that job to `interrupted` with `application_restart`. It is not resumed from the middle and is not retried automatically.
+Scanner or capture execution never runs inside an open SQL transaction.
 
-Queued jobs survive and remain claimable.
+SQLite stores audits, jobs/events, locks/workers, confirmed scopes, inventory, protocol observations, findings, users/sessions, reports, and evidence metadata.
 
-Cancellation of a running job is persisted first. A worker-side monitor then propagates a cooperative cancellation token to the handler and `ToolRunner`, which terminates the child process group.
+## Evidence store
 
-### Resource locks
+Large or raw data is kept outside the main relational rows:
 
-Locks live in SQLite, so limits apply across worker threads rather than only inside one Python object.
+- PCAP;
+- Nmap XML;
+- raw provider stdout/stderr;
+- passive-result JSON;
+- generated HTML/JSON reports.
 
-Examples:
+Evidence files are written below a controlled root through a temporary path, flush/fsync, and atomic rename, then registered with SHA-256 metadata in SQLite.
 
-- capture and active discovery use `interface:<name>`;
-- global capture/Nmap limits use resource groups;
-- protocol audits serialize at audit/group level;
-- findings and reports serialize per audit but do not need an interface lock.
+API callers never select filesystem paths.
 
-Default worker concurrency and the main network job limits are 1, which is intentionally conservative for a small appliance.
+## Inventory and correlation
 
-## Persistence model
+`InventoryService` owns assets, addresses, names, services, and evidence provenance.
 
-Important tables include:
+Identity correlation is conservative: exact MAC first, then exact IP. If MAC identity and IP identity disagree, WireScope records the conflict rather than silently merging assets.
 
-- `audits`;
-- `jobs`;
-- `job_events`;
-- `artifacts`;
-- `resource_locks`;
-- `workers`;
-- `confirmed_scopes`;
-- `assets`, `asset_addresses`, `asset_names`, `services`, `asset_observations`;
-- `protocol_observations`;
-- `findings`, `finding_state_events`;
-- `reports`;
-- `users`, `sessions`.
+Hostnames from DHCP, PTR, mDNS, LLMNR, NBNS, and Nmap can coexist. A newer source does not erase an older one.
 
-Raw scanner output is not used as a job event log. `job_events` is lifecycle/progress history; stdout/stderr is stored as evidence.
+Device and OS classification remain confidence-qualified hints, not confirmed facts.
+
+## Protocol audits
+
+`protocol_audits/` is a registry-driven layer for checking discovered services.
+
+Each module declares:
+
+- a service predicate;
+- a required tool;
+- a safety class;
+- an argv-only command builder;
+- a parser;
+- timeout/resource limits.
+
+Current providers cover SSH, TLS, HTTP, DNS, SMB, SNMP, and LDAP. They run only for inventory addresses that remain inside confirmed scope.
+
+NSE, brute force, and credential guessing are not part of the default path.
+
+## Findings
+
+The findings engine does not start scanners and does not parse raw stdout.
+
+It consumes normalized observations, inventory, and passive-result artifacts and applies versioned rules. A finding contains severity, confidence, rationale, recommendation, and evidence links.
+
+`suppressed` and `accepted_risk` states survive re-evaluation; state changes are recorded separately.
+
+## Reporting
+
+Report generation also does not contact the network. It builds a versioned `audit-report` view from persisted state and writes self-contained HTML and JSON artifacts.
+
+Raw provider output is referenced through evidence identifiers and hashes rather than copied wholesale into the main report.
+
+## Authentication
+
+Local roles are `auditor` and `viewer`.
+
+A session cookie contains a random token; SQLite stores its SHA-256 digest. Mutating operational routes require `auditor`. Viewers can inspect results but cannot start or cancel work.
+
+Health/readiness and login remain public so the appliance can expose basic state before sign-in.
 
 ## Privilege boundary
 
-Production should look like this:
+Production process model:
 
 ```text
-wirescope-api        wirescope-worker
-   uid=wirescope        uid=wirescope
-        │                    │
-        └────────┬───────────┘
-                 │
-                 ▼
-             dumpcap
- root:wireshark 0750 + file capabilities
+unprivileged wirescope-api
+unprivileged wirescope-worker
+          │
+          ▼
+/usr/bin/dumpcap
+root:wireshark 0750
+cap_net_admin,cap_net_raw=eip
 ```
 
-Python, Uvicorn, and the worker do not receive `CAP_NET_RAW` or `CAP_NET_ADMIN`.
+The Python backend does not receive `CAP_NET_RAW` or `CAP_NET_ADMIN`.
 
-Nmap follows a separate rule: raw-socket features are used only when those privileges are already available to the process. Otherwise the provider uses TCP connect and records skipped UDP/OS-detection capabilities rather than elevating itself.
+Nmap is not elevated automatically. Without raw-socket privileges, the provider uses supported fallbacks and records skipped capabilities.
 
-User-systemd installs use `sg wireshark` to obtain current group membership. System units use `SupplementaryGroups=wireshark`.
+External tools are executed as argv arrays; `shell=True` is not used.
 
-## Kiosk boundary
+## Deployment
 
-The kiosk is not part of backend or worker lifetime:
+Both application and appliance installer default to `127.0.0.1:8000`.
+
+That is sufficient for the local kiosk. For LAN operation, the preferred layout is:
 
 ```text
-systemd
-├── wirescope-api
-├── wirescope-worker
-└── wirescope-kiosk   (optional)
+browser → HTTPS 443 → Caddy/nginx → 127.0.0.1:8000
 ```
 
-Restarting Chromium does not cancel work. If the kiosk fails, the system can return `getty@tty1` without stopping API or worker.
+Direct `0.0.0.0` binding requires an explicit `--bind-host 0.0.0.0` and should be paired with TLS or a deliberate firewall policy.
 
-VMware uses the Xorg/xinit kiosk path. Other hardware can use Cage/Wayland where available, with xinit as a fallback.
+## Remaining technical debt
 
-## Current technical debt
+Notable remaining items include:
 
-The current branch still has a few deliberate gaps:
-
+- the frontend still uses compatibility `/api/*` and can migrate to `/api/v1` separately;
+- response-generated URLs may still return `/api/*` during that transition;
 - PDF export is not implemented;
-- there is no dedicated security audit-log table;
-- policy-driven deletion of completed audits/evidence is not implemented;
-- terminal jobs have no manual/automatic retry flow;
-- `backend/app.py` remains large and will eventually benefit from splitting the route layer;
-- tshark compatibility requires release testing against distro package versions;
-- hardware-specific Raspberry Pi kiosk smoke tests remain optional.
-
-These items are tracked in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+- there is no dedicated security audit-log table yet;
+- there is no policy-driven deletion of completed audits/evidence;
+- terminal jobs have no automatic retry;
+- tshark compatibility requires release testing against distro package versions.

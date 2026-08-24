@@ -86,7 +86,7 @@ Stage state is derived from persisted jobs. The browser does not maintain a seco
 
 ## WireScope overview
 
-An additional **Overview** panel can inspect any saved audit.
+After successful login, an additional **Overview** panel can inspect any saved audit. The control is hidden on the login screen and follows the existing authenticated-session indicator.
 
 ### Overview tab
 
@@ -234,6 +234,8 @@ The GUI can:
 - export JSON;
 - export Markdown.
 
+The Markdown control is added by `enhancements.js` next to the existing JSON export and uses the canonical `/api/v1` export endpoint.
+
 PDF currently returns `422 pdf_not_available`.
 
 ## Error handling
@@ -263,4 +265,4 @@ The screen is a client, not the executor.
 
 ## Testing
 
-Core GUI/API contracts are fixture-based. Optional Playwright tests are marked `browser` and skipped when Playwright/Chromium is unavailable. CI compiles Python sources and runs the default `pytest` suite.
+Core GUI/API contracts are fixture-based. Static regression tests also verify that `enhancements.js/.css` are actually loaded by `index.html`, that evidence URLs remain audit-scoped, and that Markdown export stays integrated. Optional Playwright tests are marked `browser` and skipped when Playwright/Chromium is unavailable. CI compiles Python sources and runs the default `pytest` suite.

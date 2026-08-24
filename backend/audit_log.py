@@ -13,11 +13,18 @@ from typing import Any
 
 from sqlalchemy import text
 
-from backend.security import normalized_api_path
 from persistence.database import Database
 
 
 _AUDIT_ID = re.compile(r"^/api/audits/([^/]+)")
+
+
+def _normalized_api_path(path: str) -> str:
+    if path == "/api/v1":
+        return "/api"
+    if path.startswith("/api/v1/"):
+        return "/api/" + path[len("/api/v1/") :]
+    return path
 
 
 class AuditLogService:
@@ -62,7 +69,7 @@ class AuditLogService:
                     "role": role,
                     "action": action,
                     "method": method.upper(),
-                    "path": normalized_api_path(path),
+                    "path": _normalized_api_path(path),
                     "status_code": int(status_code),
                     "client_ip": client_ip,
                     "audit_id": audit_id,
@@ -150,7 +157,7 @@ class AuditLogService:
 def operational_action(method: str, path: str) -> str | None:
     """Return a stable action name for requests worth keeping in the log."""
     method = method.upper()
-    path = normalized_api_path(path)
+    path = _normalized_api_path(path)
     if path == "/api/auth/login" and method == "POST":
         return "auth.login"
     if path == "/api/auth/logout" and method == "POST":
@@ -189,5 +196,5 @@ def operational_action(method: str, path: str) -> str | None:
 
 
 def audit_id_from_path(path: str) -> str | None:
-    match = _AUDIT_ID.match(normalized_api_path(path))
+    match = _AUDIT_ID.match(_normalized_api_path(path))
     return match.group(1) if match else None

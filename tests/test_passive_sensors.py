@@ -14,7 +14,7 @@ from engine.passive_models import (
     SensorResult,
     SensorStatus,
 )
-from sensors.layer2 import vlan_sensor
+from sensors.layer2 import cdp_sensor, lldp_sensor, vlan_sensor
 from sensors.discovery import llmnr_sensor, nbns_sensor
 from sensors.network import dhcpv4_sensor, ipv6_ra_sensor
 from sensors.passive import PASSIVE_SENSORS, run_passive_sensors
@@ -108,6 +108,71 @@ def test_vlan_sensor_handles_multiple_tags_and_vlans():
         {"vlan_id": 20, "frames": 1},
         {"vlan_id": 30, "frames": 1},
     ]
+
+
+def test_lldp_pvid_is_not_counted_as_an_8021q_tag():
+    result = vlan_sensor(
+        dataset(
+            packet(
+                1,
+                ["eth", "lldp"],
+                {
+                    "lldp_ieee_802_1_port_vlan_id": ["10"],
+                    "lldp_ieee_802_1_vlan_voice": ["40"],
+                },
+            )
+        )
+    )
+    assert result.status == SensorStatus.ABSENT
+    assert result.summary["vlan_frame_counts"] == []
+
+
+def test_untagged_frames_do_not_invent_a_vlan_id():
+    result = vlan_sensor(
+        dataset(
+            packet(1, ["eth", "arp"], {"eth_eth_src": ["02:00:00:00:00:01"]}),
+        )
+    )
+    assert result.status == SensorStatus.ABSENT
+    assert result.summary["tagged_frames"] == 0
+    assert result.summary["vlan_frame_counts"] == []
+
+
+def test_lldp_and_cdp_extract_native_voice_and_pvid():
+    lldp = lldp_sensor(
+        dataset(
+            packet(
+                1,
+                ["eth", "lldp"],
+                {
+                    "lldp_lldp_tlv_system_name": ["switch-lldp"],
+                    "lldp_lldp_port_id": ["Gi1/0/1"],
+                    "lldp_ieee_802_1_port_vlan_id": ["10"],
+                    "lldp_ieee_802_1_vlan_voice": ["40"],
+                },
+            )
+        )
+    )
+    cdp = cdp_sensor(
+        dataset(
+            packet(
+                2,
+                ["eth", "cdp"],
+                {
+                    "cdp_cdp_deviceid": ["switch-cdp"],
+                    "cdp_cdp_portid": ["GigabitEthernet1/0/2"],
+                    "cdp_cdp_native_vlan": ["20"],
+                    "cdp_cdp_voice_vlan": ["30"],
+                },
+            )
+        )
+    )
+    assert lldp.status == SensorStatus.DETECTED
+    assert lldp.observations[0].data["pvid"] == 10
+    assert lldp.observations[0].data["voice_vlan"] == 40
+    assert cdp.status == SensorStatus.DETECTED
+    assert cdp.observations[0].data["native_vlan"] == 20
+    assert cdp.observations[0].data["voice_vlan"] == 30
 
 
 def test_dhcp_sensor_aggregates_multiple_servers():

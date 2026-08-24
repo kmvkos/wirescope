@@ -102,6 +102,28 @@ def test_multiple_tagged_vlans_produce_medium_trunk_hint():
     assert hint["confidence"] == ConfidenceLevel.MEDIUM.value
 
 
+def test_stp_root_is_copied_into_layer2_assessment():
+    assessment = build_assessment(
+        capture(4),
+        {
+            "stp": SensorResult(
+                name="stp",
+                status=SensorStatus.DETECTED,
+                hits=2,
+                summary={
+                    "bpdus_observed": 2,
+                    "root_bridge_ids": ["32768.02:00:00:00:00:01"],
+                    "bridge_ids": ["32768.02:00:00:00:00:02"],
+                },
+            )
+        },
+    )
+    assert assessment.layer2["stp"]["bpdus_observed"] == 2
+    assert assessment.layer2["stp"]["root_bridge_ids"] == [
+        "32768.02:00:00:00:00:01"
+    ]
+
+
 def test_visibility_confidence_handles_silent_and_quiet_capture():
     silent = build_assessment(capture(0), {})
     quiet = build_assessment(capture(3), {})

@@ -78,7 +78,9 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "job.dumpcapPermission" in i18n
     assert "службе не хватает группы wireshark" in i18n
     assert "Захват завершён без кадров" in i18n
+    assert "VLAN в кадре виден только при 802.1Q" in i18n
     assert "id=\"summary-note\"" in html
+    assert "id=\"summary-vlan-note\"" in html
     assert "required" not in html.split('id="scope-targets"')[1].split("</textarea>")[0]
     assert "Наблюдатель не может запускать аудиты" in i18n
     assert 'const locale = "ru"' in i18n

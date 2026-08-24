@@ -253,3 +253,303 @@ def test_empty_capture_headline_is_honest():
     assert report.executive_summary.headline == "Capture completed with no frames"
     assert "Захват завершён: кадров нет" in html
     assert report.executive_summary.asset_count == 0
+
+
+def test_no_ip_silent_tap_report_surfaces_environment_not_invented_vlans():
+    report = build_audit_report(
+        sample_source(
+            audit_summary={"schema": "passive-summary", "frame_count": 0},
+            confirmed_scope=None,
+            assets=[],
+            services=[],
+            findings=[],
+            detected_sensors=[],
+            environment={
+                "hostname": "wirescope-pi",
+                "interfaces": [
+                    {
+                        "name": "eth0",
+                        "state": "UP",
+                        "mac": "02:00:00:00:00:aa",
+                        "ipv4": [],
+                        "ipv6": ["fe80::1/64"],
+                    }
+                ],
+                "default_route": None,
+                "dns": [],
+            },
+            passive_result={
+                "schema": "passive-result",
+                "schema_version": 1,
+                "result": {
+                    "interface": "eth0",
+                    "interface_ipv4": [],
+                    "interface_ipv6": ["fe80::1/64"],
+                    "capture": {
+                        "frame_count": 0,
+                        "duration_seconds": 30,
+                    },
+                    "sensors": {},
+                    "assessment": {
+                        "visibility": {
+                            "value": "silent",
+                            "rationale": "Capture completed and contained no frames",
+                        },
+                        "layer2": {
+                            "tagged_vlans_observed": [],
+                            "tagged_frame_count": 0,
+                            "untagged_traffic_observed": False,
+                            "neighbors": [],
+                        },
+                    },
+                },
+            },
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    html = render_html(report)
+    validate_report_document(report.to_document())
+    assert report.passive.had_l3_address is False
+    assert report.passive.tagged_vlan_ids == []
+    assert report.passive.segment_status == "quiet"
+    assert report.executive_summary.headline == "Capture completed with no frames"
+    assert "eth0" in html
+    assert "L3-адрес" in html
+    assert "Сегмент выглядел тихим" in html
+    assert "Пассивная оценка сегмента" in html
+    assert "VLAN в кадре виден только при 802.1Q" in html
+    assert "VLAN 1" not in html
+
+
+def test_no_ip_tagged_and_neighbor_observations_appear_in_html():
+    report = build_audit_report(
+        sample_source(
+            confirmed_scope=None,
+            assets=[],
+            services=[],
+            findings=[],
+            detected_sensors=["vlan", "lldp", "cdp", "arp"],
+            environment={
+                "hostname": "wirescope-pi",
+                "interfaces": [
+                    {
+                        "name": "eth0",
+                        "state": "UP",
+                        "mac": "02:00:00:00:00:aa",
+                        "ipv4": [],
+                        "ipv6": [],
+                    }
+                ],
+                "default_route": None,
+                "dns": [],
+            },
+            passive_result={
+                "result": {
+                    "interface": "eth0",
+                    "interface_ipv4": [],
+                    "interface_ipv6": [],
+                    "capture": {"frame_count": 40, "duration_seconds": 30},
+                    "sensors": {
+                        "vlan": {
+                            "status": "detected",
+                            "hits": 8,
+                            "summary": {
+                                "tagged_frames": 8,
+                                "vlan_frame_counts": [
+                                    {"vlan_id": 10, "frames": 5},
+                                    {"vlan_id": 20, "frames": 3},
+                                ],
+                            },
+                        },
+                        "lldp": {
+                            "status": "detected",
+                            "hits": 1,
+                            "observations": [
+                                {
+                                    "kind": "neighbor_advertisement",
+                                    "data": {
+                                        "system_name": "core-sw",
+                                        "port_id": "Gi1/0/24",
+                                        "pvid": 10,
+                                        "voice_vlan": 40,
+                                    },
+                                }
+                            ],
+                        },
+                        "cdp": {
+                            "status": "detected",
+                            "hits": 1,
+                            "observations": [
+                                {
+                                    "kind": "neighbor_advertisement",
+                                    "data": {
+                                        "device_id": "access-sw",
+                                        "port_id": "Gi1/0/1",
+                                        "native_vlan": 20,
+                                        "voice_vlan": 30,
+                                    },
+                                }
+                            ],
+                        },
+                        "arp": {
+                            "status": "detected",
+                            "hits": 2,
+                            "summary": {
+                                "unique_ipv4_hosts": 2,
+                                "observed_ipv4_mac": [
+                                    {
+                                        "ipv4": "192.0.2.1",
+                                        "mac": "02:00:00:00:00:01",
+                                    }
+                                ],
+                            },
+                        },
+                        "mdns": {
+                            "status": "detected",
+                            "hits": 1,
+                            "summary": {
+                                "names": ["printer.local"],
+                                "addresses": [],
+                            },
+                        },
+                        "llmnr": {"status": "absent", "hits": 0, "summary": {}},
+                        "nbns": {"status": "absent", "hits": 0, "summary": {}},
+                    },
+                    "assessment": {
+                        "visibility": {
+                            "value": "active",
+                            "rationale": "traffic",
+                        },
+                        "layer2": {
+                            "tagged_vlans_observed": [10, 20],
+                            "tagged_frame_count": 8,
+                            "untagged_traffic_observed": True,
+                            "port_type_hint": {"value": "trunk-like"},
+                            "neighbors": [
+                                {
+                                    "protocol": "LLDP",
+                                    "system_name": "core-sw",
+                                    "port_id": "Gi1/0/24",
+                                    "pvid": 10,
+                                    "voice_vlan": 40,
+                                },
+                                {
+                                    "protocol": "CDP",
+                                    "device_id": "access-sw",
+                                    "port_id": "Gi1/0/1",
+                                    "native_vlan": 20,
+                                    "voice_vlan": 30,
+                                },
+                            ],
+                        },
+                    },
+                }
+            },
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    html = render_html(report)
+    document = report.to_document()
+    validate_report_document(document)
+    assert report.executive_summary.headline == "Saw tagged VLANs 10, 20"
+    assert report.passive.had_l3_address is False
+    assert report.passive.tagged_vlan_ids == [10, 20]
+    assert {item.name for item in report.passive.neighbors} == {
+        "core-sw",
+        "access-sw",
+    }
+    assert "В кадрах видны тегированные VLAN 10, 20" in html
+    assert "core-sw" in html
+    assert "Gi1/0/24" in html
+    assert "native VLAN 20" in html
+    assert "voice VLAN 30" in html
+    assert "printer.local" in html
+    assert "192.0.2.1" in html
+    assert report.passive.vlan_tag_note.startswith("VLAN в кадре виден только")
+
+
+def test_untagged_access_port_does_not_claim_a_vlan_id():
+    report = build_audit_report(
+        sample_source(
+            confirmed_scope=None,
+            assets=[],
+            services=[],
+            findings=[],
+            detected_sensors=["ethernet", "arp"],
+            environment={
+                "hostname": "wirescope-pi",
+                "interfaces": [
+                    {
+                        "name": "eth0",
+                        "state": "UP",
+                        "mac": "02:00:00:00:00:aa",
+                        "ipv4": [],
+                        "ipv6": [],
+                    }
+                ],
+                "default_route": None,
+                "dns": [],
+            },
+            passive_result={
+                "result": {
+                    "interface": "eth0",
+                    "interface_ipv4": [],
+                    "capture": {"frame_count": 25, "duration_seconds": 30},
+                    "sensors": {
+                        "ethernet": {
+                            "status": "detected",
+                            "hits": 25,
+                            "summary": {},
+                        },
+                        "vlan": {
+                            "status": "absent",
+                            "hits": 0,
+                            "summary": {
+                                "tagged_frames": 0,
+                                "vlan_frame_counts": [],
+                            },
+                        },
+                        "arp": {
+                            "status": "detected",
+                            "hits": 4,
+                            "summary": {
+                                "unique_ipv4_hosts": 3,
+                                "observed_ipv4_mac": [],
+                            },
+                        },
+                    },
+                    "assessment": {
+                        "visibility": {"value": "active"},
+                        "layer2": {
+                            "tagged_vlans_observed": [],
+                            "tagged_frame_count": 0,
+                            "untagged_traffic_observed": True,
+                            "port_type_hint": {
+                                "value": "access-or-native-like",
+                            },
+                            "neighbors": [],
+                        },
+                    },
+                }
+            },
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    html = render_html(report)
+    assert report.passive.tagged_vlan_ids == []
+    assert report.executive_summary.headline == (
+        "Untagged traffic was observed; VLAN ID is unknown"
+    )
+    assert "ID VLAN неизвестен" in html
+    assert "access-or-native-like" in html
+    assert "VLAN 1" not in html
+

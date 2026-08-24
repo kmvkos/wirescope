@@ -3,7 +3,7 @@
   "schema_version": 1,
   "report_id": "00000000-0000-4000-8000-000000000001",
   "generated_at": "2026-08-24T12:00:00Z",
-  "source_hash": "426eda6d721808e1754a01558bf86d3840779fd0e19a54bf836233b881c8ada8",
+  "source_hash": "14188a4103088e5472ed3137b067dc9e4530ab4857bf2d6f320fe34099f1096e",
   "audit": {
     "id": "11111111-1111-4000-8000-111111111111",
     "status": "running",
@@ -40,10 +40,17 @@
     "confirmed_scope": true,
     "detected_sensors": [
       "llmnr"
-    ]
+    ],
+    "frame_count": null,
+    "had_l3_address": true,
+    "tagged_vlan_ids": [],
+    "segment_status": "unknown",
+    "segment_note": "No passive capture is stored for this audit"
   },
   "environment": {
     "hostname": "wirescope-test",
+    "capture_interface": "eth0",
+    "had_l3_address": true,
     "interfaces": [
       {
         "name": "eth0",
@@ -62,6 +69,67 @@
     "dns": [
       "192.0.2.53"
     ]
+  },
+  "passive": {
+    "available": false,
+    "capture_interface": "eth0",
+    "capture_interface_state": "UP",
+    "capture_mac": "00:11:22:33:44:55",
+    "capture_ipv4": [
+      "192.0.2.10/24"
+    ],
+    "capture_ipv6": [],
+    "had_l3_address": true,
+    "duration_seconds": null,
+    "frame_count": null,
+    "visibility": null,
+    "visibility_rationale": null,
+    "segment_status": "unknown",
+    "segment_note": "No passive capture is stored for this audit",
+    "tagged_vlan_ids": [],
+    "tagged_frame_count": 0,
+    "untagged_traffic_observed": false,
+    "port_type_hint": null,
+    "vlan_tag_note": "VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден",
+    "neighbors": [],
+    "stp": {
+      "bpdus_observed": 0,
+      "root_bridge_ids": [],
+      "bridge_ids": []
+    },
+    "arp_host_count": 0,
+    "arp_bindings": [],
+    "dhcp": {
+      "observed": false,
+      "server_count": 0,
+      "servers": [],
+      "routers": [],
+      "subnet_masks": []
+    },
+    "naming": [
+      {
+        "name": "mdns",
+        "status": "absent",
+        "hits": 0,
+        "names": [],
+        "addresses": []
+      },
+      {
+        "name": "llmnr",
+        "status": "absent",
+        "hits": 0,
+        "names": [],
+        "addresses": []
+      },
+      {
+        "name": "nbns",
+        "status": "absent",
+        "hits": 0,
+        "names": [],
+        "addresses": []
+      }
+    ],
+    "detected_sensors": []
   },
   "scope": {
     "confirmed": true,

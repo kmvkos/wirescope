@@ -47,6 +47,7 @@ def test_generated_pcap_is_decoded_once_for_all_sensors(tmp_path):
     assert lldp.status == SensorStatus.DETECTED
     assert lldp.observations[0].data["chassis_id"] == "02:00:00:00:00:01"
     assert lldp.observations[0].data["ttl_seconds"] == 120
+    assert lldp.observations[0].data.get("pvid") in {10, None}
     cdp = result.sensors["cdp"]
     assert cdp.observations[0].data["device_id"] == "switch-cdp-fixture"
     assert cdp.observations[0].data["native_vlan"] == 20

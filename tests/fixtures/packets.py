@@ -122,6 +122,8 @@ def _lldp_packet():
             _lldp_tlv(5, b"switch-fixture"),
             _lldp_tlv(6, b"Sanitized test switch"),
             _lldp_tlv(7, b"\x00\x14\x00\x14"),
+            # IEEE 802.1 Port VLAN ID (OUI 00-80-C2, subtype 1) — PVID 10.
+            _lldp_tlv(127, b"\x00\x80\xc2\x01" + (10).to_bytes(2, "big")),
             _lldp_tlv(0, b""),
         ]
     )
@@ -149,6 +151,7 @@ def _cdp_packet():
             _cdp_tlv(5, b"FixtureOS 1.0"),
             _cdp_tlv(6, b"FixtureSwitch"),
             _cdp_tlv(10, (20).to_bytes(2, "big")),
+            _cdp_tlv(14, (30).to_bytes(2, "big")),
             _cdp_tlv(11, b"\x01"),
         ]
     )

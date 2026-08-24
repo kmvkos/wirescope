@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Отчёт WireScope 11111111-1111-4000-8000-111111111111</title>
-<style>:root { color-scheme: light; }html { font-size: 16px; }body {  margin: 0 auto;  max-width: 60rem;  padding: 1rem;  font-family: system-ui, sans-serif;  line-height: 1.45;  color: #1b1b1b;  background: #f7f5f2;}.hero, section {  background: #fff;  border: 1px solid #d9d4cc;  border-radius: 0.5rem;  padding: 1rem;  margin-bottom: 1rem;}h1, h2, h3 { line-height: 1.2; }h1 { font-size: 1.6rem; margin: 0.2rem 0 0.6rem; }h2 { font-size: 1.2rem; margin-top: 0; }.eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; }.meta { color: #4a4a4a; font-size: 0.9rem; }.stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0.75rem 0; }.stat {  min-width: 5.5rem;  background: #f0ece6;  border-radius: 0.4rem;  padding: 0.5rem 0.7rem;}.stat .label { display: block; font-size: 0.75rem; color: #5c5c5c; }.stat .value { font-size: 1.2rem; font-weight: 650; }table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }th, td { border-bottom: 1px solid #e6e1da; text-align: left; padding: 0.35rem; vertical-align: top; }.hash, pre { overflow-wrap: anywhere; word-break: break-word; }pre {  background: #f4f1ec;  padding: 0.6rem;  border-radius: 0.35rem;  font-size: 0.8rem;}.finding { border-left: 0.35rem solid #5d6d7e; padding-left: 0.7rem; margin: 0.8rem 0; }.severity-critical, .finding.severity-critical { border-color: #8b1a1a; color: inherit; }.severity-high, .finding.severity-high { border-color: #c0392b; }.severity-medium, .finding.severity-medium { border-color: #d68910; }.severity-low, .finding.severity-low { border-color: #1f618d; }.stat .value.severity-critical { color: #8b1a1a; }.stat .value.severity-high { color: #c0392b; }@media (max-width: 40rem) {  body { padding: 0.6rem; }  table { display: block; overflow-x: auto; }  h1 { font-size: 1.3rem; }}</style>
+<style>:root { color-scheme: light; }html { font-size: 16px; }body {  margin: 0 auto;  max-width: 60rem;  padding: 1rem;  font-family: system-ui, sans-serif;  line-height: 1.45;  color: #1b1b1b;  background: #f7f5f2;}.hero, section {  background: #fff;  border: 1px solid #d9d4cc;  border-radius: 0.5rem;  padding: 1rem;  margin-bottom: 1rem;}h1, h2, h3 { line-height: 1.2; }h1 { font-size: 1.6rem; margin: 0.2rem 0 0.6rem; }h2 { font-size: 1.2rem; margin-top: 0; }.eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; }.meta { color: #4a4a4a; font-size: 0.9rem; }.stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0.75rem 0; }.stat {  min-width: 5.5rem;  background: #f0ece6;  border-radius: 0.4rem;  padding: 0.5rem 0.7rem;}.stat .label { display: block; font-size: 0.75rem; color: #5c5c5c; }.stat .value { font-size: 1.2rem; font-weight: 650; }table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }th, td { border-bottom: 1px solid #e6e1da; text-align: left; padding: 0.35rem; vertical-align: top; }.hash, pre { overflow-wrap: anywhere; word-break: break-word; }pre {  background: #f4f1ec;  padding: 0.6rem;  border-radius: 0.35rem;  font-size: 0.8rem;}.finding { border-left: 0.35rem solid #5d6d7e; padding-left: 0.7rem; margin: 0.8rem 0; }.severity-critical, .finding.severity-critical { border-color: #8b1a1a; color: inherit; }.severity-high, .finding.severity-high { border-color: #c0392b; }.severity-medium, .finding.severity-medium { border-color: #d68910; }.severity-low, .finding.severity-low { border-color: #1f618d; }.stat .value.severity-critical { color: #8b1a1a; }.stat .value.severity-high { color: #c0392b; }.callout {  background: #eef4f8;  border-left: 0.3rem solid #1f618d;  padding: 0.6rem 0.8rem;}.hint { color: #4a4a4a; font-size: 0.92rem; }@media (max-width: 40rem) {  body { padding: 0.6rem; }  table { display: block; overflow-x: auto; }  h1 { font-size: 1.3rem; }}</style>
 </head>
 <body>
 <header class="hero">
@@ -14,7 +14,11 @@
 </header>
 <section id="executive-summary">
 <h2>Краткое резюме</h2>
+<p class="callout">Для этого аудита пассивный захват не сохранён.</p>
 <div class="stats">
+<div class="stat"><span class="label">Кадры</span><span class="value">—</span></div>
+<div class="stat"><span class="label">L3-адрес на NIC захвата</span><span class="value">да</span></div>
+<div class="stat"><span class="label">Тегированные VLAN</span><span class="value">нет (тегов 802.1Q не видно)</span></div>
 <div class="stat"><span class="label">Активы</span><span class="value">1</span></div>
 <div class="stat"><span class="label">Службы</span><span class="value">1</span></div>
 <div class="stat"><span class="label">Находки</span><span class="value">1</span></div>
@@ -22,11 +26,31 @@
 </div>
 <div class="stats"><div class="stat"><span class="label">критическая</span><span class="value severity-critical">0</span></div><div class="stat"><span class="label">высокая</span><span class="value severity-high">1</span></div><div class="stat"><span class="label">средняя</span><span class="value severity-medium">0</span></div><div class="stat"><span class="label">низкая</span><span class="value severity-low">0</span></div><div class="stat"><span class="label">инфо</span><span class="value severity-info">0</span></div></div>
 <p>Уполномоченная область: да. Обнаруженные пассивные датчики: llmnr.</p>
+<p class="hint">VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден</p>
 </section>
 <section id="environment">
 <h2>Окружение</h2>
+<p><strong>Интерфейс захвата</strong>: eth0. <strong>L3-адрес на NIC захвата</strong>: да.</p>
 <p>Имя хоста: wirescope-test. Маршрут по умолчанию: шлюз 192.0.2.1 через eth0. DNS: 192.0.2.53.</p>
 <table><thead><tr><th>Интерфейс</th><th>Состояние</th><th>MAC</th><th>Адреса</th></tr></thead><tbody><tr><td>eth0</td><td>UP</td><td>00:11:22:33:44:55</td><td>192.0.2.10/24</td></tr></tbody></table>
+</section>
+<section id="passive">
+<h2>Пассивная оценка сегмента</h2>
+<p class="callout">Для этого аудита пассивный захват не сохранён.</p>
+<p class="hint">VLAN в кадре виден только при 802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но трафик этой сети всё равно виден</p>
+<p>Интерфейс захвата: eth0. L3-адрес на NIC захвата: да. Адреса: 192.0.2.10/24.</p>
+<p>Кадры: —. Длительность, с: —. Видимость: не зафиксировано. Подсказка типа порта: не зафиксировано.</p>
+<p>Тегированные VLAN: нет (тегов 802.1Q не видно). Тегированные кадры: 0. Нетегированный трафик: нет.</p>
+<h3>Соседи CDP/LLDP</h3>
+<p>Объявлений CDP/LLDP не зафиксировано.</p>
+<h3>STP</h3>
+<p>BPDU: 0. корневой мост: не зафиксировано.</p>
+<h3>ARP</h3>
+<p>Узлы ARP: 0. не зафиксировано.</p>
+<h3>DHCP</h3>
+<p>Серверы: не зафиксировано. Маршрутизаторы: не зафиксировано</p>
+<h3>Имена mDNS / LLMNR / NBNS</h3>
+<table><thead><tr><th>Протокол</th><th>Состояние</th><th>Срабатывания</th><th>Имена</th></tr></thead><tbody><tr><td>mdns</td><td>absent</td><td>0</td><td>—</td></tr><tr><td>llmnr</td><td>absent</td><td>0</td><td>—</td></tr><tr><td>nbns</td><td>absent</td><td>0</td><td>—</td></tr></tbody></table>
 </section>
 <section id="scope">
 <h2>Область</h2>
@@ -69,7 +93,7 @@
 <ul>
 <li>Продукт: WireScope 0.1.0</li>
 <li>ID отчёта: 00000000-0000-4000-8000-000000000001</li>
-<li>Хеш источника: 426eda6d721808e1754a01558bf86d3840779fd0e19a54bf836233b881c8ada8</li>
+<li>Хеш источника: 14188a4103088e5472ed3137b067dc9e4530ab4857bf2d6f320fe34099f1096e</li>
 <li>ID задания: 22222222-2222-4000-8000-222222222222</li>
 <li>Исполнитель: auditor</li>
 <li>Статус аудита: running</li>

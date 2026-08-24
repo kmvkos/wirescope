@@ -191,6 +191,11 @@ def test_report_job_reproduces_from_persisted_data(
     assert "secret-tool-output" not in html
     assert "<nmaprun>" not in html
     assert "Weak SSH algorithms are offered" in html
+    assert "Пассивная оценка сегмента" in html
+    assert "VLAN в кадре виден только при 802.1Q" in html
+    assert document["environment"]["capture_interface"] == "eth0"
+    assert document["environment"]["had_l3_address"] is True
+    assert document["passive"]["vlan_tag_note"].startswith("VLAN в кадре")
     json_path = evidence_store.path_for(
         job_service.artifact(report.json_artifact_id)
     )

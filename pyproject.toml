@@ -34,6 +34,7 @@ include = [
     "parsers*",
     "persistence*",
     "protocol_audits*",
+    "findings*",
     "providers*",
     "sensors*",
     "storage*",

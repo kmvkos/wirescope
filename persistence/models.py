@@ -87,6 +87,10 @@ class AuditModel(Base):
             cascade="all, delete-orphan",
         )
     )
+    findings: Mapped[list["FindingModel"]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+    )
 
 
 class JobModel(Base):
@@ -402,6 +406,9 @@ class AssetModel(Base):
             back_populates="asset",
         )
     )
+    findings: Mapped[list["FindingModel"]] = relationship(
+        back_populates="asset",
+    )
 
 
 class AssetAddressModel(Base):
@@ -541,6 +548,9 @@ class ServiceModel(Base):
             back_populates="service",
         )
     )
+    findings: Mapped[list["FindingModel"]] = relationship(
+        back_populates="service",
+    )
 
 
 class AssetObservationModel(Base):
@@ -656,3 +666,143 @@ class ProtocolObservationModel(Base):
     service: Mapped[ServiceModel] = relationship(
         back_populates="protocol_observations"
     )
+
+
+class FindingModel(Base):
+    __tablename__ = "findings"
+    __table_args__ = (
+        CheckConstraint(
+            "severity IN ('critical','high','medium','low','info')",
+            name="ck_findings_severity",
+        ),
+        CheckConstraint(
+            "confidence IN ('confirmed','high','medium','low',"
+            "'hint','unknown')",
+            name="ck_findings_confidence",
+        ),
+        CheckConstraint(
+            "status IN ('open','suppressed','accepted_risk')",
+            name="ck_findings_status",
+        ),
+        UniqueConstraint(
+            "audit_id",
+            "rule_id",
+            "dedupe_key",
+            name="uq_findings_identity",
+        ),
+        Index("ix_findings_audit_severity", "audit_id", "severity"),
+        Index("ix_findings_audit_status", "audit_id", "status"),
+        Index("ix_findings_audit_asset", "audit_id", "asset_id"),
+        Index("ix_findings_audit_family", "audit_id", "family"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL")
+    )
+    service_id: Mapped[str | None] = mapped_column(
+        ForeignKey("services.id", ondelete="SET NULL")
+    )
+    rule_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    family: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    recommendation: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    observation_ids: Mapped[list[str]] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
+    evidence_artifact_ids: Mapped[list[str]] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    audit: Mapped["AuditModel"] = relationship(back_populates="findings")
+    asset: Mapped[AssetModel | None] = relationship(back_populates="findings")
+    service: Mapped[ServiceModel | None] = relationship(
+        back_populates="findings"
+    )
+    state_events: Mapped[list["FindingStateEventModel"]] = relationship(
+        back_populates="finding",
+        cascade="all, delete-orphan",
+    )
+
+
+class FindingStateEventModel(Base):
+    __tablename__ = "finding_state_events"
+    __table_args__ = (
+        CheckConstraint(
+            "from_status IN ('open','suppressed','accepted_risk')",
+            name="ck_finding_state_events_from_status",
+        ),
+        CheckConstraint(
+            "to_status IN ('open','suppressed','accepted_risk')",
+            name="ck_finding_state_events_to_status",
+        ),
+        Index(
+            "ix_finding_state_events_finding",
+            "finding_id",
+            "created_at",
+        ),
+        Index("ix_finding_state_events_audit", "audit_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    finding_id: Mapped[str] = mapped_column(
+        ForeignKey("findings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    audit_id: Mapped[str] = mapped_column(
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    from_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+
+    finding: Mapped[FindingModel] = relationship(back_populates="state_events")

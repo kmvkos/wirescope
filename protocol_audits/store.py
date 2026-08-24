@@ -128,6 +128,19 @@ class ProtocolObservationStore:
             total=total,
         )
 
+    def all_for_audit(self, audit_id: str) -> list[ProtocolObservationRecord]:
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(ProtocolObservationModel)
+                .where(ProtocolObservationModel.audit_id == audit_id)
+                .order_by(
+                    ProtocolObservationModel.module,
+                    ProtocolObservationModel.kind,
+                    ProtocolObservationModel.id,
+                )
+            ).all()
+            return [_record(row) for row in rows]
+
     def count(self, audit_id: str) -> int:
         with self.database.session() as session:
             return (

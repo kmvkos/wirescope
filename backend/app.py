@@ -53,7 +53,12 @@ from engine.interfaces import (
 )
 from engine.network import NetworkConfirmRequired, NetworkService
 from engine.routes import RouteResolver, RouteValidationError
-from engine.scope import ScopeProposal, ScopeValidationError, ScopeValidator
+from engine.scope import (
+    ScopeProposal,
+    ScopeValidationError,
+    ScopeValidator,
+    expand_connected_network_targets,
+)
 from findings.models import FindingStatus, Severity
 from findings.store import FindingNotFound, FindingStore, InvalidFindingState
 from inventory.models import AssetRecord, AssetState, DeviceClassHint
@@ -585,12 +590,20 @@ def create_app(
                         ),
                     },
                 )
-            active_interfaces.validate(request.interface)
-            scope = ScopeValidator(active_settings).validate(
+            interface = active_interfaces.validate(request.interface)
+            expanded = expand_connected_network_targets(
                 request.scope,
+                assigned=[*interface.ipv4, *interface.ipv6],
+            )
+            validator = ScopeValidator(active_settings)
+            scope = validator.validate(
+                expanded,
                 request.profile,
             )
             resolved = active_routes.resolve(request.interface, scope)
+            routable = [route.target for route in resolved.routes]
+            if set(routable) != set(scope.canonical_targets):
+                scope = validator.validate(routable, request.profile)
             scan_profile = profile_for(request.profile, active_settings)
             confirmed = active_inventory.confirm_scope(
                 audit_id=audit.id,

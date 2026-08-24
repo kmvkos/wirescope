@@ -241,6 +241,26 @@ def test_enqueue_discovery_confirms_scope_and_lists_empty_inventory(api_context)
     assert summary.json()["assets"] == 0
 
 
+def test_discovery_expands_connected_network_address(api_context):
+    app, service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+
+    response = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={
+            "interface": "eth0",
+            "scope": ["192.0.2.0"],
+            "profile": "discovery",
+        },
+    )
+
+    assert response.status_code == 202
+    job = service.get_job(response.json()["job_id"])
+    assert job.parameters["scope"] == ["192.0.2.0/24"]
+
+
 def test_discovery_rejects_unspecified_and_oversize_scope(api_context):
     app, _service, _evidence, _environment = api_context
     audit_id = create_audit(app).json()["id"]

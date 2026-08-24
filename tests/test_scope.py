@@ -7,6 +7,7 @@ from engine.scope import (
     ScopeProposalSource,
     ScopeValidationCode,
     ScopeValidator,
+    expand_connected_network_targets,
 )
 
 
@@ -107,15 +108,42 @@ def test_propose_derives_prefix_from_interface_address(durable_settings):
     assert any(item.code == "not_global_unicast" for item in proposal.rejected)
 
 
-def test_propose_ipv6_oversize_prefix_falls_back_to_host(durable_settings):
+def test_propose_ipv6_oversize_prefix_is_rejected(durable_settings):
     proposal = validator(durable_settings).propose(
         interface_name="eth0",
         assigned=["2001:db8::10/64"],
         peers=[],
         routes=[],
     )
+    assert proposal.source == ScopeProposalSource.EMPTY
+    assert proposal.canonical_targets == []
+    assert proposal.rejected[0].code == ScopeValidationCode.LIMIT_EXCEEDED.value
+
+
+def test_propose_keeps_ipv4_when_ipv6_ula_prefix_is_oversize(durable_settings):
+    proposal = validator(durable_settings).propose(
+        interface_name="ens37",
+        assigned=[
+            "10.11.11.124/24",
+            "fdf3:e41b:5dc3:0:c6af:daba:6a30:f2ee/64",
+            "fe80::d7a9:bc60:c9fa:2216/64",
+        ],
+        peers=[],
+        routes=[],
+    )
     assert proposal.source == ScopeProposalSource.INTERFACE_PREFIX
-    assert proposal.canonical_targets == ["2001:db8::10"]
+    assert proposal.canonical_targets == ["10.11.11.0/24"]
+    assert "fdf3:e41b:5dc3:0:c6af:daba:6a30:f2ee" not in proposal.canonical_targets
+    codes = {item.code for item in proposal.rejected}
+    assert ScopeValidationCode.LIMIT_EXCEEDED.value in codes
+    assert "not_global_unicast" in codes
+
+
+def test_expand_connected_network_address_to_prefix():
+    assert expand_connected_network_targets(
+        ["10.11.11.0", "10.11.11.82"],
+        assigned=["10.11.11.124/24"],
+    ) == ["10.11.11.0/24", "10.11.11.82"]
 
 
 def test_propose_uses_vlan_subinterface_when_no_l3(durable_settings):

@@ -68,22 +68,50 @@ class RouteResolver:
         scope: ValidatedScope,
     ) -> ResolvedScope:
         interface = self.interfaces.validate(interface_name)
+        usable_families: set[int] = set()
+        missing_families: list[int] = []
         for family in scope.address_families:
             addresses = interface.ipv4 if family == 4 else interface.ipv6
-            if not addresses:
-                raise RouteValidationError(
-                    RouteValidationCode.ADDRESS_FAMILY_UNAVAILABLE,
-                    (
-                        f"Interface {interface.name} has no IPv{family} "
-                        "source address"
-                    ),
-                    details={"interface": interface.name, "family": family},
-                )
+            if addresses:
+                usable_families.add(family)
+            else:
+                missing_families.append(family)
+        if not usable_families:
+            family = missing_families[0] if missing_families else 4
+            raise RouteValidationError(
+                RouteValidationCode.ADDRESS_FAMILY_UNAVAILABLE,
+                (
+                    f"Interface {interface.name} has no IPv{family} "
+                    "source address"
+                ),
+                details={"interface": interface.name, "family": family},
+            )
 
-        routes = [
-            self._resolve_target(interface, target)
-            for target in scope.targets
-        ]
+        routes: list[TargetRoute] = []
+        errors: list[RouteValidationError] = []
+        for target in scope.targets:
+            if target.family not in usable_families:
+                continue
+            try:
+                routes.append(self._resolve_target(interface, target))
+            except RouteValidationError as exc:
+                errors.append(exc)
+        if not routes:
+            if errors:
+                raise errors[0]
+            family = (
+                missing_families[0]
+                if missing_families
+                else scope.address_families[0]
+            )
+            raise RouteValidationError(
+                RouteValidationCode.ADDRESS_FAMILY_UNAVAILABLE,
+                (
+                    f"Interface {interface.name} has no IPv{family} "
+                    "source address"
+                ),
+                details={"interface": interface.name, "family": family},
+            )
         return ResolvedScope(
             interface=interface.name,
             interface_state=interface.state,
@@ -104,7 +132,7 @@ class RouteResolver:
             ),
             strict=True,
         )
-        representative = str(network.network_address)
+        representative = self._representative_address(network, interface)
         result = self.runner.run(
             ToolCommand(
                 tool="ip",
@@ -134,6 +162,13 @@ class RouteResolver:
             ) from exc
 
         route_interface = route.get("dev")
+        source = route.get("prefsrc") or route.get("src")
+        if self._is_local_route(route) and self._belongs_to_interface_network(
+            representative,
+            interface,
+        ):
+            route_interface = interface.name
+            source = source or representative
         if route_interface != interface.name:
             raise RouteValidationError(
                 RouteValidationCode.INTERFACE_MISMATCH,
@@ -147,7 +182,6 @@ class RouteResolver:
                     "route_interface": route_interface,
                 },
             )
-        source = route.get("prefsrc") or route.get("src")
         if not source:
             raise RouteValidationError(
                 RouteValidationCode.SOURCE_ADDRESS_MISSING,
@@ -194,3 +228,36 @@ class RouteResolver:
             parsed in ipaddress.ip_interface(value).network
             for value in values
         )
+
+    @staticmethod
+    def _is_local_route(route: dict[str, Any]) -> bool:
+        flags = route.get("flags") or []
+        if not isinstance(flags, list):
+            flags = []
+        return (
+            route.get("type") == "local"
+            or "local" in {str(flag).lower() for flag in flags}
+            or str(route.get("dev") or "") == "lo"
+        )
+
+    @staticmethod
+    def _representative_address(
+        network: ipaddress.IPv4Network | ipaddress.IPv6Network,
+        interface: InterfaceInfo,
+    ) -> str:
+        if network.prefixlen == network.max_prefixlen:
+            return str(network.network_address)
+        assigned: set[ipaddress.IPv4Address | ipaddress.IPv6Address] = set()
+        values = interface.ipv4 if network.version == 4 else interface.ipv6
+        for value in values:
+            try:
+                assigned.add(ipaddress.ip_interface(value).ip)
+            except ValueError:
+                continue
+        for candidate in network.hosts():
+            if candidate not in assigned:
+                return str(candidate)
+        try:
+            return str(next(network.hosts()))
+        except StopIteration:
+            return str(network.network_address)

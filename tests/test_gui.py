@@ -76,6 +76,10 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "/api/scope/proposal" in script
     assert "loadScopeProposal" in script
     assert "preferredCaptureInterface" in script
+    assert "progress.stageSkipped" in script
+    assert "progress.stageSkipped" in i18n
+    assert "error.route_lookup_failed" in i18n
+    assert "skippable" in script
     assert "/api/network/interfaces" in script
     assert 'id="network-button"' in html
     assert 'data-screen="network"' in html

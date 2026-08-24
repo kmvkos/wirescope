@@ -113,6 +113,75 @@ def test_down_interface_is_selectable_for_capture_picker(tmp_path):
     assert by_name["lo"].selectable is False
 
 
+class ScriptedRunner:
+    def __init__(self, results):
+        self.results = list(results)
+        self.commands = []
+
+    def run(self, command):
+        self.commands.append(command)
+        if not self.results:
+            raise AssertionError(f"Unexpected command: {command.argv}")
+        return self.results.pop(0)
+
+
+def test_only_lowest_metric_default_is_management(tmp_path):
+    payload = interface_payload()
+    payload[1]["ifname"] = "ens33"
+    payload.append(
+        {
+            "ifname": "ens37",
+            "operstate": "UP",
+            "link_type": "ether",
+            "flags": ["BROADCAST", "UP"],
+            "address": "00:0c:29:15:66:4b",
+            "mtu": 1500,
+            "addr_info": [
+                {
+                    "family": "inet",
+                    "local": "10.11.11.124",
+                    "prefixlen": 24,
+                }
+            ],
+        }
+    )
+    runner = ScriptedRunner(
+        [
+            tool_result(tool="ip", stdout=json.dumps(payload)),
+            tool_result(
+                tool="ip",
+                stdout=json.dumps(
+                    [
+                        {
+                            "dst": "default",
+                            "dev": "ens33",
+                            "gateway": "192.168.32.2",
+                            "metric": 1002,
+                        },
+                        {
+                            "dst": "default",
+                            "dev": "ens37",
+                            "gateway": "10.11.11.11",
+                            "metric": 1003,
+                        },
+                    ]
+                ),
+            ),
+        ]
+    )
+    discovered = InterfaceService(
+        runner=runner,
+        settings=get_settings(),
+        sys_class_net=tmp_path,
+    ).discover()
+    by_name = {item.name: item for item in discovered.interfaces}
+    assert by_name["ens33"].role_hint == "management"
+    assert by_name["ens33"].has_default_route is True
+    assert by_name["ens37"].role_hint is None
+    assert by_name["ens37"].has_default_route is True
+    assert by_name["ens37"].ipv4 == ["10.11.11.124/24"]
+
+
 def test_interface_allowlist_is_enforced(tmp_path):
     with pytest.raises(InterfaceValidationError) as exc_info:
         service(tmp_path, allowed=("eth1",)).validate("eth0")

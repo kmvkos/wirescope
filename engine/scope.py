@@ -409,20 +409,13 @@ def _eligible_networks(
             not validator.settings.active_allow_large_scopes
             and network.num_addresses > validator._proposal_limit(network.version)
         ):
-            host = (
-                _host_fallback(value)
-                if origin == "assigned" and network.version == 6
-                else None
-            )
-            if host is None:
-                rejected.append(
-                    RejectedCandidate(
-                        value=value,
-                        code=ScopeValidationCode.LIMIT_EXCEEDED.value,
-                    )
+            rejected.append(
+                RejectedCandidate(
+                    value=value,
+                    code=ScopeValidationCode.LIMIT_EXCEEDED.value,
                 )
-                continue
-            network = host
+            )
+            continue
         found.append(
             ProposedNetwork(
                 cidr=ScopeValidator._display_value(network),
@@ -474,19 +467,45 @@ def _vlan_id_for(parent: str, child: str) -> int | None:
     return None
 
 
-def _host_fallback(
-    raw: str,
-) -> ipaddress.IPv4Network | ipaddress.IPv6Network | None:
-    host = raw.split("/", 1)[0].strip()
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return None
-    if address.is_unspecified or address.is_multicast or address.is_loopback:
-        return None
-    if address.is_link_local:
-        return None
-    return ipaddress.ip_network(f"{address}/{address.max_prefixlen}", strict=True)
+def expand_connected_network_targets(
+    targets: list[str],
+    assigned: list[str],
+) -> list[str]:
+    """Treat a connected network identifier as that prefix, not a host.
+
+    Operators often type ``10.11.11.0`` for the LAN on ``10.11.11.124/24``.
+    Without a prefix, the parser would otherwise scan a single (usually
+    unused) network address.
+    """
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for raw in assigned:
+        try:
+            networks.append(ipaddress.ip_interface(str(raw)).network)
+        except ValueError:
+            continue
+    expanded: list[str] = []
+    for raw in targets:
+        value = str(raw).strip()
+        if not value:
+            continue
+        if "/" in value:
+            expanded.append(value)
+            continue
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            expanded.append(value)
+            continue
+        match = next(
+            (
+                network
+                for network in networks
+                if network.network_address == address
+            ),
+            None,
+        )
+        expanded.append(str(match) if match else value)
+    return expanded
 
 
 def _route_destination(route: dict[str, Any]) -> str | None:

@@ -624,13 +624,24 @@ async function runPipeline() {
                 return;
             }
         } catch (error) {
-            if (
-                stage === "protocol" &&
-                (error.code === "inventory_empty" || error.code === "scope_not_confirmed")
-            ) {
+            const skippable = new Set(["discovery", "protocol", "findings"]);
+            if (skippable.has(stage) && state.pipeline.includes("report")) {
                 $("progress-warning").hidden = false;
-                $("progress-warning").textContent = t("progress.protocolSkipped");
-                state.pipelineIndex += 1;
+                $("progress-warning").textContent = t("progress.stageSkipped", {
+                    stage: I18N.jobType(stage),
+                    error: displayError(error),
+                });
+                if (stage === "discovery") {
+                    const skip = new Set(["discovery", "protocol"]);
+                    while (
+                        state.pipelineIndex < state.pipeline.length
+                        && skip.has(state.pipeline[state.pipelineIndex])
+                    ) {
+                        state.pipelineIndex += 1;
+                    }
+                } else {
+                    state.pipelineIndex += 1;
+                }
                 saveActive();
                 continue;
             }

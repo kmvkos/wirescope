@@ -96,9 +96,13 @@ class InterfaceService:
                 "iproute2 interface JSON must be a list",
             )
 
-        default_devs = self._default_route_devices()
+        default_devs, primary_default = self._default_route_info()
         interfaces = [
-            self._normalize_interface(item, default_devs=default_devs)
+            self._normalize_interface(
+                item,
+                default_devs=default_devs,
+                primary_default=primary_default,
+            )
             for item in payload
             if isinstance(item, dict) and item.get("ifname")
         ]
@@ -142,6 +146,7 @@ class InterfaceService:
         item: dict,
         *,
         default_devs: set[str],
+        primary_default: str | None = None,
     ) -> InterfaceInfo:
         name = str(item["ifname"])
         flags = {str(flag).upper() for flag in item.get("flags", [])}
@@ -195,7 +200,7 @@ class InterfaceService:
         has_default = name in default_devs
         if is_loopback:
             role_hint = None
-        elif has_default:
+        elif primary_default == name:
             role_hint = "management"
         elif not ipv4:
             role_hint = "capture"
@@ -219,7 +224,7 @@ class InterfaceService:
             has_default_route=has_default,
         )
 
-    def _default_route_devices(self) -> set[str]:
+    def _default_route_info(self) -> tuple[set[str], str | None]:
         tool_result = self.runner.run(
             ToolCommand(
                 tool="ip",
@@ -228,25 +233,35 @@ class InterfaceService:
             )
         )
         if not tool_result.success:
-            return set()
+            return set(), None
         try:
             payload = json.loads(tool_result.stdout)
         except (json.JSONDecodeError, TypeError):
-            return set()
+            return set(), None
         if not isinstance(payload, list) or not payload:
-            return set()
+            return set(), None
         if "ifname" in payload[0] and "dst" not in payload[0]:
-            return set()
-        devices: set[str] = set()
+            return set(), None
+        ranked: list[tuple[int, str]] = []
         for item in payload:
             if not isinstance(item, dict):
                 continue
             destination = item.get("dst")
             if destination in {None, "", "default", "unspecified", "0.0.0.0/0"}:
                 name = str(item.get("dev") or "")
-                if name:
-                    devices.add(name)
-        return devices
+                if not name:
+                    continue
+                metric = item.get("metric")
+                try:
+                    metric_value = (
+                        int(metric) if metric is not None else 10**9
+                    )
+                except (TypeError, ValueError):
+                    metric_value = 10**9
+                ranked.append((metric_value, name))
+        devices = {name for _, name in ranked}
+        primary = min(ranked)[1] if ranked else None
+        return devices, primary
 
     def _interface_speed(self, interface_name: str) -> int | None:
         speed_path = self.sys_class_net / interface_name / "speed"

@@ -363,6 +363,53 @@
             });
             await renderTab(currentTab);
         });
+
+        const sessionChip = document.getElementById("session-chip");
+        const syncVisibility = () => {
+            const signedIn = Boolean(sessionChip && !sessionChip.hidden);
+            toggle.hidden = !signedIn;
+            if (!signedIn) hide();
+        };
+        if (sessionChip) {
+            new MutationObserver(syncVisibility).observe(sessionChip, {
+                attributes: true,
+                attributeFilter: ["hidden"],
+            });
+        }
+        syncVisibility();
+    }
+
+    function setupMarkdownExport() {
+        const jsonButton = document.getElementById("download-json-report");
+        if (!jsonButton || document.getElementById("download-markdown-report")) return;
+
+        const markdownButton = el("button", "Экспорт Markdown", "secondary");
+        markdownButton.type = "button";
+        markdownButton.id = "download-markdown-report";
+        markdownButton.hidden = jsonButton.hidden;
+        jsonButton.insertAdjacentElement("afterend", markdownButton);
+
+        const syncVisibility = () => {
+            markdownButton.hidden = jsonButton.hidden;
+        };
+        new MutationObserver(syncVisibility).observe(jsonButton, {
+            attributes: true,
+            attributeFilter: ["hidden"],
+        });
+
+        markdownButton.addEventListener("click", async () => {
+            const auditId = activeAuditId();
+            if (!auditId) return;
+            try {
+                const page = await request(`/audits/${encodeURIComponent(auditId)}/reports?limit=1`);
+                const latest = page && page.items && page.items[0];
+                if (!latest) return;
+                const url = `${API}/audits/${encodeURIComponent(auditId)}/reports/${encodeURIComponent(latest.id)}/export?format=markdown`;
+                window.location.assign(url);
+            } catch (error) {
+                console.error("WireScope Markdown export failed", error);
+            }
+        });
     }
 
     async function renderInlineDashboard() {
@@ -403,6 +450,7 @@
 
     function boot() {
         buildPanel();
+        setupMarkdownExport();
         startInlineRefresh();
     }
 

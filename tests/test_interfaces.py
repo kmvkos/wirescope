@@ -125,6 +125,56 @@ class ScriptedRunner:
         return self.results.pop(0)
 
 
+def test_wifi_and_default_route_interfaces_are_selectable(tmp_path):
+    payload = interface_payload()
+    payload.append(
+        {
+            "ifname": "wlan0",
+            "operstate": "UP",
+            "link_type": "ether",
+            "flags": ["BROADCAST", "UP", "LOWER_UP"],
+            "address": "02:00:00:00:00:20",
+            "mtu": 1500,
+            "addr_info": [
+                {
+                    "family": "inet",
+                    "local": "192.168.1.20",
+                    "prefixlen": 24,
+                }
+            ],
+        }
+    )
+    runner = ScriptedRunner(
+        [
+            tool_result(tool="ip", stdout=json.dumps(payload)),
+            tool_result(
+                tool="ip",
+                stdout=json.dumps(
+                    [
+                        {
+                            "dst": "default",
+                            "dev": "eth0",
+                            "gateway": "192.0.2.1",
+                            "metric": 100,
+                        }
+                    ]
+                ),
+            ),
+        ]
+    )
+    discovered = InterfaceService(
+        runner=runner,
+        settings=get_settings(),
+        sys_class_net=tmp_path,
+    ).discover()
+    by_name = {item.name: item for item in discovered.interfaces}
+    assert by_name["eth0"].selectable is True
+    assert by_name["eth0"].role_hint == "management"
+    assert by_name["wlan0"].selectable is True
+    assert by_name["wlan0"].ipv4 == ["192.168.1.20/24"]
+    assert by_name["eth1"].selectable is True
+
+
 def test_only_lowest_metric_default_is_management(tmp_path):
     payload = interface_payload()
     payload[1]["ifname"] = "ens33"
@@ -177,8 +227,10 @@ def test_only_lowest_metric_default_is_management(tmp_path):
     by_name = {item.name: item for item in discovered.interfaces}
     assert by_name["ens33"].role_hint == "management"
     assert by_name["ens33"].has_default_route is True
+    assert by_name["ens33"].selectable is True
     assert by_name["ens37"].role_hint is None
     assert by_name["ens37"].has_default_route is True
+    assert by_name["ens37"].selectable is True
     assert by_name["ens37"].ipv4 == ["10.11.11.124/24"]
 
 

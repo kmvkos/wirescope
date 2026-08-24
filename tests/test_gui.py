@@ -75,7 +75,13 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "applyVlanScanInterface" in script
     assert "/api/scope/proposal" in script
     assert "loadScopeProposal" in script
-    assert "preferredCaptureInterface" in script
+    assert "preferredAuditInterface" in script
+    assert "ifaceHostsGui" in script
+    assert "Аудит можно запустить на любом интерфейсе, в том числе том, через который открыт веб" in i18n
+    assert "на этом адресе сейчас открыт GUI" in i18n
+    assert "preferredCaptureInterface" not in script
+    assert "emptyManagement" not in script
+    assert "scope.managementWarning" not in i18n
     assert "progress.stageSkipped" in script
     assert "progress.stageSkipped" in i18n
     assert "error.route_lookup_failed" in i18n

@@ -416,17 +416,11 @@ def create_app(
                     "ipv6": list(item.get("ipv6") or []),
                 }
             )
-        management_names = {
-            item.name
-            for item in discovery.interfaces
-            if item.role_hint == "management" and item.name != selected.name
-        }
         return ScopeValidator(active_settings).propose(
             interface_name=selected.name,
             assigned=[*selected.ipv4, *selected.ipv6],
             peers=peers,
             routes=list(environment.get("routes") or []),
-            management_names=management_names,
         )
 
     @application.post(

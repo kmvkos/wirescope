@@ -181,7 +181,32 @@ def test_propose_uses_connected_route_when_no_address_or_vlan(durable_settings):
     assert "::/0" not in proposal.canonical_targets
 
 
-def test_propose_ignores_management_prefixes_for_capture_nic(durable_settings):
+def test_propose_includes_prefix_of_default_route_interface(durable_settings):
+    proposal = validator(durable_settings).propose(
+        interface_name="eth0",
+        assigned=["192.168.32.149/24"],
+        peers=[],
+        routes=[
+            {"dst": "default", "dev": "eth0", "gateway": "192.168.32.2"},
+            {"dst": "192.168.32.0/24", "dev": "eth0"},
+        ],
+    )
+    assert proposal.source == ScopeProposalSource.INTERFACE_PREFIX
+    assert proposal.canonical_targets == ["192.168.32.0/24"]
+
+
+def test_propose_derives_prefix_from_wifi_interface(durable_settings):
+    proposal = validator(durable_settings).propose(
+        interface_name="wlan0",
+        assigned=["192.168.1.20/24"],
+        peers=[],
+        routes=[{"dst": "default", "dev": "wlan0", "gateway": "192.168.1.1"}],
+    )
+    assert proposal.source == ScopeProposalSource.INTERFACE_PREFIX
+    assert proposal.canonical_targets == ["192.168.1.0/24"]
+
+
+def test_propose_does_not_borrow_another_interface_prefix(durable_settings):
     proposal = validator(durable_settings).propose(
         interface_name="eth1",
         assigned=[],
@@ -196,12 +221,10 @@ def test_propose_ignores_management_prefixes_for_capture_nic(durable_settings):
             {"dst": "default", "dev": "eth0", "gateway": "192.168.32.2"},
             {"dst": "192.168.32.0/24", "dev": "eth0"},
         ],
-        management_names={"eth0"},
     )
     assert proposal.source == ScopeProposalSource.EMPTY
     assert proposal.canonical_targets == []
     assert "192.168.32.0/24" not in proposal.canonical_targets
-    assert proposal.uses_management_interface is False
 
 
 def test_propose_never_includes_unspecified_or_oversize(durable_settings):

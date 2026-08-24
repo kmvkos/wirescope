@@ -325,21 +325,20 @@ async function showEnvironment() {
     const grid = $("environment-grid");
     grid.replaceChildren();
     const ifaces = (data.interfaces || []).filter((item) => !item.is_loopback);
-    const defaultDev = data.default_route && data.default_route.interface;
-    const management = ifaces.find((item) => item.name === defaultDev)
-        || ifaces.find((item) => (item.ipv4 || []).length)
-        || {};
-    const capture = ifaces.find((item) => item.name !== management.name) || {};
     const fields = [
         [t("environment.hostname"), data.hostname],
-        [t("environment.management"), management.name],
-        [t("environment.ipv4"), (management.ipv4 || []).join(", ") || t("common.none")],
         [t("environment.gateway"), data.default_route && data.default_route.gateway],
-        [t("environment.capture"), capture.name],
-        [t("environment.link"), I18N.link(capture.state || management.state)],
-        [t("environment.mac"), capture.mac || management.mac],
-        [t("environment.mtu"), capture.mtu || management.mtu],
     ];
+    ifaces.forEach((iface) => {
+        fields.push([
+            iface.name,
+            [
+                I18N.link(iface.state),
+                (iface.ipv4 || []).join(", ") || t("common.noIpv4"),
+                iface.mac || t("common.noMac"),
+            ].filter(Boolean).join(" · "),
+        ]);
+    });
     fields.forEach(([label, value]) => {
         const item = document.createElement("div");
         item.className = "item";
@@ -362,7 +361,7 @@ async function showInterfaces() {
     list.replaceChildren();
     const ifaces = data.interfaces || [];
     if (!state.draft.interface) {
-        state.draft.interface = preferredCaptureInterface(ifaces);
+        state.draft.interface = preferredAuditInterface(ifaces);
         saveDraft();
     }
     ifaces.forEach((iface) => {
@@ -382,9 +381,6 @@ async function showInterfaces() {
         const title = document.createElement("strong");
         title.textContent = iface.name;
         const meta = document.createElement("span");
-        const role = iface.role_hint
-            ? t(`interface.role.${iface.role_hint}`)
-            : "";
         const addressing = iface.addressing === "none"
             ? t("common.noIpv4")
             : (iface.ipv4 || []).join(", ") || t("common.noIpv4");
@@ -392,10 +388,10 @@ async function showInterfaces() {
             meta.textContent = I18N.denial(iface.denial_reason);
         } else {
             meta.textContent = [
-                role,
                 I18N.link(iface.state),
                 addressing,
                 iface.has_default_route ? t("network.defaultRoute") : "",
+                ifaceHostsGui(iface) ? t("interface.guiHint") : "",
             ].filter(Boolean).join(" · ");
         }
         button.append(title, meta);
@@ -410,8 +406,6 @@ async function showInterfaces() {
             });
             if (iface.denial_reason === "link_not_up") {
                 setError("interface-error", t("interface.downHint"));
-            } else if (iface.role_hint === "management") {
-                setError("interface-error", t("interface.managementHint"));
             } else {
                 setError("interface-error", "");
             }
@@ -420,7 +414,7 @@ async function showInterfaces() {
     });
 }
 
-function preferredCaptureInterface(interfaces) {
+function preferredAuditInterface(interfaces) {
     const usable = (interfaces || []).filter((item) => {
         if (item.is_loopback) {
             return false;
@@ -430,12 +424,19 @@ function preferredCaptureInterface(interfaces) {
         }
         return item.selectable !== false;
     });
-    const capture = usable.find((item) => item.role_hint === "capture" || item.addressing === "none");
-    if (capture) {
-        return capture.name;
+    const up = usable.find((item) => String(item.state || "").toUpperCase() === "UP");
+    return (up || usable[0] || {}).name || "";
+}
+
+function ifaceHostsGui(iface) {
+    const host = String(location.hostname || "").replace(/^\[|\]$/g, "");
+    if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+        return false;
     }
-    const notMgmt = usable.find((item) => item.role_hint !== "management");
-    return (notMgmt || usable[0] || {}).name || "";
+    const addresses = [...(iface.ipv4 || []), ...(iface.ipv6 || [])].map((value) => (
+        String(value).split("/")[0]
+    ));
+    return addresses.includes(host);
 }
 
 async function showScope() {
@@ -476,12 +477,7 @@ function renderScopeProposal(proposal) {
     } else if (proposal.source === "route_hints") {
         reason.textContent = t("scope.derivedFromRoute", { networks });
     } else {
-        reason.textContent = proposal.uses_management_interface
-            ? t("scope.emptyManagement")
-            : t("scope.emptyProposal");
-    }
-    if (proposal.uses_management_interface && proposal.source !== "empty") {
-        reason.textContent = `${reason.textContent} ${t("scope.managementWarning")}`;
+        reason.textContent = t("scope.emptyProposal");
     }
     (proposal.networks || []).forEach((item) => {
         list.append(listItem(item.cidr, scopeOriginLabel(item)));
@@ -853,7 +849,8 @@ async function showNetwork() {
             (iface.ipv4 || []).join(", ") || t("common.noIpv4"),
             iface.has_default_route ? t("network.defaultRoute") : t("network.noDefault"),
             t(`network.addressing.${iface.addressing || "none"}`),
-        ].join(" · ");
+            ifaceHostsGui(iface) ? t("interface.guiHint") : "",
+        ].filter(Boolean).join(" · ");
         button.append(title, meta);
         button.addEventListener("click", () => {
             state.networkIface = iface.name;

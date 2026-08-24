@@ -17,6 +17,29 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.status_code == 200
     assert page.text.count('/static/enhancements.js') == 1
     assert page.text.count('/static/operations.js') == 1
+    assert page.text.count('/static/modern.css') == 1
+    assert "?v=20260825-ui2" in page.text
+    assert page.headers["cache-control"] == "no-store, max-age=0"
+
+
+def test_modern_theme_keeps_kiosk_and_desktop_breakpoints():
+    theme = (FRONTEND / "modern.css").read_text(encoding="utf-8")
+
+    assert "--ws-primary" in theme
+    assert "@media (max-width: 560px)" in theme
+    assert "@media (min-width: 900px)" in theme
+    assert "#screen-login form" in theme
+    assert "#screen-home > .actions" in theme
+    assert ".progress-hud" in theme
+    assert ".ws-insights" in theme
+
+
+def test_upgrade_refreshes_running_kiosk_after_frontend_update():
+    root = FRONTEND.parent
+    script = (root / "packaging" / "upgrade.sh").read_text(encoding="utf-8")
+
+    assert "systemctl is-active --quiet wirescope-kiosk.service" in script
+    assert "systemctl restart wirescope-kiosk.service" in script
 
 
 def test_operator_insights_use_versioned_api_and_audit_scoped_evidence():

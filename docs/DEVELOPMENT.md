@@ -65,7 +65,8 @@ explicit `WIRESCOPE_LIVE_SCOPE` and `pytest -m network`. Findings evaluation
 and report generation never contact a network. Optional Playwright kiosk
 tests (`@pytest.mark.browser`) skip when Playwright or Chromium is not
 installed. The appliance kiosk extra does the same: missing Chromium is a
-skip, not a CI failure.
+skip, not a CI failure. The system kiosk is a boot unit on tty1 (Cage or
+xinit), not a desktop session.
 
 Create the first local operators only when the user table is empty:
 

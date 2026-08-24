@@ -152,21 +152,22 @@ Do not assume `alembic downgrade` is safe.
 
 ## Local operator kiosk
 
-Autonomous mode: Chromium on the appliance display, loopback only. Capture
-NIC addressing is independent. Restarting the kiosk does not stop API or
-worker.
+Autonomous mode: Chromium on tty1 after boot, loopback only. No desktop.
+Capture NIC addressing is independent. Restarting the kiosk does not stop
+API or worker.
 
 ```bash
 sudo /opt/wirescope/packaging/install.sh --with-kiosk --enable-kiosk
-# or, after graphical login on a VM:
+sudo systemctl status wirescope-kiosk
+# optional: user unit after a graphical login
 systemctl --user enable --now wirescope-kiosk
-sudo systemctl status wirescope-kiosk          # system unit
-systemctl --user status wirescope-kiosk        # user unit
 ```
 
-`--with-kiosk` installs openbox or labwc plus Chromium, not a full desktop.
-Headless hosts leave the unit installed but disabled. Live Raspberry Pi OS
-Lite tests stay unused (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1`).
+`--with-kiosk` installs cage (preferred) or xinit plus Chromium, not a full
+desktop. `--enable-kiosk` enables the system unit on `multi-user.target`
+even without a current `DISPLAY`. Missing Chromium leaves the unit disabled.
+Live Raspberry Pi OS Lite tests stay unused (`pytest -m live_pi` with
+`WIRESCOPE_LIVE_PI=1`).
 
 ## Dependency inventory
 

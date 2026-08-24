@@ -33,8 +33,9 @@ note below.
 11. Enable and start API + worker. Open the local GUI at
     `http://127.0.0.1:8000/` on this computer (kiosk or any local browser),
     or use a remote browser over LAN/TLS. Chromium kiosk packages are
-    optional (`--with-kiosk`); `--enable-kiosk` / `--user-kiosk` start the
-    kiosk only when a display and Chromium are present.
+    optional (`--with-kiosk`). `--enable-kiosk` enables a **system** unit on
+    tty1 after boot (no desktop). `--user-kiosk` is only for an existing
+    graphical login.
 
 Upgrade is the same command (`packaging/upgrade.sh`). It reuses the service
 account, keeps an existing env file, re-verifies dumpcap, upgrades the venv,
@@ -48,21 +49,33 @@ still uses the local GUI.
 
 ### Автономный (киоск): local display, no management network
 
-Bind stays `127.0.0.1:8000`. After boot and graphical login, systemd starts
-a browser kiosk to `http://127.0.0.1:8000/` once `wirescope-api` answers
-`/api/health`. You do not open a browser from the hypervisor over LAN.
+**Без рабочего стола: киоск на tty1 после boot.** No XFCE, GNOME, KDE, GDM,
+or LightDM. Bind stays `127.0.0.1:8000`. After boot, systemd starts
+`wirescope-api`, then `wirescope-kiosk` takes tty1 and opens Chromium
+fullscreen to `http://127.0.0.1:8000/` once `/api/health` answers. Sign in
+as `auditor` in that browser. Capture-NIC addressing is independent.
 
 Сеть до вашего ПК не нужна: откройте GUI на этом компьютере / киоск.
 
+Boot sequence (Debian/Ubuntu server, no desktop):
+
+1. `multi-user.target` ( `graphical.target` is unused )
+2. Optional `getty@tty1` autologin drop-in (idle while the kiosk runs)
+3. `wirescope-api.service` and `wirescope-worker.service`
+4. `wirescope-kiosk.service` `After=wirescope-api.service`, `WantedBy=multi-user.target`
+5. The kiosk unit `Conflicts=getty@tty1.service` and uses `TTYPath=/dev/tty1`
+6. `kiosk.sh` starts **Cage + Chromium**, or **xinit + Chromium `--kiosk --app=http://127.0.0.1:8000/`**
+7. Operator logs into WireScope as `auditor`
+
 ```bash
-# System unit (graphical.target, attached display / autologin appliance)
+# System unit: boot → tty1 kiosk, no desktop, no display-manager login
 sudo /opt/wirescope/packaging/install.sh \
   --project-root /opt/wirescope \
   --generate-admin-password \
   --bind-host 127.0.0.1 \
   --with-kiosk --enable-kiosk
 
-# User unit after graphical login (Debian VM console, lingering optional)
+# User unit only after an existing graphical login (not required)
 /opt/wirescope/packaging/install.sh \
   --user-install \
   --generate-admin-password \
@@ -70,26 +83,20 @@ sudo /opt/wirescope/packaging/install.sh \
   --user-kiosk
 ```
 
-`--with-kiosk` installs a **minimal** stack (`xserver-xorg`/`xinit`,
-`openbox` or `labwc`, `unclutter`, `chromium`), not a GNOME/KDE desktop.
-Headless servers omit `--with-kiosk`. `--user-install` does not install OS
-packages; install Chromium and a compositor as root (`--with-kiosk`) or via
-the distro, then enable the user unit.
+`--with-kiosk` installs a **minimal** stack: `cage` (preferred) or
+`xserver-xorg`/`xinit`/`openbox`, plus `chromium` (or `chromium-browser`).
+Not a GNOME/XFCE/KDE desktop. Headless servers that will never attach a
+console can omit `--with-kiosk`. `--enable-kiosk` still enables the system
+unit when Chromium is present, even if this VM has no monitor yet. Missing
+Chromium is a skip (same idea as Playwright), not an installer failure.
 
-If this host has no `DISPLAY` / Wayland session, the installer writes
-`wirescope-kiosk.service` and **leaves it disabled**. On a VM with a console
-(VMware Workstation GUI, virt-manager, HDMI):
-
-```bash
-sudo loginctl enable-linger "$USER"   # optional: user manager at boot
-systemctl --user daemon-reload
-systemctl --user enable --now wirescope-kiosk
-```
+`--user-install` does not install OS packages; install Chromium and Cage or
+xinit as root (`--with-kiosk`) or via the distro, then enable the user unit
+after a graphical login.
 
 The kiosk unit waits for the API, binds the browser to loopback, and does
 not stop the worker if Chromium restarts. System kiosk uses
-`WantedBy=graphical.target` and starts only when `/tmp/.X11-unix/X0` exists.
-User kiosk uses `WantedBy=graphical-session.target`.
+`WantedBy=multi-user.target`. User kiosk uses `WantedBy=graphical-session.target`.
 
 Raspberry Pi kiosk hardware remains optional. Do not require Raspberry Pi OS.
 
@@ -180,9 +187,9 @@ sudo /opt/wirescope/packaging/install.sh \
 From another PC on this VM: install with `--trust-proxy --bind-host 127.0.0.1`,
 enable Caddy or nginx from `/etc/wirescope/proxy/`, open
 `https://<this-host>/`. Local GUI remains `http://127.0.0.1:8000/` (kiosk or
-any browser on this computer). This VM may be headless: the kiosk unit is
-installed with `--user-kiosk` but stays disabled until a graphical console
-exists (`systemctl --user enable --now wirescope-kiosk`).
+any browser on this computer). This VM may be headless: `--enable-kiosk`
+still enables the system tty1 unit when Chromium is installed. Without
+`--enable-kiosk` the unit stays installed but disabled.
 
 If this host has no passwordless root, install into the operator's user systemd
 session (dumpcap capabilities still need root once):
@@ -289,9 +296,10 @@ Useful flags:
 - `--skip-pip` — reuse the existing venv
 - `--no-start` — write units but do not `systemctl enable --now`
 - `--no-optional-providers` — base capture/decode tools only
-- `--with-kiosk` — optional local-display packages (openbox/labwc + Chromium,
+- `--with-kiosk` — optional local-display packages (cage or xinit + Chromium,
   not a full desktop)
-- `--enable-kiosk` — enable the system kiosk if a display and Chromium exist
+- `--enable-kiosk` — enable the system kiosk on tty1 after boot (Chromium
+  required; no desktop / GDM / LightDM)
 - `--user-kiosk` — enable the user kiosk after graphical login (loopback GUI)
 - `--auditor-password-file /root/auditor.pass` — mode `0600` file instead of generating
 - `--overwrite-env` — replace `/etc/wirescope/wirescope.env`
@@ -443,7 +451,8 @@ Keep the pre-upgrade SQLite copy until the new revision is confirmed.
 ## Local operator kiosk
 
 First-class autonomous mode: Chromium on the appliance display against
-`http://127.0.0.1:8000/`. See [Operator access modes](#operator-access-modes).
+`http://127.0.0.1:8000/`. **Без рабочего стола: киоск на tty1 после boot.**
+See [Operator access modes](#operator-access-modes).
 Raspberry Pi hardware is optional; Raspberry Pi OS is not required. Live
 Pi OS Lite, touch, and on-device ARM64 smoke tests remain unused
 (`pytest -m live_pi` with `WIRESCOPE_LIVE_PI=1` on Pi hardware only).

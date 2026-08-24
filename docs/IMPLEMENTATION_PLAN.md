@@ -594,9 +594,10 @@ Raspberry Pi OS is not required.
 - `SupplementaryGroups=wireshark` on system units; `sg wireshark` on user
   units so dumpcap works without a new login;
 - local operator kiosk (`wirescope-kiosk`): Chromium to `http://127.0.0.1:8000/`
-  after the API is ready; `WantedBy=graphical.target` or
-  `graphical-session.target`; not enabled on headless hosts; restarting it
-  does not cancel audits;
+  after the API is ready; system unit `WantedBy=multi-user.target` on tty1
+  (Cage or xinit, no desktop); user unit `graphical-session.target`;
+  `--enable-kiosk` does not require a current graphical session; restarting
+  it does not cancel audits;
 - dependency ordering and health checks;
 - controlled restart limits;
 - log retention;
@@ -605,11 +606,13 @@ Raspberry Pi OS is not required.
 ### Local operator kiosk (generic Linux)
 
 Chromium kiosk on the appliance display is a first-class autonomous mode:
-bind stays loopback, no management network. `--with-kiosk` installs a
-minimal openbox/labwc + Chromium stack, not a full desktop. `--user-kiosk`
-enables the user unit after graphical login. Headless VMs install the unit
-disabled. Raspberry Pi hardware, Pi OS Lite, 480×320 touch validation, and
-`pytest -m live_pi` remain optional extras of the same installer.
+bind stays loopback, no management network. `--with-kiosk` installs Cage
+(or xinit + Chromium `--kiosk`), not a full desktop. `--enable-kiosk`
+enables the system unit on tty1 after boot. `--user-kiosk` enables the
+user unit after graphical login. Headless VMs may still enable the system
+path; Chromium missing is a skip. Raspberry Pi hardware, Pi OS Lite,
+480×320 touch validation, and `pytest -m live_pi` remain optional extras
+of the same installer.
 
 ### Security and release
 

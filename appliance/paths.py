@@ -6,7 +6,28 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-DEFAULT_PROJECT_ROOT = Path("/opt/wirescope")
+# Recommended production checkout. Packaged unit templates use this path.
+# The installer itself runs from any clone: --project-root defaults to the
+# directory that contains packaging/ (see discover_project_root).
+RECOMMENDED_PROJECT_ROOT = Path("/opt/wirescope")
+DEFAULT_PROJECT_ROOT = RECOMMENDED_PROJECT_ROOT
+
+
+def discover_project_root(start: Path | None = None) -> Path:
+    """Return the Git checkout that contains packaging/, else /opt/wirescope.
+
+    ``packaging/install.sh`` always passes that checkout as ``--project-root``.
+    Clone into ``/opt/wirescope`` for the usual layout, or clone elsewhere and
+    keep running from that tree. Mutable data stays in /var/lib/wirescope.
+    """
+    if start is None:
+        start = Path(__file__).resolve().parent
+    for candidate in (start, *start.parents):
+        if (candidate / "packaging" / "install.sh").is_file():
+            return candidate
+    return RECOMMENDED_PROJECT_ROOT
+
+
 DEFAULT_DATA_DIR = Path("/var/lib/wirescope")
 DEFAULT_ETC_DIR = Path("/etc/wirescope")
 DEFAULT_SYSTEMD_DIR = Path("/etc/systemd/system")

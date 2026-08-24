@@ -12,6 +12,84 @@ Operators collect a report in either of two equally valid modes:
 The operator GUI is Russian. This file stays English; see the short Russian
 note below.
 
+## Get the source (Git)
+
+The GitHub repository is **private**:
+[https://github.com/kmvkos/wirescope](https://github.com/kmvkos/wirescope).
+Clone with SSH keys or HTTPS credentials (a token, not the account password).
+
+The installer **runs from the checkout** (venv, frontend, kiosk scripts). It
+does not copy the tree into `/opt/wirescope`. Mutable data stays in
+`/var/lib/wirescope`; config in `/etc/wirescope`. `--project-root` defaults
+to the directory that contains `packaging/` (the clone root).
+`packaging/install.sh` always passes that directory.
+
+Two layouts are supported:
+
+1. Clone into `/opt/wirescope` (recommended production layout).
+2. Clone elsewhere and pass `--project-root` (or just run that clone's
+   `packaging/install.sh`).
+
+### Clone into `/opt/wirescope` (recommended)
+
+```bash
+sudo git clone git@github.com:kmvkos/wirescope.git /opt/wirescope
+cd /opt/wirescope
+sudo git checkout milestone-8-appliance   # or main if that is current enough
+sudo ./packaging/install.sh --with-kiosk --enable-kiosk
+```
+
+`sudo git clone` uses **root's** SSH keys. If the key is on your account,
+clone without `sudo` and `sudo mv wirescope /opt/wirescope`, or install from
+another path with `--project-root`.
+
+### Clone elsewhere
+
+```bash
+git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance   # or main if that is current enough
+sudo ./packaging/install.sh \
+  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+```
+
+Do not rename or delete that checkout after install: systemd units point at it.
+
+Kiosk (any clone):
+
+```bash
+sudo ./packaging/install.sh \
+  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1 \
+  --with-kiosk --enable-kiosk
+```
+
+User systemd (no passwordless root; dumpcap still needs root once):
+
+```bash
+./packaging/install.sh \
+  --user-install \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+```
+
+### HTTPS clone
+
+```bash
+git clone https://github.com/kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance   # or main if that is current enough
+sudo ./packaging/install.sh \
+  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+```
+
+Private repo: GitHub will prompt for credentials or a personal access token.
+
 ## What the installer does
 
 `packaging/install.sh` (or `python3 -m appliance install`) is idempotent:
@@ -370,6 +448,40 @@ sudo journalctl -u wirescope-api -u wirescope-worker -e
 недоступен, проверьте группу `wireshark` и перезапустите службы:
 `systemctl restart wirescope-api wirescope-worker` или
 `systemctl --user restart wirescope-api wirescope-worker`.
+
+Установка из Git (репозиторий приватный, нужна авторизация). Рекомендуемый
+layout — клон в `/opt/wirescope`. Можно клонировать куда угодно и указать
+`--project-root` (каталог с `packaging/`). Установщик работает **из клона**,
+не копирует дерево в `/opt/wirescope`.
+
+```bash
+# SSH, клон в /opt/wirescope
+sudo git clone git@github.com:kmvkos/wirescope.git /opt/wirescope
+cd /opt/wirescope
+sudo git checkout milestone-8-appliance   # или main, если он достаточно свежий
+sudo ./packaging/install.sh --with-kiosk --enable-kiosk
+
+# SSH, клон куда угодно
+git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+sudo ./packaging/install.sh \
+  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+
+# HTTPS (нужен токен GitHub)
+git clone https://github.com/kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+sudo ./packaging/install.sh \
+  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+
+# user systemd
+./packaging/install.sh --user-install --generate-admin-password --bind-host 127.0.0.1
+```
 
 ### Эта Debian VM (последовательность)
 

@@ -46,16 +46,65 @@ Chromium на `http://127.0.0.1:8000/`.
 
 ## Установка
 
-Системная установка (нужен `sudo`):
+Репозиторий на GitHub **приватный**:
+[`https://github.com/kmvkos/wirescope`](https://github.com/kmvkos/wirescope).
+Нужен SSH-ключ или учётные данные HTTPS.
+
+Установщик **работает из клона** (venv, frontend, скрипты киоска). Дерево
+в `/opt/wirescope` само не копируется. Данные — `/var/lib/wirescope`,
+конфиг — `/etc/wirescope`. `--project-root` по умолчанию — каталог, в
+котором лежит `packaging/` (корень клона).
+
+### Клон в `/opt/wirescope` (рекомендуемый layout)
 
 ```bash
+sudo git clone git@github.com:kmvkos/wirescope.git /opt/wirescope
+cd /opt/wirescope
+sudo git checkout milestone-8-appliance   # или main, если он достаточно свежий
+sudo ./packaging/install.sh --with-kiosk --enable-kiosk
+```
+
+`sudo git clone` использует **ключи root**. Если ключ у вашего пользователя,
+клонируйте без `sudo`, затем `sudo mv wirescope /opt/wirescope`, либо
+ставьте из другого каталога с `--project-root` (ниже).
+
+### Клон куда угодно
+
+```bash
+git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance   # или main, если он достаточно свежий
 sudo ./packaging/install.sh \
   --project-root "$PWD" \
   --generate-admin-password \
   --bind-host 127.0.0.1
 ```
 
-Киоск на tty1 после загрузки (без рабочего стола):
+Службы остаются в этом клоне: не переименовывайте и не удаляйте его после
+установки.
+
+### HTTPS
+
+```bash
+git clone https://github.com/kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance   # или main, если он достаточно свежий
+sudo ./packaging/install.sh \
+  --project-root "$PWD" \
+  --generate-admin-password \
+  --bind-host 127.0.0.1
+```
+
+Приватный репозиторий: GitHub запросит логин и токен (не пароль аккаунта)
+или сохранённые credentials.
+
+### Киоск на tty1
+
+`--with-kiosk` ставит минимальный стек (Cage или Xorg/`xinit` и Chromium),
+**не** GNOME/XFCE. `--enable-kiosk` включает системный юнит на
+`multi-user.target`.
+
+Из любого клона:
 
 ```bash
 sudo ./packaging/install.sh \
@@ -65,9 +114,7 @@ sudo ./packaging/install.sh \
   --with-kiosk --enable-kiosk
 ```
 
-`--with-kiosk` ставит минимальный стек (Cage или Xorg/`xinit` и Chromium),
-**не** GNOME/XFCE. `--enable-kiosk` включает системный юнит на
-`multi-user.target`. Если пакеты уже стоят:
+Если пакеты уже стоят:
 
 ```bash
 sudo ./packaging/install.sh --skip-packages --enable-kiosk

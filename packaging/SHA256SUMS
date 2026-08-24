@@ -1,4 +1,4 @@
-sha256  abb2c9495fa02320233c243748e145948db3977c20507d04b7655ccce0e8487f  packaging/install.sh
+sha256  f0b5d77b9fb7c09235ff1ac8a722b0564e921d89451b0cc0655d1a6b836249ee  packaging/install.sh
 sha256  aaa91ba45ad457d66ef727fd74404da1d12f93198c8a02d8cd176ced79d22101  packaging/inventory/DEPENDENCIES.md
 sha256  9348fe2415183a247e0276965ee87c9eda1f442e77762cc7c719367a41c63662  packaging/inventory/os-packages-kiosk.txt
 sha256  3c0fffa549a7552c493746e7f93bc415e64e7e1c33a88de106db77dd119cf42e  packaging/inventory/os-packages-optional-rhel.txt
@@ -20,5 +20,5 @@ sha256  66fbc4efe0c9c847810d40fd51aa91b89219ad9b4b5341e40dc457858a04d7b2  packag
 sha256  d455de256b84de2aa81717c949f35283d98410c2a2f634b1ce84e7d35e99e79d  packaging/systemd/wirescope-api.service
 sha256  81f148d197e4bdb284a7006d4bcb6bcb357ec22ad77f93a0f88045c8d0b733de  packaging/systemd/wirescope-kiosk.service
 sha256  90c1dc3e0352428b732b28d2fd71366215efdef972fd9b8c3b087129e0b90b75  packaging/systemd/wirescope-worker.service
-sha256  fe997ccb01bf8a982a5b1888a3f9c6959a80e98c304fc0b01494b3049b0933c5  packaging/upgrade.sh
+sha256  72ec53b0f97903315a01ef0a8964527e11603f834efe2a44af8a6bc915b74196  packaging/upgrade.sh
 sha256  477219115f33cac0edd4cad54773a5f161a1ad9c8bb91427a3e59f339b54d659  pyproject.toml

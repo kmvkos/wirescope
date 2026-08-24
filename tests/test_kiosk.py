@@ -18,7 +18,7 @@ from appliance.kiosk import (
     probe_display,
 )
 from appliance.packages import select_packages
-from appliance.paths import InstallPaths
+from appliance.paths import InstallPaths, discover_project_root
 from appliance.systemd import render_getty_autologin, unit_files
 
 
@@ -260,3 +260,15 @@ def test_cli_skip_packages_enable_kiosk():
     assert args.skip_packages is True
     assert args.enable_kiosk is True
     assert args.with_kiosk is False
+
+
+def test_cli_project_root_defaults_to_checkout_not_only_opt():
+    parser = build_parser()
+    args = parser.parse_args(["install"])
+    checkout = discover_project_root()
+    assert Path(args.project_root) == checkout
+    assert (checkout / "packaging" / "install.sh").is_file()
+    override = parser.parse_args(
+        ["install", "--project-root", "/tmp/wirescope-clone"]
+    )
+    assert override.project_root == "/tmp/wirescope-clone"

@@ -13,7 +13,7 @@ from appliance.dumpcap import inspect_dumpcap
 from appliance.host import RealHost
 from appliance.install import InstallConfig, install
 from appliance.inventory import build_inventory, render_inventory_text
-from appliance.paths import DEFAULT_PROJECT_ROOT, InstallPaths
+from appliance.paths import InstallPaths, discover_project_root
 from appliance.release import checksum_paths, default_release_paths, render_checksums
 from appliance.tls import self_signed_argv
 from appliance.wait import wait_ready, health_url
@@ -40,7 +40,12 @@ def _paths_from_args(args: argparse.Namespace) -> InstallPaths:
 
 
 def _add_path_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--project-root", default=str(DEFAULT_PROJECT_ROOT))
+    parser.add_argument(
+        "--project-root",
+        default=str(discover_project_root()),
+        help="Git checkout (directory that contains packaging/). "
+        "Recommended production layout: /opt/wirescope",
+    )
     parser.add_argument("--data-dir", default="/var/lib/wirescope")
     parser.add_argument("--etc-dir", default="/etc/wirescope")
     parser.add_argument("--systemd-dir", default="/etc/systemd/system")
@@ -145,12 +150,20 @@ def build_parser() -> argparse.ArgumentParser:
     restore.set_defaults(handler=cmd_restore)
 
     checksums = sub.add_parser("checksums", help="Write SHA-256 checksums")
-    checksums.add_argument("--project-root", default=str(DEFAULT_PROJECT_ROOT))
+    checksums.add_argument(
+        "--project-root",
+        default=str(discover_project_root()),
+        help="Git checkout (directory that contains packaging/)",
+    )
     checksums.add_argument("--output", default="")
     checksums.set_defaults(handler=cmd_checksums)
 
     inventory = sub.add_parser("inventory", help="Print dependency inventory")
-    inventory.add_argument("--project-root", default=str(DEFAULT_PROJECT_ROOT))
+    inventory.add_argument(
+        "--project-root",
+        default=str(discover_project_root()),
+        help="Git checkout (directory that contains packaging/)",
+    )
     inventory.set_defaults(handler=cmd_inventory)
 
     ready = sub.add_parser("wait-ready", help="Wait for /api/health")

@@ -12,7 +12,13 @@ from appliance.dumpcap import configure_dumpcap, inspect_dumpcap
 from appliance.host import MemoryFile, MemoryHost, debian_amd64_platform
 from appliance.kiosk import KIOSK_SCRIPT, kiosk_recovers_without_stopping_backend
 from appliance.packages import FORBIDDEN_DEFAULT_PACKAGES, select_packages
-from appliance.paths import InstallPaths, production_env_text
+from appliance.paths import (
+    DEFAULT_PROJECT_ROOT,
+    RECOMMENDED_PROJECT_ROOT,
+    InstallPaths,
+    discover_project_root,
+    production_env_text,
+)
 from appliance.recovery import describe_reboot_recovery
 from appliance.release import checksum_paths, render_checksums
 from appliance.systemd import SECRET_HINTS, unit_files
@@ -219,3 +225,37 @@ def test_checksums_cover_packaging_files(tmp_path):
     assert records[0].algorithm == "sha256"
     assert records[0].relative_path == "install.sh"
     assert records[0].digest in rendered
+
+
+def test_discover_project_root_finds_checkout_with_packaging():
+    checkout = Path(__file__).resolve().parents[1]
+    found = discover_project_root()
+    assert found == checkout
+    assert (found / "packaging" / "install.sh").is_file()
+
+
+def test_discover_project_root_from_clone_elsewhere(tmp_path):
+    clone = tmp_path / "wirescope-clone"
+    script = clone / "packaging" / "install.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    nested = clone / "appliance" / "paths.py"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("", encoding="utf-8")
+    assert discover_project_root(nested) == clone
+
+
+def test_discover_project_root_falls_back_to_recommended(tmp_path):
+    orphan = tmp_path / "not-a-checkout" / "module.py"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_text("", encoding="utf-8")
+    assert discover_project_root(orphan) == RECOMMENDED_PROJECT_ROOT
+    assert DEFAULT_PROJECT_ROOT == Path("/opt/wirescope")
+
+
+def test_install_sh_uses_checkout_directory_as_project_root():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "packaging" / "install.sh").read_text(encoding="utf-8")
+    assert '--project-root "$here"' in text
+    assert "dirname" in text
+    assert text.count("/opt/wirescope") <= 1

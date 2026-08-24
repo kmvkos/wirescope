@@ -193,10 +193,13 @@ def test_report_job_reproduces_from_persisted_data(
     assert "<nmaprun>" not in html
     assert SSH_WEAK["title"] in html
     assert SSH_WEAK["recommendation"] in html
-    assert "Выводы" in html
-    assert "слабые алгоритмы SSH" in html
-    assert "Пассивная оценка сегмента" in html
-    assert "VLAN в кадре виден только при 802.1Q" in html
+    assert "Результат аудита" in html
+    assert "Обнаруженные проблемы" in html
+    assert "Что обнаружено" in html
+    assert "Почему это важно" in html
+    assert "Что рекомендуется сделать" in html
+    assert "Пассивное наблюдение" in html
+    assert "VLAN ID считается наблюдаемым только при наличии тега 802.1Q" in html
     assert document["environment"]["capture_interface"] == "eth0"
     assert document["environment"]["had_l3_address"] is True
     assert document["passive"]["vlan_tag_note"].startswith("VLAN в кадре")

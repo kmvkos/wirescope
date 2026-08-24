@@ -1,9 +1,15 @@
-"""Optional Chromium kiosk templates. Not required for the Debian VM GUI."""
+"""Optional Chromium kiosk templates.
+
+This is a later extra for a local HDMI/DSI display (for example a Raspberry
+Pi). It is not required for the generic Linux appliance: operators use any
+local or LAN browser against the API.
+"""
 
 from __future__ import annotations
 
 KIOSK_SCRIPT = """#!/bin/sh
 set -eu
+# Optional later extra: local Chromium kiosk. Not required on generic Linux.
 # Local display recovery only. Never stop the API or worker.
 URL="${WIRESCOPE_KIOSK_URL:-http://127.0.0.1:8000/}"
 BIN=""
@@ -34,6 +40,7 @@ done
 
 XINITRC = """#!/bin/sh
 set -eu
+# Optional later extra: X session wrapper for packaging/kiosk/kiosk.sh.
 xset s off -dpms || true
 unclutter -idle 1 -root &
 openbox &

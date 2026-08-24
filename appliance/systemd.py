@@ -152,7 +152,7 @@ def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str
         )
         wanted = "graphical.target"
     return f"""[Unit]
-Description=WireScope local kiosk browser
+Description=Optional WireScope local kiosk (Raspberry Pi / local display extra)
 Documentation=file://{paths.project_root}/docs/INSTALLATION.md
 After=wirescope-api.service
 Wants=wirescope-api.service

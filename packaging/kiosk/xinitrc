@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+# Optional later extra: X session wrapper for packaging/kiosk/kiosk.sh.
 xset s off -dpms || true
 unclutter -idle 1 -root &
 openbox &

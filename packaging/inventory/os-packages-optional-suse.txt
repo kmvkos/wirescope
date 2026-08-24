@@ -1,0 +1,9 @@
+# optional — openSUSE / SLES (zypper)
+nmap
+openssl
+curl
+bind-utils
+samba-client
+net-snmp
+openldap2-client
+ssh-audit

@@ -57,14 +57,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wirescope-appliance")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    detect = sub.add_parser("detect", help="Show Debian-family OS and architecture")
+    detect = sub.add_parser(
+        "detect",
+        help="Show Linux family, package manager, and architecture",
+    )
     detect.set_defaults(handler=cmd_detect)
 
     install_cmd = sub.add_parser("install", help="Install or upgrade the appliance")
     _add_path_arguments(install_cmd)
     install_cmd.add_argument("--bind-host", default="127.0.0.1")
     install_cmd.add_argument("--bind-port", type=int, default=8000)
-    install_cmd.add_argument("--skip-apt", action="store_true")
+    install_cmd.add_argument("--skip-packages", action="store_true")
+    install_cmd.add_argument(
+        "--skip-apt",
+        action="store_true",
+        help="alias for --skip-packages",
+    )
     install_cmd.add_argument("--skip-pip", action="store_true")
     install_cmd.add_argument("--no-optional-providers", action="store_true")
     install_cmd.add_argument("--with-kiosk", action="store_true")
@@ -83,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     install_cmd.add_argument(
         "--user-install",
         action="store_true",
-        help="Install user systemd units without root (Debian VM / operator account)",
+        help="Install user systemd units without root",
     )
     install_cmd.set_defaults(handler=cmd_install)
 
@@ -131,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_detect(_args: argparse.Namespace) -> int:
     platform = detect_platform()
     print(f"family={platform.family}")
+    print(f"package_manager={platform.package_manager}")
     print(f"id={platform.distro_id}")
     print(f"version={platform.version_id}")
     print(f"arch={platform.arch}")
@@ -152,7 +161,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         paths=_paths_from_args(args),
         bind_host=args.bind_host,
         bind_port=args.bind_port,
-        apply_apt=not args.skip_apt and not args.user_install,
+        apply_packages=not args.skip_packages and not args.skip_apt and not args.user_install,
         optional_providers=not args.no_optional_providers,
         install_kiosk=args.with_kiosk,
         enable_kiosk=args.enable_kiosk,

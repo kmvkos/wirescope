@@ -1,4 +1,4 @@
-"""Idempotent Debian-family appliance installation."""
+"""Idempotent generic Linux appliance installation."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from appliance.detect import Platform, UnsupportedPlatformError
 from appliance.dumpcap import DumpcapReport, configure_dumpcap, inspect_dumpcap
 from appliance.host import Host, HostError
 from appliance.kiosk import KIOSK_SCRIPT, XINITRC
-from appliance.packages import KIOSK_PACKAGE_FALLBACKS, select_packages
+from appliance.packages import select_packages
 from appliance.paths import ENV_FILE_MODE, InstallPaths, production_env_text
 from appliance.systemd import render_journald_dropin, unit_files
 
@@ -26,7 +26,7 @@ class InstallConfig:
     paths: InstallPaths
     bind_host: str = "127.0.0.1"
     bind_port: int = 8000
-    apply_apt: bool = True
+    apply_packages: bool = True
     optional_providers: bool = True
     install_kiosk: bool = False
     enable_kiosk: bool = False
@@ -102,11 +102,12 @@ def install(config: InstallConfig, host: Host) -> InstallReport:
         return report
     if host.geteuid() != 0 and not config.user_session:
         raise InstallError(
-            "installer must run as root, or use --user-install on this account"
+            "installer must run as root (sudo) for system units, "
+            "or use --user-install on this account"
         )
     if config.user_session:
         report.warnings.append(
-            "user-session install: skipped apt, dumpcap setcap, and system units"
+            "user-session install: skipped OS packages, dumpcap setcap, and system units"
         )
     _install_packages(config, host, report)
     _install_account(config, host, report)
@@ -124,10 +125,17 @@ def install(config: InstallConfig, host: Host) -> InstallReport:
 
 def _plan(config: InstallConfig, host: Host, report: InstallReport) -> None:
     selection = select_packages(
+        family=report.platform.family,
         optional_providers=config.optional_providers,
         kiosk=config.install_kiosk,
     )
-    _note(report, f"detect {report.platform.pretty_name} {report.platform.arch}")
+    _note(
+        report,
+        (
+            f"detect {report.platform.pretty_name} {report.platform.arch} "
+            f"({report.platform.family}/{report.platform.package_manager})"
+        ),
+    )
     _note(report, f"install packages: {', '.join(selection.all_selected)}")
     _note(report, f"ensure user {config.paths.service_user} (reuse if present)")
     _note(report, "configure dumpcap capabilities only")
@@ -148,56 +156,73 @@ def _install_packages(
     host: Host,
     report: InstallReport,
 ) -> None:
-    if not config.apply_apt or config.user_session:
-        _note(report, "skip apt")
+    if not config.apply_packages or config.user_session:
+        _note(report, "skip OS packages")
         return
     selection = select_packages(
+        family=report.platform.family,
         optional_providers=config.optional_providers,
         kiosk=config.install_kiosk,
     )
-    required_missing = [
-        name for name in selection.required if not host.package_installed(name)
-    ]
+    required_missing: list[str] = []
+    for candidates in selection.required_groups:
+        if any(host.package_installed(name) for name in candidates):
+            continue
+        chosen = _first_available(host, candidates)
+        if chosen is None:
+            raise InstallError(
+                "required package unavailable: " + " / ".join(candidates)
+            )
+        required_missing.append(chosen)
     optional_names: list[str] = []
-    for name in selection.optional:
-        if host.package_installed(name):
+    for candidates in selection.optional_groups:
+        if any(host.package_installed(name) for name in candidates):
             continue
-        if host.package_available(name):
-            optional_names.append(name)
+        chosen = _first_available(host, candidates)
+        if chosen is None:
+            report.warnings.append(
+                "optional package unavailable: " + " / ".join(candidates)
+            )
         else:
-            report.warnings.append(f"optional package unavailable: {name}")
+            optional_names.append(chosen)
     kiosk_names: list[str] = []
-    for name in selection.kiosk:
-        if host.package_installed(name):
+    for candidates in selection.kiosk_groups:
+        if any(host.package_installed(name) for name in candidates):
             continue
-        if host.package_available(name):
-            kiosk_names.append(name)
-            continue
-        fallback_hit = False
-        for fallback in KIOSK_PACKAGE_FALLBACKS.get(name, ()):
-            if host.package_installed(fallback) or host.package_available(fallback):
-                kiosk_names.append(fallback)
-                fallback_hit = True
-                break
-        if not fallback_hit:
-            report.warnings.append(f"kiosk package unavailable: {name}")
+        chosen = _first_available(host, candidates)
+        if chosen is None:
+            report.warnings.append(
+                "kiosk package unavailable: " + " / ".join(candidates)
+            )
+        else:
+            kiosk_names.append(chosen)
     names = tuple(required_missing + optional_names + kiosk_names)
     if not names:
-        _note(report, "apt packages already installed")
+        _note(report, "OS packages already installed")
         return
     result = host.install_packages(names)
     if not result.ok:
         raise InstallError(
-            f"apt-get install failed: {result.stderr.strip() or result.stdout.strip()}"
+            f"{report.platform.package_manager} install failed: "
+            + (result.stderr.strip() or result.stdout.strip())
         )
     still_missing = [
-        name for name in selection.required if not host.package_installed(name)
+        " / ".join(candidates)
+        for candidates in selection.required_groups
+        if not any(host.package_installed(name) for name in candidates)
     ]
     if still_missing:
         raise InstallError(
-            "required packages missing after apt: " + ", ".join(still_missing)
+            "required packages missing after install: " + ", ".join(still_missing)
         )
     _note(report, "installed packages: " + ", ".join(names))
+
+
+def _first_available(host: Host, candidates: tuple[str, ...]) -> str | None:
+    for name in candidates:
+        if host.package_available(name):
+            return name
+    return None
 
 
 def _install_account(
@@ -396,7 +421,7 @@ def _install_kiosk_files(
         owner=kiosk_owner,
         group=kiosk_group,
     )
-    _note(report, "wrote optional kiosk templates")
+    _note(report, "wrote optional kiosk templates (later extra, not required)")
 
 
 def _migrate(config: InstallConfig, host: Host, report: InstallReport) -> None:

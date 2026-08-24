@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+# Optional later extra: local Chromium kiosk. Not required on generic Linux.
 # Local display recovery only. Never stop the API or worker.
 URL="${WIRESCOPE_KIOSK_URL:-http://127.0.0.1:8000/}"
 BIN=""

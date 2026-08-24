@@ -1,58 +1,188 @@
 """Required base packages and selected optional providers.
 
-Nuclei and Nikto are never selected by default. Absence of an optional
-provider degrades capability, not installer success after the base set.
+Package names differ across apt, dnf/yum, and zypper. Nuclei and Nikto are
+never selected by default. Absence of an optional provider degrades
+capability, not installer success after the base set.
+
+Kiosk packages are a later extra for a local display. They are not required
+for a generic Linux appliance or server.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 
 FORBIDDEN_DEFAULT_PACKAGES = frozenset({"nuclei", "nikto", "nuclei-templates"})
 
-REQUIRED_PACKAGES: tuple[str, ...] = (
-    "python3",
-    "python3-venv",
-    "python3-pip",
-    "python3-dev",
-    "iproute2",
-    "libcap2-bin",
-    "ca-certificates",
-    "sqlite3",
-    "tshark",
-    "wireshark-common",
-    "adduser",
-    "passwd",
-)
+# role -> family -> candidate package names in preference order
+_REQUIRED: dict[str, dict[str, tuple[str, ...]]] = {
+    "python3": {
+        "debian": ("python3",),
+        "rhel": ("python3",),
+        "suse": ("python3",),
+    },
+    "python3-venv": {
+        "debian": ("python3-venv",),
+        "rhel": ("python3",),
+        "suse": ("python3-venv", "python311-venv", "python312-venv", "python3-virtualenv"),
+    },
+    "python3-pip": {
+        "debian": ("python3-pip",),
+        "rhel": ("python3-pip",),
+        "suse": ("python3-pip",),
+    },
+    "python3-dev": {
+        "debian": ("python3-dev",),
+        "rhel": ("python3-devel",),
+        "suse": ("python3-devel",),
+    },
+    "iproute": {
+        "debian": ("iproute2",),
+        "rhel": ("iproute",),
+        "suse": ("iproute2",),
+    },
+    "libcap": {
+        "debian": ("libcap2-bin",),
+        "rhel": ("libcap",),
+        "suse": ("libcap-progs",),
+    },
+    "ca-certificates": {
+        "debian": ("ca-certificates",),
+        "rhel": ("ca-certificates",),
+        "suse": ("ca-certificates",),
+    },
+    "sqlite": {
+        "debian": ("sqlite3",),
+        "rhel": ("sqlite",),
+        "suse": ("sqlite3",),
+    },
+    "tshark": {
+        "debian": ("tshark",),
+        "rhel": ("wireshark-cli",),
+        "suse": ("wireshark-cli", "wireshark"),
+    },
+    "dumpcap": {
+        "debian": ("wireshark-common",),
+        "rhel": ("wireshark-cli",),
+        "suse": ("wireshark-cli", "wireshark"),
+    },
+    "passwd": {
+        "debian": ("passwd",),
+        "rhel": ("shadow-utils",),
+        "suse": ("shadow",),
+    },
+    "adduser": {
+        "debian": ("adduser",),
+        "rhel": ("shadow-utils",),
+        "suse": ("shadow",),
+    },
+}
 
-# Optional protocol/discovery tools. Installed when --optional-providers is on
-# (the default for a full appliance). Missing packages are skipped with a
-# warning rather than failing the installer.
-OPTIONAL_PROVIDERS: tuple[str, ...] = (
-    "nmap",
-    "openssl",
-    "curl",
-    "bind9-dnsutils",
-    "smbclient",
-    "snmp",
-    "ldap-utils",
-    "ssh-audit",
-)
+_OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
+    "nmap": {
+        "debian": ("nmap",),
+        "rhel": ("nmap",),
+        "suse": ("nmap",),
+    },
+    "openssl": {
+        "debian": ("openssl",),
+        "rhel": ("openssl",),
+        "suse": ("openssl",),
+    },
+    "curl": {
+        "debian": ("curl",),
+        "rhel": ("curl",),
+        "suse": ("curl",),
+    },
+    "dnsutils": {
+        "debian": ("bind9-dnsutils", "dnsutils"),
+        "rhel": ("bind-utils",),
+        "suse": ("bind-utils",),
+    },
+    "smbclient": {
+        "debian": ("smbclient",),
+        "rhel": ("samba-client",),
+        "suse": ("samba-client",),
+    },
+    "snmp": {
+        "debian": ("snmp",),
+        "rhel": ("net-snmp-utils",),
+        "suse": ("net-snmp",),
+    },
+    "ldap": {
+        "debian": ("ldap-utils",),
+        "rhel": ("openldap-clients",),
+        "suse": ("openldap2-client",),
+    },
+    "ssh-audit": {
+        "debian": ("ssh-audit",),
+        "rhel": ("ssh-audit",),
+        "suse": ("ssh-audit",),
+    },
+}
 
-# Graphical kiosk stack for Raspberry Pi OS Lite. Not required to bring up the
-# Debian VM appliance; the GUI is a browser client of the loopback API.
-KIOSK_PACKAGES: tuple[str, ...] = (
-    "xserver-xorg",
-    "xinit",
-    "openbox",
-    "unclutter",
-    "chromium",
-)
+# Optional later extra. Not an acceptance criterion for generic Linux.
+_KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
+    "xserver": {
+        "debian": ("xserver-xorg",),
+        "rhel": ("xorg-x11-server-Xorg",),
+        "suse": ("xorg-x11-server",),
+    },
+    "xinit": {
+        "debian": ("xinit",),
+        "rhel": ("xorg-x11-xinit",),
+        "suse": ("xinit",),
+    },
+    "openbox": {
+        "debian": ("openbox",),
+        "rhel": ("openbox",),
+        "suse": ("openbox",),
+    },
+    "unclutter": {
+        "debian": ("unclutter",),
+        "rhel": ("unclutter", "unclutter-xfixes"),
+        "suse": ("unclutter",),
+    },
+    "chromium": {
+        "debian": ("chromium", "chromium-browser"),
+        "rhel": ("chromium",),
+        "suse": ("chromium",),
+    },
+}
 
 KIOSK_PACKAGE_FALLBACKS: dict[str, tuple[str, ...]] = {
     "chromium": ("chromium-browser",),
 }
+
+
+def _groups_for(
+    table: Mapping[str, Mapping[str, tuple[str, ...]]],
+    family: str,
+) -> tuple[tuple[str, ...], ...]:
+    groups: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+    for role_names in table.values():
+        candidates = role_names.get(family) or role_names["debian"]
+        if candidates not in seen:
+            seen.add(candidates)
+            groups.append(candidates)
+    return tuple(groups)
+
+
+def _first_names(groups: tuple[tuple[str, ...], ...]) -> tuple[str, ...]:
+    seen: list[str] = []
+    for candidates in groups:
+        name = candidates[0]
+        if name not in seen:
+            seen.append(name)
+    return tuple(seen)
+
+
+REQUIRED_PACKAGES: tuple[str, ...] = _first_names(_groups_for(_REQUIRED, "debian"))
+OPTIONAL_PROVIDERS: tuple[str, ...] = _first_names(_groups_for(_OPTIONAL, "debian"))
+KIOSK_PACKAGES: tuple[str, ...] = _first_names(_groups_for(_KIOSK, "debian"))
 
 
 @dataclass(frozen=True)
@@ -60,6 +190,10 @@ class PackageSelection:
     required: tuple[str, ...]
     optional: tuple[str, ...]
     kiosk: tuple[str, ...]
+    required_groups: tuple[tuple[str, ...], ...] = ()
+    optional_groups: tuple[tuple[str, ...], ...] = ()
+    kiosk_groups: tuple[tuple[str, ...], ...] = ()
+    family: str = "debian"
 
     @property
     def all_selected(self) -> tuple[str, ...]:
@@ -72,15 +206,21 @@ class PackageSelection:
 
 def select_packages(
     *,
+    family: str = "debian",
     optional_providers: bool = True,
     kiosk: bool = False,
 ) -> PackageSelection:
-    optional = OPTIONAL_PROVIDERS if optional_providers else ()
-    kiosk_packages = KIOSK_PACKAGES if kiosk else ()
+    required_groups = _groups_for(_REQUIRED, family)
+    optional_groups = _groups_for(_OPTIONAL, family) if optional_providers else ()
+    kiosk_groups = _groups_for(_KIOSK, family) if kiosk else ()
     selection = PackageSelection(
-        required=REQUIRED_PACKAGES,
-        optional=optional,
-        kiosk=kiosk_packages,
+        required=_first_names(required_groups),
+        optional=_first_names(optional_groups),
+        kiosk=_first_names(kiosk_groups),
+        required_groups=required_groups,
+        optional_groups=optional_groups,
+        kiosk_groups=kiosk_groups,
+        family=family,
     )
     forbidden = FORBIDDEN_DEFAULT_PACKAGES.intersection(selection.all_selected)
     if forbidden:
@@ -89,3 +229,54 @@ def select_packages(
             + ", ".join(sorted(forbidden))
         )
     return selection
+
+
+def packages_by_family() -> dict[str, PackageSelection]:
+    return {
+        family: select_packages(family=family, optional_providers=True, kiosk=True)
+        for family in ("debian", "rhel", "suse")
+    }
+
+
+def package_install_argv(manager: str, names: tuple[str, ...]) -> list[str]:
+    if manager == "apt":
+        if not names:
+            return ["apt-get"]
+        return ["apt-get", "install", "-y", "--no-install-recommends", *names]
+    if manager == "dnf":
+        if not names:
+            return ["dnf"]
+        return ["dnf", "install", "-y", *names]
+    if manager == "yum":
+        if not names:
+            return ["yum"]
+        return ["yum", "install", "-y", *names]
+    if manager == "zypper":
+        if not names:
+            return ["zypper"]
+        return [
+            "zypper",
+            "--non-interactive",
+            "install",
+            "--auto-agree-with-licenses",
+            *names,
+        ]
+    raise ValueError(f"unsupported package manager: {manager}")
+
+
+def package_query_installed_argv(manager: str, name: str) -> list[str]:
+    if manager == "apt":
+        return ["dpkg-query", "-W", "-f", "${Status}", name]
+    return ["rpm", "-q", name]
+
+
+def package_query_available_argv(manager: str, name: str) -> list[str]:
+    if manager == "apt":
+        return ["apt-cache", "show", name]
+    if manager == "dnf":
+        return ["dnf", "list", "--quiet", name]
+    if manager == "yum":
+        return ["yum", "list", "-q", name]
+    if manager == "zypper":
+        return ["zypper", "--non-interactive", "search", "--match-exact", name]
+    raise ValueError(f"unsupported package manager: {manager}")

@@ -14,6 +14,7 @@ import sys
 from typing import Mapping, Protocol
 
 from appliance.detect import Platform, detect_platform
+from appliance.packages import package_install_argv, package_query_available_argv, package_query_installed_argv
 
 
 class HostError(RuntimeError):
@@ -101,8 +102,16 @@ def _require_argv(argv: list[str]) -> tuple[str, ...]:
 
 
 class RealHost:
+    def __init__(self) -> None:
+        self._platform: Platform | None = None
+
     def detect_platform(self) -> Platform:
-        return detect_platform()
+        if self._platform is None:
+            self._platform = detect_platform()
+        return self._platform
+
+    def _package_manager(self) -> str:
+        return self.detect_platform().package_manager
 
     def geteuid(self) -> int:
         return os.geteuid()
@@ -208,7 +217,7 @@ class RealHost:
             str(home),
             "--create-home",
             "--shell",
-            "/usr/sbin/nologin",
+            self._nologin(),
             "--gid",
             group,
             "--comment",
@@ -239,28 +248,33 @@ class RealHost:
                 f"usermod failed: {result.stderr.strip() or result.stdout.strip()}"
             )
 
+    def _nologin(self) -> str:
+        for candidate in ("/usr/sbin/nologin", "/sbin/nologin", "/usr/bin/nologin"):
+            if Path(candidate).is_file():
+                return candidate
+        return "/usr/sbin/nologin"
+
     def package_installed(self, name: str) -> bool:
-        result = self.run(["dpkg-query", "-W", "-f", "${Status}", name])
-        return result.ok and "install ok installed" in result.stdout
+        manager = self._package_manager()
+        result = self.run(package_query_installed_argv(manager, name))
+        if manager == "apt":
+            return result.ok and "install ok installed" in result.stdout
+        return result.ok
 
     def package_available(self, name: str) -> bool:
-        result = self.run(["apt-cache", "show", name])
+        manager = self._package_manager()
+        result = self.run(package_query_available_argv(manager, name))
+        if manager == "zypper":
+            return result.ok and name in result.stdout
         return result.ok
 
     def install_packages(self, names: tuple[str, ...]) -> CommandResult:
-        if not names:
-            return CommandResult(("apt-get",), 0)
-        env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
-        return self.run(
-            [
-                "apt-get",
-                "install",
-                "-y",
-                "--no-install-recommends",
-                *names,
-            ],
-            env=env,
-        )
+        manager = self._package_manager()
+        argv = package_install_argv(manager, names)
+        env = dict(os.environ)
+        if manager == "apt":
+            env["DEBIAN_FRONTEND"] = "noninteractive"
+        return self.run(argv, env=env)
 
     def _capability_binary(self, name: str) -> str:
         found = self.which(name)
@@ -482,7 +496,7 @@ class MemoryHost:
 
     def install_packages(self, names: tuple[str, ...]) -> CommandResult:
         self.packages.update(names)
-        argv = ("apt-get", "install", "-y", "--no-install-recommends", *names)
+        argv = tuple(package_install_argv(self.platform.package_manager, names))
         self.commands.append(argv)
         return CommandResult(argv=argv, returncode=0)
 
@@ -555,9 +569,36 @@ class MemoryHost:
 def debian_amd64_platform() -> Platform:
     return Platform(
         family="debian",
+        package_manager="apt",
         distro_id="debian",
         version_id="13",
         pretty_name="Debian GNU/Linux 13 (trixie)",
+        arch="amd64",
+        machine="x86_64",
+        raspberry_pi=False,
+    )
+
+
+def fedora_amd64_platform() -> Platform:
+    return Platform(
+        family="rhel",
+        package_manager="dnf",
+        distro_id="fedora",
+        version_id="41",
+        pretty_name="Fedora Linux 41",
+        arch="amd64",
+        machine="x86_64",
+        raspberry_pi=False,
+    )
+
+
+def opensuse_amd64_platform() -> Platform:
+    return Platform(
+        family="suse",
+        package_manager="zypper",
+        distro_id="opensuse-leap",
+        version_id="15.6",
+        pretty_name="openSUSE Leap 15.6",
         arch="amd64",
         machine="x86_64",
         raspberry_pi=False,

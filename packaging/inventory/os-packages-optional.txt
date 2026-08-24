@@ -1,3 +1,4 @@
+# optional — Debian / Ubuntu (apt)
 nmap
 openssl
 curl

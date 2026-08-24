@@ -1,3 +1,4 @@
+# required — Debian / Ubuntu (apt)
 python3
 python3-venv
 python3-pip
@@ -8,5 +9,5 @@ ca-certificates
 sqlite3
 tshark
 wireshark-common
-adduser
 passwd
+adduser

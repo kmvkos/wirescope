@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
-# Idempotent appliance installer. Run as root.
+# Idempotent generic Linux appliance installer.
+# Run as root (sudo) for system units, or pass --user-install.
 here=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
 if [ -x "$here/.venv/bin/python" ]; then

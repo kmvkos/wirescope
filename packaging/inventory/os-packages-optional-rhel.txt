@@ -1,0 +1,9 @@
+# optional — Fedora / RHEL / Rocky (dnf or yum)
+nmap
+openssl
+curl
+bind-utils
+samba-client
+net-snmp-utils
+openldap-clients
+ssh-audit

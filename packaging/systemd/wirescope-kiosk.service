@@ -1,5 +1,5 @@
 [Unit]
-Description=WireScope local kiosk browser
+Description=Optional WireScope local kiosk (Raspberry Pi / local display extra)
 Documentation=file:///opt/wirescope/docs/INSTALLATION.md
 After=wirescope-api.service
 Wants=wirescope-api.service

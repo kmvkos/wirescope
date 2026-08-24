@@ -1,3 +1,4 @@
+# optional kiosk extra (not required for generic Linux)
 xserver-xorg
 xinit
 openbox

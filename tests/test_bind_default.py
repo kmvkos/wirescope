@@ -1,5 +1,7 @@
+import sys
 from pathlib import Path
 
+from appliance.__main__ import _argv
 from appliance.install import InstallConfig
 
 
@@ -15,3 +17,17 @@ def test_packaging_entrypoints_pass_all_interface_bind():
         # User arguments are appended afterwards, so an explicit bind override
         # remains possible for a special deployment.
         assert '"$@"' in text
+
+
+def test_direct_appliance_entrypoint_injects_all_interface_bind(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["appliance", "install", "--dry-run"])
+    assert _argv() == ["install", "--bind-host", "0.0.0.0", "--dry-run"]
+
+
+def test_direct_appliance_entrypoint_preserves_explicit_bind(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["appliance", "install", "--bind-host", "127.0.0.1", "--dry-run"],
+    )
+    assert _argv() == ["install", "--bind-host", "127.0.0.1", "--dry-run"]

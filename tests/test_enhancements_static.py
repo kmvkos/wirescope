@@ -21,3 +21,12 @@ def test_operator_insights_use_versioned_api_and_audit_scoped_evidence():
     assert 'request("/capabilities")' in script
     assert "caps.web" in script
     assert "all_interfaces" in script
+
+
+def test_operator_insights_integrate_markdown_export_and_session_visibility():
+    script = (FRONTEND / "enhancements.js").read_text(encoding="utf-8")
+
+    assert 'id = "download-markdown-report"' in script
+    assert "export?format=markdown" in script
+    assert 'document.getElementById("session-chip")' in script
+    assert 'attributeFilter: ["hidden"]' in script

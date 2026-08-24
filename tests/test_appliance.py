@@ -16,27 +16,17 @@ from appliance.paths import InstallPaths, production_env_text
 from appliance.recovery import describe_reboot_recovery
 from appliance.release import checksum_paths, render_checksums
 from appliance.systemd import SECRET_HINTS, unit_files
+from tests.fixtures.os_release import os_release
 
 
-DEBIAN_OS_RELEASE = """
-PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
-NAME="Debian GNU/Linux"
-VERSION_ID="13"
-ID=debian
-"""
-
-RASPI_OS_RELEASE = """
-PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
-NAME="Debian GNU/Linux"
-VERSION_ID="12"
-ID=debian
-ID_LIKE=debian
-"""
+DEBIAN_OS_RELEASE = os_release("debian-13")
+RASPI_OS_RELEASE = os_release("raspi-os")
 
 
-def test_detect_current_host_is_debian_family():
+def test_detect_current_host_is_supported_linux():
     platform = detect_platform()
-    assert platform.family == "debian"
+    assert platform.family in {"debian", "rhel", "suse"}
+    assert platform.package_manager in {"apt", "dnf", "yum", "zypper"}
     assert platform.arch in {"amd64", "arm64"}
     assert platform.supported is True
 
@@ -49,17 +39,19 @@ def test_detect_debian_amd64_and_arm64():
         model_text="Raspberry Pi 4 Model B",
     )
     assert amd.family == "debian"
+    assert amd.package_manager == "apt"
     assert amd.arch == "amd64"
     assert amd.raspberry_pi is False
     assert arm.arch == "arm64"
     assert arm.raspberry_pi is True
+    assert arm.supported is True
     assert normalize_arch("x86_64") == "amd64"
     assert parse_os_release(DEBIAN_OS_RELEASE)["ID"] == "debian"
 
 
-def test_detect_rejects_non_debian_and_unsupported_arch():
+def test_detect_rejects_unsupported_family_and_arch():
     with pytest.raises(UnsupportedPlatformError, match="unsupported OS"):
-        detect_platform(os_release_text='ID="fedora"\n', machine="x86_64")
+        detect_platform(os_release_text='ID="alpine"\n', machine="x86_64")
     with pytest.raises(UnsupportedPlatformError, match="unsupported architecture"):
         detect_platform(os_release_text=DEBIAN_OS_RELEASE, machine="ppc64le")
 
@@ -73,6 +65,14 @@ def test_default_packages_exclude_nuclei_nikto_and_kiosk():
     assert "nuclei" not in selected.all_selected
     assert "nikto" not in selected.all_selected
     assert "chromium" not in selected.all_selected
+
+
+def test_rhel_packages_map_dumpcap_and_nmap_names():
+    selected = select_packages(family="rhel", optional_providers=True, kiosk=False)
+    assert "wireshark-cli" in selected.required
+    assert "nmap" in selected.optional
+    assert "bind-utils" in selected.optional
+    assert selected.kiosk == ()
 
 
 def test_dumpcap_configuration_does_not_cap_backend_python():

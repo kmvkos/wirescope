@@ -1,0 +1,8 @@
+NAME="Rocky Linux"
+VERSION="9.5 (Blue Onyx)"
+ID="rocky"
+ID_LIKE="rhel centos fedora"
+VERSION_ID="9.5"
+PRETTY_NAME="Rocky Linux 9.5 (Blue Onyx)"
+CPE_NAME="cpe:/o:rocky:rocky:9::baseos"
+HOME_URL="https://rockylinux.org/"

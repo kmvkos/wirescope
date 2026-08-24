@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from appliance.host import MemoryFile, MemoryHost, debian_amd64_platform
+from appliance.host import (
+    MemoryFile,
+    MemoryHost,
+    debian_amd64_platform,
+    fedora_amd64_platform,
+    opensuse_amd64_platform,
+)
 from appliance.install import InstallConfig, InstallError, install
 from appliance.packages import REQUIRED_PACKAGES
 from appliance.paths import InstallPaths
@@ -33,7 +39,7 @@ def _config(tmp_path: Path, **overrides) -> InstallConfig:
     )
     values = dict(
         paths=paths,
-        apply_apt=True,
+        apply_packages=True,
         optional_providers=True,
         install_kiosk=False,
         start_services=True,
@@ -79,7 +85,7 @@ def test_install_reuses_account_and_is_idempotent(tmp_path):
 
 def test_install_creates_system_user_when_missing(tmp_path):
     host = _host()
-    config = _config(tmp_path, start_services=False, apply_apt=False)
+    config = _config(tmp_path, start_services=False, apply_packages=False)
     report = install(config, host)
     assert host.user_exists("wirescope")
     assert ("useradd", "wirescope") in host.commands
@@ -138,3 +144,53 @@ def test_optional_unavailable_packages_are_skipped(tmp_path):
     assert any("optional package unavailable: ssh-audit" in item for item in report.warnings)
     assert "ssh-audit" not in host.packages
     assert "nuclei" not in host.packages
+
+
+def _rpm_host(platform):
+    host = MemoryHost(platform=platform)
+    host.files["/usr/bin/dumpcap"] = MemoryFile(
+        content="",
+        mode=0o755,
+        owner="nobody",
+        group="nogroup",
+    )
+    return host
+
+
+def test_fedora_install_uses_dnf_and_wireshark_cli(tmp_path):
+    host = _rpm_host(fedora_amd64_platform())
+    config = _config(tmp_path, start_services=False, skip_pip=True)
+    report = install(config, host)
+    dnf = [item for item in host.commands if item and item[0] == "dnf"]
+    assert dnf
+    assert "install" in dnf[0]
+    assert "wireshark-cli" in dnf[0]
+    assert "nmap" in dnf[0]
+    assert "tshark" not in dnf[0]
+    assert "bind-utils" in dnf[0]
+    assert host.user_exists("wirescope")
+    assert host.user_in_group("wirescope", "wireshark")
+    assert report.dumpcap is not None and report.dumpcap.ok
+    assert report.platform.package_manager == "dnf"
+    api_unit = host.read_text(config.paths.systemd_dir / "wirescope-api.service")
+    assert "SupplementaryGroups=wireshark" in api_unit
+    assert "User=wirescope" in api_unit
+
+
+def test_opensuse_install_uses_zypper(tmp_path):
+    host = _rpm_host(opensuse_amd64_platform())
+    config = _config(tmp_path, start_services=False, skip_pip=True)
+    install(config, host)
+    zypper = [item for item in host.commands if item and item[0] == "zypper"]
+    assert zypper
+    assert "--non-interactive" in zypper[0]
+    assert "libcap-progs" in zypper[0]
+
+
+def test_public_bind_host_warns_for_lan_deploy(tmp_path):
+    host = _host()
+    config = _config(tmp_path, start_services=False, bind_host="0.0.0.0")
+    report = install(config, host)
+    assert any("public" in item.lower() for item in report.warnings)
+    assert "WIRESCOPE_BIND_HOST=0.0.0.0" in host.read_text(config.paths.env_file)
+

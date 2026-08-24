@@ -9,4 +9,6 @@ if [ -x "$here/.venv/bin/python" ]; then
 else
     python=python3
 fi
-exec "$python" -m appliance install --project-root "$here" "$@"
+# Keep the appliance reachable through every configured host interface.
+# A later explicit --bind-host still wins.
+exec "$python" -m appliance install --project-root "$here" --bind-host 0.0.0.0 "$@"

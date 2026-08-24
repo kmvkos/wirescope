@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from backend.capabilities import capability_inventory
+from backend.correlations import correlation_summary
 from backend.dependencies import AppServices, get_services
 from backend.insights import audit_diff, dashboard
+from engine.active_profiles import profile_catalog
 from findings.store import FindingNotFound
 from jobs.errors import JobExecutionError
 from jobs.service import EntityNotFound
@@ -18,6 +20,11 @@ def capabilities(services: AppServices = Depends(get_services)) -> dict:
     return capability_inventory(services.settings)
 
 
+@router.get("/scan-profiles")
+def scan_profiles(services: AppServices = Depends(get_services)) -> dict:
+    return {"profiles": profile_catalog(services.settings)}
+
+
 @router.get("/audits/{audit_id}/dashboard")
 def audit_dashboard(
     audit_id: str,
@@ -25,6 +32,18 @@ def audit_dashboard(
 ) -> dict:
     try:
         return dashboard(services, audit_id)
+    except EntityNotFound as exc:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
+
+
+@router.get("/audits/{audit_id}/correlations")
+def audit_correlations(
+    audit_id: str,
+    services: AppServices = Depends(get_services),
+) -> dict:
+    try:
+        services.jobs.get_audit(audit_id)
+        return correlation_summary(services.inventory, audit_id)
     except EntityNotFound as exc:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
 

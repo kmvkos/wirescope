@@ -169,7 +169,12 @@ def create_app(
     @application.get("/", response_class=HTMLResponse)
     def root() -> HTMLResponse:
         index = active_settings.frontend_dir / "index.html"
-        return HTMLResponse(index.read_text(encoding="utf-8"))
+        html = index.read_text(encoding="utf-8")
+        html = html.replace(
+            "</body>",
+            '<script src="/static/operations.js"></script>\n</body>',
+        )
+        return HTMLResponse(html)
 
     return application
 

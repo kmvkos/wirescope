@@ -4,13 +4,11 @@
 
 WireScope — автономный сетевой аудитор для Linux. Его можно поставить на небольшой ПК, ноутбук, сервер, виртуальную машину или ARM64-устройство и использовать как отдельный прибор для разбора незнакомого сетевого сегмента.
 
-Идея простая: подключить WireScope к сети, сначала посмотреть на неё пассивно, затем явно указать, что разрешено проверять активно, и получить инвентаризацию, технические находки и отчёт. WireScope не начинает сканировать всё, что случайно оказалось достижимо с хоста.
+Идея проекта простая: сначала посмотреть на сеть пассивно, затем явно определить, что разрешено проверять активно, собрать инвентаризацию, выполнить проверки найденных сервисов и получить технический отчёт. WireScope не воспринимает всё, что достижимо с хоста, как автоматически разрешённый scope.
 
-Проект работает на обычном Linux: Debian/Ubuntu, Fedora/RHEL/Rocky и openSUSE; архитектуры `amd64` и `arm64`. Raspberry Pi подходит, но не является обязательной платформой. Raspberry Pi OS тоже не требуется.
+Поддерживаемая база — обычный Linux: Debian/Ubuntu, Fedora/RHEL/Rocky и openSUSE на `amd64` и `arm64`. Raspberry Pi подходит как одна из платформ, но не является обязательным условием и Raspberry Pi OS не требуется.
 
-## Что умеет WireScope
-
-Текущий рабочий цикл выглядит так:
+## Как проходит аудит
 
 ```text
 подключение к сети
@@ -19,7 +17,7 @@ WireScope — автономный сетевой аудитор для Linux. �
         ↓
 пассивный захват трафика
         ↓
-наблюдения: ARP, DHCP, VLAN, LLDP/CDP, STP, IPv6, mDNS, LLMNR, NBNS, SSDP
+ARP / DHCP / VLAN / LLDP / CDP / STP / IPv6 / naming protocols
         ↓
 подтверждение оператором разрешённого scope
         ↓
@@ -27,77 +25,60 @@ WireScope — автономный сетевой аудитор для Linux. �
         ↓
 инвентаризация узлов и сервисов
         ↓
-протокольные проверки по найденным сервисам
+протокольные проверки
         ↓
 findings
         ↓
 HTML / JSON отчёт
 ```
 
-Кроме основного аудита есть режим **«Прослушивание»**: оператор выбирает интерфейс, при необходимости задаёт BPF/tcpdump-фильтр, ограничение по времени и размеру, после чего WireScope сохраняет PCAP как evidence-артефакт.
+Отдельно есть режим **«Прослушивание»**: можно выбрать интерфейс, задать BPF/tcpdump-фильтр, время и максимальный размер файла и сохранить PCAP как evidence-артефакт.
 
 ### Пассивный анализ
 
-Обычный аудит делает один ограниченный захват через `dumpcap`, затем один раз декодирует PCAP через `tshark -T ek`. После этого все пассивные сенсоры работают уже внутри Python-процесса.
+Обычный аудит делает один ограниченный захват через `dumpcap`, после чего PCAP один раз декодируется через `tshark -T ek`. Сенсоры работают уже по нормализованным packet records внутри Python-процесса.
 
-Сейчас разбираются, среди прочего:
+Сейчас разбираются Ethernet/MAC, 802.1Q/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS и SSDP.
 
-- Ethernet/MAC;
-- 802.1Q VLAN и QinQ;
-- ARP;
-- DHCPv4 и DHCPv6;
-- LLDP и CDP;
-- STP;
-- IPv6 RA и Neighbor Discovery;
-- mDNS, LLMNR, NBNS;
-- SSDP.
-
-WireScope старается не выдавать предположения за факты. Например, ARP-адреса могут дать полезную группировку, но не считаются доказательством реальной маски подсети. Если access-порт передаёт кадры без 802.1Q-тега, WireScope не придумывает для него VLAN ID.
+Наблюдения отделены от предположений. Например, ARP может дать полезный hint о группе адресов, но не считается доказательством маски сети. Если access-порт отдаёт кадры без 802.1Q-тега, WireScope не придумывает VLAN ID.
 
 ### Активное обнаружение
 
-Nmap запускается только после подтверждения scope. В API передаются цели и профиль, а не произвольные аргументы Nmap.
+Nmap запускается только после подтверждения scope. Клиент передаёт цели и профиль, а не произвольные флаги Nmap.
 
-Есть три профиля:
+Профили:
 
-- **Discovery** — быстро найти живые узлы;
-- **Standard** — основной профиль: discovery, TCP top-1000, `-sV`, ограниченный UDP-набор, OS detection при наличии подходящих привилегий;
-- **Deep** — полный TCP `1-65535`, более глубокая идентификация сервисов и расширенный UDP-набор.
+- **Discovery** — быстрое обнаружение живых узлов;
+- **Standard** — основной профиль: host discovery, TCP top-1000, `-sV`, ограниченный UDP-набор и OS detection, когда нужные privileges уже доступны;
+- **Deep** — TCP `1-65535`, более глубокая идентификация сервисов и расширенный UDP-набор.
 
-`0.0.0.0/0`, `::/0`, multicast и неконтролируемое разворачивание огромных IPv6-сетей запрещены. Для каждого профиля есть лимит числа адресов.
-
-NSE, `-sC`, `vuln`, brute-force, exploit и DoS-скрипты в активном discovery не используются.
+`0.0.0.0/0`, `::/0`, multicast и неконтролируемое разворачивание больших IPv6-префиксов запрещены. NSE, `-sC`, `vuln`, brute-force, exploit и DoS-скрипты в discovery не используются.
 
 ### Протокольные проверки
 
-После инвентаризации WireScope запускает только те модули, которые подходят найденному сервису. Сейчас есть проверки для:
+После инвентаризации запускаются только подходящие найденным сервисам модули:
 
 - SSH — `ssh-audit`;
 - TLS — `openssl s_client`;
 - HTTP/HTTPS — `curl`;
 - SMB — `smbclient`;
 - DNS — `dig`;
-- SNMP — безопасный SNMPv3 noAuth probe;
+- SNMP — консервативный SNMPv3 noAuth probe;
 - LDAP — anonymous base DSE через `ldapsearch`.
 
-Модули не перебирают пароли и community strings. `testssl.sh`, Nikto и Nuclei существуют только как отключённые `never-default` заготовки и из обычного профиля не запускаются.
+Пароли и community strings не перебираются. `testssl.sh`, Nikto и Nuclei остаются `never-default` и обычным профилем не запускаются.
 
 ### Findings и отчёты
 
-Протокольные модули сохраняют наблюдения, а не готовые «уязвимости». Findings строятся отдельным rule engine поверх нормализованных данных. Это позволяет не смешивать факт вроде «сервер предложил такой cipher» с интерпретацией «cipher слабый».
+Protocol modules сохраняют факты. Отдельный rule engine превращает нормализованные observations в findings. Так факт «сервер предложил такой cipher» не смешивается с выводом «cipher считается слабым».
 
-Findings содержат severity, confidence, затронутый asset/service, объяснение, рекомендацию и ссылки на исходные evidence. Находку можно подавить (`suppressed`) или принять как риск (`accepted_risk`); смена состояния сохраняется в истории.
+Finding хранит severity, confidence, затронутый asset/service, объяснение, рекомендацию и ссылки на evidence. Состояния `suppressed` и `accepted_risk` сохраняются вместе с историей изменений.
 
-Отчёт собирается из уже сохранённых данных и не запускает повторные проверки. Доступны:
+Отчёт строится из уже сохранённых данных и не запускает сканеры повторно. Сейчас доступны self-contained HTML и JSON по схеме `audit-report` v1. PDF пока не реализован.
 
-- самодостаточный HTML;
-- нормализованный JSON по схеме `audit-report` v1.
+## Архитектура
 
-PDF пока не реализован.
-
-## Как WireScope устроен
-
-Проект остаётся модульным монолитом. API и worker — отдельные процессы, но это не набор микросервисов.
+WireScope остаётся modular monolith. API и worker — отдельные процессы, но сетевых микросервисов между ними нет.
 
 ```text
 frontend (HTML/CSS/JS)
@@ -105,8 +86,8 @@ frontend (HTML/CSS/JS)
         ▼
 FastAPI
         │
-        ├── auth
-        ├── environment / interfaces / network / scope
+        ├── backend/routers/
+        ├── auth / network / scope
         ├── audits / jobs
         ├── inventory
         ├── findings / reports
@@ -124,15 +105,30 @@ worker
         └── report generation
 ```
 
-SQLite работает в WAL-режиме. В базе лежат нормализованные данные и метаданные артефактов; большие исходные файлы — PCAP, Nmap XML, stdout/stderr провайдеров, JSON/HTML-отчёты — хранятся отдельно в evidence store и регистрируются по UUID, размеру и SHA-256.
+`backend/app.py` теперь является composition root: собирает сервисы, подключает router-модули, frontend и static files. HTTP-маршруты разнесены по `backend/routers/` по предметным областям.
+
+SQLite работает в WAL-режиме. Нормализованные данные и метаданные артефактов лежат в БД; PCAP, Nmap XML, raw stdout/stderr и сгенерированные отчёты хранятся в evidence store и регистрируются по UUID, размеру и SHA-256.
 
 Подробнее: [архитектура](docs/ARCHITECTURE.md).
 
+## HTTP API
+
+Канонический API находится под `/api/v1`:
+
+```text
+GET  /api/v1/health
+GET  /api/v1/environment
+POST /api/v1/audits
+GET  /api/v1/jobs/{job_id}
+```
+
+Старый `/api/*` пока сохранён как compatibility alias, поэтому текущий frontend и существующие клиенты продолжают работать. Legacy routes скрыты из OpenAPI; Swagger/ReDoc показывают только `/api/v1/*`.
+
+Подробнее: [docs/API.md](docs/API.md).
+
 ## Модель привилегий
 
-`wirescope-api` и `wirescope-worker` не должны работать от root.
-
-Для захвата пакетов повышенные права получает только `/usr/bin/dumpcap`:
+`wirescope-api` и `wirescope-worker` не должны работать от root. Повышенные права для packet capture получает только `/usr/bin/dumpcap`:
 
 ```text
 wirescope-api / wirescope-worker
@@ -143,27 +139,27 @@ root:wireshark, 0750
 cap_net_admin,cap_net_raw=eip
 ```
 
-Nmap не получает дополнительные права от WireScope. Если raw sockets недоступны, provider переключается на TCP connect и отключает функции, которым нужны соответствующие capabilities.
+Nmap не повышается самим WireScope. Если raw sockets недоступны, provider использует TCP connect и пропускает функции, которым нужны соответствующие capabilities.
 
-Внешние команды запускаются массивами аргументов через общий runner. `shell=True` в этой части архитектуры не используется.
+Внешние команды запускаются массивами аргументов через общий runner; `shell=True` на этом пути не используется.
 
 Подробнее: [модель безопасности](docs/SECURITY_MODEL.md).
 
 ## GUI
 
-Оператор работает через браузер. Интерфейс рассчитан на два варианта:
+Оператор работает через браузер. Поддерживаются два основных режима:
 
-1. **локальный киоск** — Chromium на том же устройстве, обычно `http://127.0.0.1:8000/`;
-2. **удалённый браузер** — доступ по LAN через TLS/reverse proxy.
+1. **локальный kiosk** — Chromium на самом appliance, обычно `http://127.0.0.1:8000/`;
+2. **удалённый браузер** — LAN-доступ через TLS/reverse proxy.
 
-Для киоска не нужен GNOME, KDE или XFCE. Системный kiosk-unit занимает `tty1` и запускает Chromium через Cage либо Xorg/xinit. На VMware используется Xorg.
+Для киоска не нужен GNOME, KDE или XFCE. Системный kiosk-unit занимает `tty1` и запускает Chromium через Cage или Xorg/xinit; на VMware используется Xorg.
 
-Есть две локальные роли:
+Роли:
 
-- `auditor` — может запускать и останавливать задания, менять сетевые настройки, управлять findings и генерировать отчёты;
-- `viewer` — только просмотр.
+- `auditor` — запуск/отмена jobs, сетевые настройки, управление findings, генерация отчётов;
+- `viewer` — просмотр.
 
-Сессии хранятся в HttpOnly cookie; в SQLite хранится SHA-256 digest токена, а не сам токен.
+Сессия хранится в HttpOnly cookie; в SQLite сохраняется SHA-256 digest токена, а не сам токен.
 
 ## Быстрая установка
 
@@ -179,16 +175,23 @@ cd /opt/wirescope
 
 sudo ./packaging/install.sh \
   --generate-admin-password \
-  --bind-host 127.0.0.1 \
   --with-kiosk \
   --enable-kiosk
 ```
 
-Почему клон выполняется без `sudo`: `sudo git clone` использует SSH-ключи root, а не текущего пользователя. Checkout также делается до переноса в `/opt`, чтобы не создавать лишних проблем с ownership и Git `safe.directory`.
+Клон выполняется без `sudo`, чтобы Git использовал SSH-ключи текущего пользователя. Checkout также делается до переноса в `/opt`, чтобы не создавать лишних проблем с ownership и `safe.directory`.
 
-Установщик работает **из checkout** и не копирует проект в другое место. Не удаляйте и не переименовывайте каталог после установки: systemd units ссылаются на него.
+Установщик работает **из checkout** и не копирует код в другой каталог. Не удаляйте и не переименовывайте checkout после установки: systemd units ссылаются на него.
 
-Данные по умолчанию для system install:
+По умолчанию installer и application bind используют **`127.0.0.1:8000`**. Публичный bind требует явного решения:
+
+```bash
+sudo ./packaging/install.sh --bind-host 0.0.0.0
+```
+
+Для доступа с другой машины предпочтительнее оставить API на loopback и поставить Caddy/nginx перед ним с TLS.
+
+Основные пути system install:
 
 ```text
 /opt/wirescope                  код и virtualenv
@@ -197,9 +200,7 @@ sudo ./packaging/install.sh \
 /etc/systemd/system             system units
 ```
 
-Полная инструкция, включая Debian/Ubuntu, Fedora/RHEL/Rocky, openSUSE, user-systemd, kiosk, TLS, upgrade и rollback: [docs/INSTALLATION.md](docs/INSTALLATION.md).
-
-> Важно: CLI установщика сам по себе сейчас имеет default `--bind-host 0.0.0.0`. Для автономного киоска и для схемы с reverse proxy в документации везде используется явный `--bind-host 127.0.0.1`. Публиковать обычный HTTP на `0.0.0.0:8000` без осознанной необходимости не стоит.
+Полная инструкция: [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Разработка
 
@@ -211,27 +212,28 @@ python3 -m venv .venv
 .venv/bin/alembic upgrade head
 ```
 
-В двух терминалах:
+API и worker запускаются отдельно:
 
 ```bash
 .venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000
 .venv/bin/python -m jobs.worker
 ```
 
-Обычный тестовый прогон не трогает живую сеть:
+Обычный тестовый прогон не обращается к живой сети:
 
 ```bash
 .venv/bin/pytest
 ```
 
-Тесты с `network` и `live_pi` включаются только явно.
+`network` и `live_pi` тесты включаются только явно.
 
 ## Документация
 
 | Документ | Что в нём |
 | --- | --- |
+| [API](docs/API.md) | `/api/v1`, compatibility policy и auth semantics |
 | [Установка](docs/INSTALLATION.md) | system/user install, kiosk, TLS, дистрибутивы, upgrade/rollback |
-| [Архитектура](docs/ARCHITECTURE.md) | модули, потоки данных, jobs, persistence, privilege boundaries |
+| [Архитектура](docs/ARCHITECTURE.md) | модули, data flow, jobs, persistence, privilege boundaries |
 | [Модель сканирования](docs/SCANNING_MODEL.md) | scope, Nmap profiles, inventory, protocol audits |
 | [Модель безопасности](docs/SECURITY_MODEL.md) | trust boundaries, auth, TLS, evidence, least privilege |
 | [Findings](docs/FINDINGS_MODEL.md) | rules, severity/confidence, deduplication, false-positive boundaries |
@@ -239,16 +241,16 @@ python3 -m venv .venv
 | [GUI](docs/GUI_MODEL.md) | роли, wizard, listen/record, kiosk/laptop layout |
 | [Разработка](docs/DEVELOPMENT.md) | локальный запуск, миграции, тесты, handler contract |
 | [Runbook](docs/RUNBOOK.md) | эксплуатация, диагностика, backup/restore, recovery |
-| [План реализации](docs/IMPLEMENTATION_PLAN.md) | история M0–M8 и то, что ещё осталось закрыть |
+| [План реализации](docs/IMPLEMENTATION_PLAN.md) | история M0–M8 и дальнейшая работа |
 
 ## Текущее состояние
 
-Ветка `milestone-8-appliance` содержит реализацию этапов M0–M7 и текущую appliance-обвязку M8: installer, systemd, kiosk, backup/restore, dependency detection, сетевое управление, TLS/proxy guidance и режим записи PCAP.
+Основная appliance-линия включает M0–M7 и текущую M8-обвязку: installer, systemd, kiosk, backup/restore, dependency detection, сетевое управление, TLS/proxy и запись PCAP.
 
-Из заметных ограничений на текущий момент:
+Из известных ограничений:
 
-- PDF export отсутствует;
-- нет отдельной security audit-log таблицы;
-- автоматическая policy-driven очистка завершённых аудитов и зарегистрированных evidence ещё не сделана;
-- автоматического retry завершённых/прерванных jobs нет;
-- совместимость tshark нужно проверять на версиях пакетов конкретных дистрибутивов перед релизом.
+- PDF export пока отсутствует;
+- отдельной security audit-log таблицы ещё нет;
+- policy-driven автоматическая очистка завершённых аудитов/evidence не реализована;
+- автоматического retry terminal/interrupted jobs нет;
+- совместимость tshark требует release-проверки на пакетных версиях поддерживаемых дистрибутивов.

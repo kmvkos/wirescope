@@ -27,6 +27,9 @@ from reports.store import ReportStore
 from storage.evidence import EvidenceStore
 
 
+_UI_ASSET_VERSION = "20260825-ui2"
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -169,12 +172,35 @@ def create_app(
     @application.get("/", response_class=HTMLResponse)
     def root() -> HTMLResponse:
         index = active_settings.frontend_dir / "index.html"
-        html = index.read_text(encoding="utf-8")
-        html = html.replace(
-            "</body>",
-            '<script src="/static/operations.js"></script>\n</body>',
+        page = index.read_text(encoding="utf-8")
+        # Cache-bust all core frontend assets. Kiosk Chromium can otherwise keep
+        # an old UI across an appliance code upgrade until a manual hard reload.
+        for asset in (
+            "style.css",
+            "enhancements.css",
+            "i18n.js",
+            "app.js",
+            "enhancements.js",
+        ):
+            page = page.replace(
+                f"/static/{asset}",
+                f"/static/{asset}?v={_UI_ASSET_VERSION}",
+            )
+        page = page.replace(
+            "</head>",
+            f'<link rel="stylesheet" href="/static/modern.css?v={_UI_ASSET_VERSION}">\n</head>',
         )
-        return HTMLResponse(html)
+        page = page.replace(
+            "</body>",
+            f'<script src="/static/operations.js?v={_UI_ASSET_VERSION}"></script>\n</body>',
+        )
+        return HTMLResponse(
+            page,
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+            },
+        )
 
     return application
 

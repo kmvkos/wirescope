@@ -1,118 +1,389 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
-
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
     >
-
     <title>WireScope</title>
-
-    <link
-        rel="stylesheet"
-        href="/static/style.css"
-    >
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 
 <body>
-
-<div class="app">
+<div class="app" id="app">
 
     <header>
         <div>
             <h1>WireScope</h1>
-            <p>Network Audit Appliance</p>
+            <p id="header-subtitle">Network audit appliance</p>
         </div>
-
-        <div
-            id="system-status"
-            class="status unknown"
-        >
-            CHECKING
+        <div class="header-meta">
+            <div
+                id="system-status"
+                class="status unknown"
+                aria-live="polite"
+            >CHECKING</div>
+            <div id="session-chip" class="session-chip" hidden>
+                <span id="session-label"></span>
+                <button
+                    type="button"
+                    id="logout-button"
+                    class="icon-button"
+                    aria-label="Sign out"
+                >Out</button>
+            </div>
         </div>
     </header>
 
+    <main id="main">
 
-    <main>
-
-        <section class="card">
-
-            <h2>Environment</h2>
-
-            <div class="grid">
-
-                <div class="item">
-                    <span>Hostname</span>
-                    <strong id="hostname">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>Interface</span>
-                    <strong id="interface">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>Link</span>
-                    <strong id="link">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>Speed</span>
-                    <strong id="speed">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>IPv4</span>
-                    <strong id="ipv4">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>Gateway</span>
-                    <strong id="gateway">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>MAC</span>
-                    <strong id="mac">—</strong>
-                </div>
-
-                <div class="item">
-                    <span>MTU</span>
-                    <strong id="mtu">—</strong>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section class="card">
-
-            <h2>DNS</h2>
-
-            <div id="dns">
-                —
-            </div>
-
-        </section>
-
-
-        <button
-            class="primary"
-            onclick="loadEnvironment()"
+        <section
+            id="screen-login"
+            class="screen"
+            data-screen="login"
+            hidden
         >
-            REFRESH
-        </button>
+            <h2>Sign in</h2>
+            <p class="hint">Local operator session. Audits keep running if this display restarts.</p>
+            <form id="login-form" autocomplete="username">
+                <label for="login-username">Username</label>
+                <input
+                    id="login-username"
+                    name="username"
+                    type="text"
+                    required
+                    maxlength="64"
+                    autocomplete="username"
+                >
+                <label for="login-password">Password</label>
+                <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    required
+                    maxlength="128"
+                    autocomplete="current-password"
+                >
+                <p id="login-error" class="error" role="alert" hidden></p>
+                <button type="submit" class="primary">Sign in</button>
+            </form>
+        </section>
+
+        <section
+            id="screen-home"
+            class="screen"
+            data-screen="home"
+            hidden
+        >
+            <h2>Audits</h2>
+            <p id="home-role-hint" class="hint"></p>
+            <div class="actions">
+                <button
+                    type="button"
+                    id="new-audit-button"
+                    class="primary"
+                >New audit</button>
+            </div>
+            <div id="audit-list" class="list" aria-live="polite"></div>
+        </section>
+
+        <section
+            id="screen-environment"
+            class="screen"
+            data-screen="environment"
+            hidden
+        >
+            <h2>Environment</h2>
+            <p class="hint">Host context before choosing a capture interface.</p>
+            <div class="grid" id="environment-grid"></div>
+            <div class="card compact">
+                <h3>DNS</h3>
+                <p id="environment-dns">—</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="home">Back</button>
+                <button type="button" class="primary" data-nav="interface">Next</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-interface"
+            class="screen"
+            data-screen="interface"
+            hidden
+        >
+            <h2>Interface</h2>
+            <p class="hint">Only allowed, non-loopback interfaces can start capture.</p>
+            <div id="interface-list" class="choice-list" role="listbox" aria-label="Network interfaces"></div>
+            <p id="interface-error" class="error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="environment">Back</button>
+                <button type="button" class="primary" id="interface-next">Next</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-scope"
+            class="screen"
+            data-screen="scope"
+            hidden
+        >
+            <h2>Network / VLAN / scope</h2>
+            <p class="hint">Observed addresses are hints only. Active scans need an authorized CIDR list.</p>
+            <label for="scope-vlan">VLAN / segment note</label>
+            <input
+                id="scope-vlan"
+                type="text"
+                maxlength="64"
+                placeholder="Optional, e.g. VLAN 20"
+            >
+            <label for="scope-targets">Authorized targets</label>
+            <textarea
+                id="scope-targets"
+                rows="3"
+                maxlength="4000"
+                placeholder="One CIDR or host per line"
+            ></textarea>
+            <p id="scope-error" class="error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="interface">Back</button>
+                <button type="button" class="primary" data-nav="profile">Next</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-profile"
+            class="screen"
+            data-screen="profile"
+            hidden
+        >
+            <h2>Profile</h2>
+            <div class="choice-list" id="profile-list">
+                <button type="button" class="choice" data-profile="passive">
+                    <strong>Passive</strong>
+                    <span>Capture and sensors only. No Nmap.</span>
+                </button>
+                <button type="button" class="choice" data-profile="discovery">
+                    <strong>Discovery</strong>
+                    <span>Passive, then authorized host discovery.</span>
+                </button>
+                <button type="button" class="choice" data-profile="standard">
+                    <strong>Standard</strong>
+                    <span>Discovery, protocol audits, findings, report.</span>
+                </button>
+                <button type="button" class="choice" data-profile="deep">
+                    <strong>Deep</strong>
+                    <span>Deeper Nmap, then audits, findings, report.</span>
+                </button>
+            </div>
+            <label for="scope-duration">Passive duration (seconds)</label>
+            <input
+                id="scope-duration"
+                type="number"
+                min="5"
+                max="300"
+                step="1"
+                value="30"
+            >
+            <p id="profile-error" class="error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="scope">Back</button>
+                <button type="button" class="primary" data-nav="confirm">Next</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-confirm"
+            class="screen"
+            data-screen="confirm"
+            hidden
+        >
+            <h2>Confirm audit</h2>
+            <p class="hint">Starting work queues durable jobs. Closing this display does not stop them.</p>
+            <dl id="confirm-summary" class="summary-list"></dl>
+            <label class="check">
+                <input id="confirm-authorize" type="checkbox">
+                <span>I confirm the interface, profile, and authorized scope.</span>
+            </label>
+            <p id="confirm-error" class="error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="profile">Back</button>
+                <button type="button" class="primary" id="start-audit-button">Start</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-progress"
+            class="screen"
+            data-screen="progress"
+            hidden
+        >
+            <h2>Progress</h2>
+            <p id="progress-stage" class="stage">Queued</p>
+            <div
+                class="progress-bar"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                id="progress-bar"
+            >
+                <div id="progress-fill"></div>
+            </div>
+            <p id="progress-message" class="hint">Waiting for worker…</p>
+            <ol id="progress-events" class="event-list"></ol>
+            <p id="progress-warning" class="warning" hidden></p>
+            <div class="actions">
+                <button
+                    type="button"
+                    class="danger"
+                    id="stop-audit-button"
+                >Stop</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-summary"
+            class="screen"
+            data-screen="summary"
+            hidden
+        >
+            <h2>Summary</h2>
+            <dl id="summary-list" class="summary-list"></dl>
+            <div class="nav-grid">
+                <button type="button" class="secondary" data-open="assets">Assets</button>
+                <button type="button" class="secondary" data-open="observations">Observations</button>
+                <button type="button" class="secondary" data-open="assessment">Assessment</button>
+                <button type="button" class="secondary" data-open="findings">Findings</button>
+                <button type="button" class="secondary" data-open="report">Report</button>
+            </div>
+            <div class="actions">
+                <button type="button" class="primary" data-nav="home">Home</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-assets"
+            class="screen"
+            data-screen="assets"
+            hidden
+        >
+            <h2>Assets</h2>
+            <div id="asset-list" class="list"></div>
+            <h3>Services</h3>
+            <div id="service-list" class="list"></div>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="summary">Back</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-observations"
+            class="screen"
+            data-screen="observations"
+            hidden
+        >
+            <h2>Observations</h2>
+            <p class="hint">Facts from sensors and protocol modules. These are not findings.</p>
+            <div id="observation-list" class="list"></div>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="summary">Back</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-assessment"
+            class="screen"
+            data-screen="assessment"
+            hidden
+        >
+            <h2>Assessment</h2>
+            <p class="hint">Interpretations with explicit confidence. Hints are not confirmed subnets.</p>
+            <div id="assessment-list" class="list"></div>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="summary">Back</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-findings"
+            class="screen"
+            data-screen="findings"
+            hidden
+        >
+            <h2>Findings</h2>
+            <p class="hint">Rule results with severity. Separate from raw observations.</p>
+            <div id="finding-list" class="list"></div>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="summary">Back</button>
+            </div>
+        </section>
+
+        <section
+            id="screen-report"
+            class="screen"
+            data-screen="report"
+            hidden
+        >
+            <h2>Report</h2>
+            <p id="report-status" class="hint">No report generated yet.</p>
+            <div class="actions wrap">
+                <button
+                    type="button"
+                    class="secondary"
+                    id="open-html-report"
+                    hidden
+                >Open HTML</button>
+                <button
+                    type="button"
+                    class="secondary"
+                    id="download-json-report"
+                    hidden
+                >JSON export</button>
+                <button
+                    type="button"
+                    class="primary"
+                    id="generate-report-button"
+                >Generate</button>
+            </div>
+            <iframe
+                id="report-frame"
+                title="Audit report"
+                hidden
+                sandbox="allow-same-origin"
+            ></iframe>
+            <div class="actions">
+                <button type="button" class="secondary" data-nav="summary">Back</button>
+            </div>
+        </section>
 
     </main>
+
+    <div
+        id="modal"
+        class="modal"
+        hidden
+    >
+        <div
+            class="dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            aria-describedby="modal-body"
+        >
+            <h2 id="modal-title">Confirm</h2>
+            <p id="modal-body"></p>
+            <div class="actions">
+                <button type="button" class="secondary" id="modal-cancel">Back</button>
+                <button type="button" class="danger" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
 
 </div>
 
 <script src="/static/app.js"></script>
-
 </body>
-
 </html>

@@ -1,41 +1,66 @@
+/* Kiosk baseline: 480x320 landscape operator display. */
 * {
     box-sizing: border-box;
 }
 
+html,
 body {
+    height: 100%;
     margin: 0;
+}
+
+body {
     font-family: Arial, sans-serif;
     background: #111418;
     color: #f2f2f2;
+    overflow: hidden;
 }
 
 .app {
-    max-width: 850px;
-    margin: auto;
-    padding: 20px;
+    height: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 h1 {
     margin: 0;
-    font-size: 32px;
+    font-size: 18px;
+    line-height: 1.1;
 }
 
-header p {
+header p,
+.hint {
     margin: 4px 0 0;
-    color: #888;
+    color: #929aa5;
+    font-size: 12px;
+}
+
+.header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .status {
-    padding: 8px 14px;
+    padding: 8px 10px;
     border-radius: 8px;
     font-weight: bold;
+    font-size: 12px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
 }
 
 .status.online {
@@ -53,47 +78,338 @@ header p {
     color: #aaa;
 }
 
-.card {
-    background: #1b2026;
-    padding: 20px;
-    margin-bottom: 16px;
-    border-radius: 12px;
+.session-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #252b32;
+    border-radius: 8px;
+    padding: 0 4px 0 8px;
+    min-height: 44px;
+    font-size: 12px;
 }
 
-.card h2 {
+main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.screen {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 100%;
+}
+
+.screen[hidden],
+[hidden] {
+    display: none !important;
+}
+
+h2 {
+    margin: 0;
+    font-size: 16px;
+}
+
+h3 {
+    margin: 8px 0 4px;
+    font-size: 13px;
+    color: #c5ccd4;
+}
+
+.card,
+.item,
+.choice,
+.list-item {
+    background: #1b2026;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.card.compact {
+    padding: 10px 12px;
+}
+
+.card h3 {
     margin-top: 0;
 }
 
 .grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
 }
 
-.item {
-    background: #252b32;
-    padding: 12px;
-    border-radius: 8px;
-}
-
-.item span {
+.item span,
+.choice span,
+.list-item span,
+label {
     display: block;
     color: #929aa5;
-    font-size: 13px;
-    margin-bottom: 5px;
+    font-size: 12px;
+    margin-bottom: 4px;
 }
 
-.item strong {
-    font-size: 16px;
+.item strong,
+.choice strong,
+.list-item strong {
+    font-size: 14px;
     word-break: break-all;
 }
 
-.primary {
+label.check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: #f2f2f2;
+    font-size: 13px;
+}
+
+label.check input {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+input,
+textarea {
     width: 100%;
-    padding: 14px;
+    min-height: 44px;
+    border: 1px solid #3a424c;
+    border-radius: 8px;
+    background: #252b32;
+    color: #f2f2f2;
+    font-size: 16px;
+    padding: 8px 10px;
+}
+
+textarea {
+    min-height: 72px;
+    resize: vertical;
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+    flex-shrink: 0;
+}
+
+.actions.wrap {
+    flex-wrap: wrap;
+}
+
+.actions button {
+    flex: 1;
+}
+
+.primary,
+.secondary,
+.danger,
+.icon-button,
+.choice {
     border: 0;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: bold;
     cursor: pointer;
+    min-height: 44px;
+    min-width: 44px;
+}
+
+.primary {
+    background: #2f6fed;
+    color: #fff;
+}
+
+.secondary {
+    background: #2a3138;
+    color: #f2f2f2;
+}
+
+.danger {
+    background: #8a2424;
+    color: #ffd6d6;
+}
+
+.icon-button {
+    background: transparent;
+    color: #c5ccd4;
+    padding: 0 10px;
+}
+
+.primary:disabled,
+.secondary:disabled,
+.danger:disabled,
+.choice:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.choice-list,
+.list,
+.nav-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.choice,
+.list-item {
+    width: 100%;
+    text-align: left;
+    color: inherit;
+}
+
+.choice.selected,
+.list-item.selected {
+    outline: 2px solid #2f6fed;
+}
+
+.choice.denied {
+    opacity: 0.55;
+}
+
+.nav-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.summary-list {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 6px 8px;
+    font-size: 13px;
+}
+
+.summary-list dt {
+    color: #929aa5;
+}
+
+.summary-list dd {
+    margin: 0;
+    word-break: break-word;
+}
+
+.progress-bar {
+    height: 16px;
+    background: #252b32;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.progress-bar div {
+    height: 100%;
+    width: 0;
+    background: #2f6fed;
+}
+
+.stage {
+    margin: 0;
+    font-weight: bold;
+}
+
+.event-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: #c5ccd4;
+}
+
+.error,
+.warning {
+    margin: 0;
+    font-size: 13px;
+}
+
+.error {
+    color: #ff7d7d;
+}
+
+.warning {
+    color: #e2c36b;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 10;
+}
+
+.dialog {
+    background: #1b2026;
+    border-radius: 12px;
+    padding: 16px;
+    width: min(420px, 100%);
+}
+
+iframe {
+    width: 100%;
+    min-height: 160px;
+    border: 0;
+    border-radius: 8px;
+    background: #fff;
+}
+
+/* Laptop / desktop detail layout. Kiosk remains single-column. */
+@media (min-width: 900px) {
+    html,
+    body {
+        overflow: auto;
+    }
+
+    .app {
+        max-width: 1100px;
+        padding: 20px;
+        height: auto;
+        min-height: 100%;
+    }
+
+    h1 {
+        font-size: 28px;
+    }
+
+    h2 {
+        font-size: 22px;
+    }
+
+    .grid,
+    .nav-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .detail-split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    iframe {
+        min-height: 480px;
+    }
+}
+
+@media (max-width: 480px) and (max-height: 320px) {
+    h1 {
+        font-size: 16px;
+    }
+
+    .status,
+    .session-chip,
+    .primary,
+    .secondary,
+    .danger,
+    input {
+        min-height: 44px;
+    }
 }

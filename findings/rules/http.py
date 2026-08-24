@@ -2,6 +2,14 @@
 
 from engine.passive_models import ConfidenceLevel
 from findings.catalog import HTTPS_NAMES, HTTPS_PORTS
+from findings.copy import (
+    HTTP_MISSING_HEADERS,
+    HTTP_MISSING_HSTS,
+    HTTP_SERVER_DISCLOSURE,
+    http_disclosure_rationale,
+    http_headers_rationale,
+    http_hsts_rationale,
+)
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     draft,
@@ -36,25 +44,14 @@ class MissingHstsRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="HTTPS service does not send HSTS",
+                    title=HTTP_MISSING_HSTS["title"],
                     severity=Severity.MEDIUM,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The HTTPS response omitted "
-                        "Strict-Transport-Security."
-                    ),
-                    rationale=(
-                        "http_response headers were normalized and did not "
-                        "include strict-transport-security on an HTTPS "
-                        "service."
-                    ),
-                    recommendation=(
-                        "Send Strict-Transport-Security with a conservative "
-                        "max-age on HTTPS listeners. Do not enable HSTS on "
-                        "plain HTTP."
-                    ),
+                    description=HTTP_MISSING_HSTS["description"],
+                    rationale=http_hsts_rationale(),
+                    recommendation=HTTP_MISSING_HSTS["recommendation"],
                     data={"headers": _headers(sample)},
                     observations=group,
                     dedupe_key=service_dedupe_key(sample),
@@ -89,23 +86,14 @@ class MissingSecurityHeadersRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="HTTP security headers are incomplete",
+                    title=HTTP_MISSING_HEADERS["title"],
                     severity=Severity.LOW,
                     confidence=ConfidenceLevel.MEDIUM,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The HTTP response omitted common click-jacking or "
-                        "content-security headers."
-                    ),
-                    rationale=(
-                        "http_response headers did not include: "
-                        + ", ".join(missing)
-                    ),
-                    recommendation=(
-                        "Add Content-Security-Policy and either "
-                        "X-Frame-Options or CSP frame-ancestors."
-                    ),
+                    description=HTTP_MISSING_HEADERS["description"],
+                    rationale=http_headers_rationale(", ".join(missing)),
+                    recommendation=HTTP_MISSING_HEADERS["recommendation"],
                     data={"missing_headers": missing, "headers": _headers(sample)},
                     observations=group,
                     dedupe_key=service_dedupe_key(sample),
@@ -138,22 +126,18 @@ class HttpServerDisclosureRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="HTTP server identity is disclosed",
+                    title=HTTP_SERVER_DISCLOSURE["title"],
                     severity=Severity.INFO,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The HTTP response includes Server or X-Powered-By."
+                    description=HTTP_SERVER_DISCLOSURE["description"],
+                    rationale=http_disclosure_rationale(
+                        ", ".join(
+                            f"{key}={value}" for key, value in disclosed.items()
+                        )
                     ),
-                    rationale=(
-                        "http_response headers recorded "
-                        + ", ".join(f"{key}={value}" for key, value in disclosed.items())
-                    ),
-                    recommendation=(
-                        "Omit or genericize Server and X-Powered-By unless "
-                        "needed for compatibility."
-                    ),
+                    recommendation=HTTP_SERVER_DISCLOSURE["recommendation"],
                     data={"headers": disclosed},
                     observations=group,
                     dedupe_key=service_dedupe_key(sample),

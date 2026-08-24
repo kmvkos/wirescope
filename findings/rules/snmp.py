@@ -1,6 +1,7 @@
 """SNMP unauthenticated-exposure findings."""
 
 from engine.passive_models import ConfidenceLevel
+from findings.copy import SNMP_UNAUTH, snmp_rationale
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     draft,
@@ -31,28 +32,14 @@ class SnmpUnauthenticatedRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="SNMP responded without authentication",
+                    title=SNMP_UNAUTH["title"],
                     severity=Severity.HIGH,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "An SNMPv3 noAuthNoPriv probe received a response."
-                    ),
-                    rationale=(
-                        "snmp_unauthenticated.responded is true"
-                        + (
-                            f" (usm_indicator={sample.data.get('usm_indicator')})"
-                            if sample.data.get("usm_indicator")
-                            else ""
-                        )
-                        + "."
-                    ),
-                    recommendation=(
-                        "Require SNMPv3 authentication and privacy, and "
-                        "restrict SNMP to management networks. Community "
-                        "guessing is outside the default profile."
-                    ),
+                    description=SNMP_UNAUTH["description"],
+                    rationale=snmp_rationale(sample.data.get("usm_indicator")),
+                    recommendation=SNMP_UNAUTH["recommendation"],
                     data={
                         "responded": True,
                         "auth": sample.data.get("auth"),

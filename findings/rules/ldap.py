@@ -1,6 +1,7 @@
 """LDAP anonymous-bind findings."""
 
 from engine.passive_models import ConfidenceLevel
+from findings.copy import LDAP_ANON, ldap_rationale
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     draft,
@@ -30,23 +31,14 @@ class LdapAnonymousBindRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="LDAP anonymous bind is allowed",
+                    title=LDAP_ANON["title"],
                     severity=Severity.MEDIUM,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "Anonymous LDAP search returned directory naming "
-                        "context attributes."
-                    ),
-                    rationale=(
-                        "ldap_rootdse/ldap_anonymous_bind.anonymous_bind is "
-                        "true."
-                    ),
-                    recommendation=(
-                        "Disable anonymous bind, or restrict base DSE "
-                        "disclosure to authenticated clients."
-                    ),
+                    description=LDAP_ANON["description"],
+                    rationale=ldap_rationale(),
+                    recommendation=LDAP_ANON["recommendation"],
                     data={
                         "anonymous_bind": True,
                         "attributes": sample.data.get("attributes") or {},

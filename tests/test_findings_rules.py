@@ -56,6 +56,9 @@ def test_weak_ssh_algorithms_and_modern_ssh_false_positive():
     assert "WS-SSH-WEAK-ALGORITHMS" in _ids(findings)
     ssh = next(item for item in findings if item.rule_id == "WS-SSH-WEAK-ALGORITHMS")
     assert ssh.severity == Severity.HIGH
+    assert ssh.title == "Предлагаются слабые алгоритмы SSH"
+    assert "слабые алгоритмы" in ssh.description
+    assert "Отключите SHA-1" in ssh.recommendation
     assert ssh.observation_ids == [weak.id]
     assert ssh.evidence_artifact_ids == ["evidence-1"]
     assert evaluate_findings(_context([modern])) == []
@@ -388,3 +391,18 @@ def test_findings_are_deterministic():
     first = [item.model_dump() for item in evaluate_findings(_context(observations))]
     second = [item.model_dump() for item in evaluate_findings(_context(observations))]
     assert first == second
+
+
+def test_catalog_copy_is_russian():
+    from findings.copy import STATIC_COPY, management_title
+
+    for rule_id, payload in STATIC_COPY.items():
+        for field in ("title", "description", "recommendation"):
+            text = payload[field]
+            assert any("а" <= ch.lower() <= "я" or ch in "ёЁ" for ch in text), (
+                rule_id,
+                field,
+            )
+            assert "Weak SSH" not in text
+            assert "Legacy TLS" not in text
+    assert "небезопасная служба управления telnet" in management_title("telnet")

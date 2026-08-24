@@ -10,6 +10,16 @@ from findings.catalog import (
     TLS1_0_TOKENS,
     WEAK_TLS_CIPHER_TOKENS,
 )
+from findings.copy import (
+    TLS_CERT_EXPIRED,
+    TLS_CERT_UNTRUSTED,
+    TLS_LEGACY,
+    TLS_WEAK_CIPHER,
+    tls_cipher_rationale,
+    tls_expired_rationale,
+    tls_legacy_rationale,
+    tls_untrusted_rationale,
+)
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     draft,
@@ -48,23 +58,14 @@ class LegacyTlsProtocolRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="Legacy TLS protocol is negotiated",
+                    title=TLS_LEGACY["title"],
                     severity=_protocol_severity(legacy),
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The TLS handshake negotiated a protocol older than "
-                        "TLS 1.2."
-                    ),
-                    rationale=(
-                        "tls_session observations recorded protocol "
-                        f"{legacy[0]}."
-                    ),
-                    recommendation=(
-                        "Disable SSLv3, TLS 1.0, and TLS 1.1. Offer TLS 1.2 "
-                        "and TLS 1.3 only."
-                    ),
+                    description=TLS_LEGACY["description"],
+                    rationale=tls_legacy_rationale(legacy[0]),
+                    recommendation=TLS_LEGACY["recommendation"],
                     data={"protocols": legacy},
                     observations=group,
                     dedupe_key=service_dedupe_key(sample),
@@ -96,23 +97,14 @@ class WeakTlsCipherRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="Weak TLS cipher is negotiated",
+                    title=TLS_WEAK_CIPHER["title"],
                     severity=Severity.HIGH,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The TLS handshake selected a cipher suite that uses "
-                        "NULL, EXPORT, RC4, DES, 3DES, MD5, or anonymous DH."
-                    ),
-                    rationale=(
-                        "tls_session observations recorded cipher "
-                        f"{weak[0]}."
-                    ),
-                    recommendation=(
-                        "Disable legacy cipher suites and prefer AEAD suites "
-                        "such as AES-GCM or ChaCha20-Poly1305."
-                    ),
+                    description=TLS_WEAK_CIPHER["description"],
+                    rationale=tls_cipher_rationale(weak[0]),
+                    recommendation=TLS_WEAK_CIPHER["recommendation"],
                     data={"ciphers": weak},
                     observations=group,
                     dedupe_key=service_dedupe_key(sample),
@@ -144,24 +136,17 @@ class TlsCertificateExpiredRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="TLS certificate has expired",
+                    title=TLS_CERT_EXPIRED["title"],
                     severity=Severity.HIGH,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The presented TLS certificate notAfter date is in "
-                        "the past relative to evaluation time."
+                    description=TLS_CERT_EXPIRED["description"],
+                    rationale=tls_expired_rationale(
+                        sample.data.get("not_after"),
+                        context.evaluated_at.isoformat(),
                     ),
-                    rationale=(
-                        "tls_certificate.not_after is "
-                        f"{sample.data.get('not_after')} and evaluation time "
-                        f"is {context.evaluated_at.isoformat()}."
-                    ),
-                    recommendation=(
-                        "Replace the certificate before expiry and automate "
-                        "renewal."
-                    ),
+                    recommendation=TLS_CERT_EXPIRED["recommendation"],
                     data={
                         "not_after": sample.data.get("not_after"),
                         "subject": sample.data.get("subject"),
@@ -196,25 +181,17 @@ class TlsCertificateUntrustedRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="TLS certificate did not verify",
+                    title=TLS_CERT_UNTRUSTED["title"],
                     severity=Severity.MEDIUM,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "OpenSSL reported a non-zero certificate verify code "
-                        "for this service."
+                    description=TLS_CERT_UNTRUSTED["description"],
+                    rationale=tls_untrusted_rationale(
+                        sample.data.get("verify_code"),
+                        sample.data.get("verify_message"),
                     ),
-                    rationale=(
-                        "tls_certificate.verify_code is "
-                        f"{sample.data.get('verify_code')} "
-                        f"({sample.data.get('verify_message')})."
-                    ),
-                    recommendation=(
-                        "Install a certificate issued by a trusted CA, or "
-                        "document the private PKI if this is an expected "
-                        "lab/internal trust anchor."
-                    ),
+                    recommendation=TLS_CERT_UNTRUSTED["recommendation"],
                     data={
                         "verify_code": sample.data.get("verify_code"),
                         "verify_message": sample.data.get("verify_message"),

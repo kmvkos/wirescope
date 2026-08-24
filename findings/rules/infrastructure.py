@@ -3,6 +3,13 @@
 from typing import Any
 
 from engine.passive_models import ConfidenceLevel
+from findings.copy import (
+    LLMNR,
+    MULTIPLE_DHCP,
+    NBNS,
+    dhcp_rationale,
+    infra_rationale,
+)
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import draft
 
@@ -17,14 +24,9 @@ class LlmnrPresentRule:
             context,
             rule_id=self.id,
             sensor="llmnr",
-            title="LLMNR name resolution was observed",
-            description=(
-                "Passive capture observed LLMNR, which is susceptible to "
-                "name-spoofing on local segments."
-            ),
-            recommendation=(
-                "Disable LLMNR on endpoints and prefer authenticated DNS."
-            ),
+            title=LLMNR["title"],
+            description=LLMNR["description"],
+            recommendation=LLMNR["recommendation"],
             severity=Severity.MEDIUM,
         )
 
@@ -39,14 +41,9 @@ class NbnsPresentRule:
             context,
             rule_id=self.id,
             sensor="nbns",
-            title="NetBIOS name service was observed",
-            description=(
-                "Passive capture observed NBNS/NetBIOS name traffic."
-            ),
-            recommendation=(
-                "Disable NetBIOS name resolution where unused, and treat "
-                "NBNS as a poisoning-prone local protocol."
-            ),
+            title=NBNS["title"],
+            description=NBNS["description"],
+            recommendation=NBNS["recommendation"],
             severity=Severity.MEDIUM,
         )
 
@@ -70,23 +67,14 @@ class MultipleDhcpServersRule:
                 rule_id=self.id,
                 rule_version="1",
                 family="infrastructure",
-                title="Multiple DHCP servers were observed",
+                title=MULTIPLE_DHCP["title"],
                 severity=Severity.MEDIUM,
                 confidence=ConfidenceLevel.HIGH,
                 asset_id=None,
                 service_id=None,
-                description=(
-                    "Passive DHCP observations include more than one server "
-                    "identifier."
-                ),
-                rationale=(
-                    "Normalized dhcpv4 sensor summary listed "
-                    f"{len(servers)} distinct server identifiers."
-                ),
-                recommendation=(
-                    "Confirm whether multiple DHCP servers are authorized "
-                    "on this segment. Rogue DHCP is a common LAN risk."
-                ),
+                description=MULTIPLE_DHCP["description"],
+                rationale=dhcp_rationale(len(servers)),
+                recommendation=MULTIPLE_DHCP["recommendation"],
                 data={"servers": servers, "source": "passive_assessment"},
                 evidence_artifact_ids=evidence,
                 dedupe_key="audit",
@@ -131,9 +119,7 @@ def _sensor_presence(
             asset_id=None,
             service_id=None,
             description=description,
-            rationale=(
-                f"Stored passive sensor {sensor} status={status} hits={hits}."
-            ),
+            rationale=infra_rationale(sensor, status, hits),
             recommendation=recommendation,
             data={
                 "sensor": sensor,

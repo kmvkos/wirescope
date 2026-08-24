@@ -2,6 +2,14 @@
 
 from engine.passive_models import ConfidenceLevel
 from findings.catalog import LEGACY_SMB_DIALECTS, SMB_SIGNING_DISABLED
+from findings.copy import (
+    SMB_LEGACY,
+    SMB_NULL_SESSION,
+    SMB_SIGNING,
+    smb_dialect_rationale,
+    smb_null_rationale,
+    smb_signing_rationale,
+)
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     draft,
@@ -30,28 +38,14 @@ class SmbNullSessionRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="SMB null session was accepted",
+                    title=SMB_NULL_SESSION["title"],
                     severity=Severity.HIGH,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "Unauthenticated SMB listing succeeded against this "
-                        "service."
-                    ),
-                    rationale=(
-                        "smb_null_session.accepted is true"
-                        + (
-                            f" with {sample.data.get('share_count')} shares"
-                            if sample.data.get("share_count") is not None
-                            else ""
-                        )
-                        + "."
-                    ),
-                    recommendation=(
-                        "Disable anonymous/null SMB sessions and restrict "
-                        "share listing to authenticated users."
-                    ),
+                    description=SMB_NULL_SESSION["description"],
+                    rationale=smb_null_rationale(sample.data.get("share_count")),
+                    recommendation=SMB_NULL_SESSION["recommendation"],
                     data={
                         "accepted": True,
                         "share_count": sample.data.get("share_count"),
@@ -82,17 +76,14 @@ class SmbSigningDisabledRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="SMB signing is not required",
+                    title=SMB_SIGNING["title"],
                     severity=Severity.MEDIUM,
                     confidence=ConfidenceLevel.MEDIUM,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "Normalized SMB observations report signing disabled "
-                        "or not required."
-                    ),
-                    rationale="smb signing field indicates signing is off.",
-                    recommendation="Require SMB signing on this service.",
+                    description=SMB_SIGNING["description"],
+                    rationale=smb_signing_rationale(),
+                    recommendation=SMB_SIGNING["recommendation"],
                     data={"signing": _signing_value(sample.data)},
                     observations=disabled,
                     dedupe_key=service_dedupe_key(sample),
@@ -120,14 +111,14 @@ class SmbLegacyDialectRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="Legacy SMB dialect is offered",
+                    title=SMB_LEGACY["title"],
                     severity=Severity.HIGH,
                     confidence=ConfidenceLevel.MEDIUM,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description="The service appears to offer SMBv1 or LANMAN.",
-                    rationale=f"Normalized dialect field is {dialect}.",
-                    recommendation="Disable SMBv1 and other legacy dialects.",
+                    description=SMB_LEGACY["description"],
+                    rationale=smb_dialect_rationale(dialect),
+                    recommendation=SMB_LEGACY["recommendation"],
                     data={"dialect": dialect},
                     observations=legacy,
                     dedupe_key=service_dedupe_key(sample),

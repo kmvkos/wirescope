@@ -6,6 +6,12 @@ from findings.catalog import (
     INSECURE_MANAGEMENT_PORTS,
     NAME_SEVERITY,
 )
+from findings.copy import (
+    management_description,
+    management_rationale,
+    management_recommendation,
+    management_title,
+)
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import draft, inventory_dedupe_key
 from inventory.models import ServiceRecord
@@ -28,27 +34,22 @@ class InsecureManagementRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title=f"Insecure {name} management service is exposed",
+                    title=management_title(name),
                     severity=severity,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=service.asset_id,
                     service_id=service.id,
-                    description=(
-                        f"Inventory records an open {name} service on "
-                        f"{service.protocol}/{service.port}."
+                    description=management_description(
+                        name,
+                        service.protocol,
+                        service.port,
                     ),
-                    rationale=(
-                        "Normalized inventory service "
-                        f"{service.service_name or name} is open on "
-                        f"{service.protocol}/{service.port}. This is not a "
-                        "protocol-audit finding; the service was not brute "
-                        "forced."
+                    rationale=management_rationale(
+                        service.service_name or name,
+                        service.protocol,
+                        service.port,
                     ),
-                    recommendation=(
-                        f"Disable {name} on production networks, or confine "
-                        "it to a dedicated management plane with "
-                        "authentication."
-                    ),
+                    recommendation=management_recommendation(name),
                     data={
                         "protocol": service.protocol,
                         "port": service.port,

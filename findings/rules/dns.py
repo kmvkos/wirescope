@@ -1,6 +1,12 @@
 """DNS recursion and identity-disclosure findings."""
 
 from engine.passive_models import ConfidenceLevel
+from findings.copy import (
+    DNS_RECURSION,
+    DNS_VERSION,
+    dns_identity_rationale,
+    dns_recursion_rationale,
+)
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     draft,
@@ -33,27 +39,14 @@ class DnsRecursionRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="DNS recursion is available",
+                    title=DNS_RECURSION["title"],
                     severity=Severity.MEDIUM,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The resolver set the Recursion Available flag."
-                    ),
-                    rationale=(
-                        "dns_flags.recursion_available is true"
-                        + (
-                            f" with flags {sample.data.get('flags')}"
-                            if sample.data.get("flags")
-                            else ""
-                        )
-                        + "."
-                    ),
-                    recommendation=(
-                        "Disable recursion on authoritative servers, or "
-                        "restrict recursive service to trusted clients."
-                    ),
+                    description=DNS_RECURSION["description"],
+                    rationale=dns_recursion_rationale(sample.data.get("flags")),
+                    recommendation=DNS_RECURSION["recommendation"],
                     data={
                         "flags": sample.data.get("flags") or [],
                         "recursion_available": True,
@@ -89,23 +82,17 @@ class DnsVersionDisclosedRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="DNS CHAOS identity is disclosed",
+                    title=DNS_VERSION["title"],
                     severity=Severity.LOW,
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The resolver answered CHAOS TXT identity queries."
+                    description=DNS_VERSION["description"],
+                    rationale=dns_identity_rationale(
+                        sample.data.get("version"),
+                        sample.data.get("hostname"),
                     ),
-                    rationale=(
-                        "dns_identity recorded version="
-                        f"{sample.data.get('version')!r} hostname="
-                        f"{sample.data.get('hostname')!r}."
-                    ),
-                    recommendation=(
-                        "Disable version.bind / id.server CHAOS responses "
-                        "unless required for operations."
-                    ),
+                    recommendation=DNS_VERSION["recommendation"],
                     data={
                         "version": sample.data.get("version"),
                         "hostname": sample.data.get("hostname"),

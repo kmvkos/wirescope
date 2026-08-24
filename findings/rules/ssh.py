@@ -2,6 +2,7 @@
 
 from engine.passive_models import ConfidenceLevel
 from findings.catalog import WEAK_SSH_BY_FAMILY
+from findings.copy import SSH_WEAK, ssh_rationale
 from findings.models import EvaluationContext, FindingDraft, Severity
 from findings.rules.base import (
     as_string_list,
@@ -45,24 +46,14 @@ class WeakSshAlgorithmsRule:
                     rule_id=self.id,
                     rule_version=self.version,
                     family=self.family,
-                    title="Weak SSH algorithms are offered",
+                    title=SSH_WEAK["title"],
                     severity=_ssh_severity(weak),
                     confidence=ConfidenceLevel.HIGH,
                     asset_id=sample.asset_id,
                     service_id=sample.service_id,
-                    description=(
-                        "The SSH service advertises known-weak key exchange, "
-                        "host-key, cipher, or MAC algorithms."
-                    ),
-                    rationale=(
-                        "Normalized ssh_algorithms observations listed weak "
-                        f"algorithms in: {families}."
-                    ),
-                    recommendation=(
-                        "Disable SHA-1, CBC, RC4, 3DES, DSS, and related "
-                        "legacy algorithms. Prefer curve25519, rsa-sha2, "
-                        "AES-GCM or chacha20-poly1305, and SHA-2 MACs."
-                    ),
+                    description=SSH_WEAK["description"],
+                    rationale=ssh_rationale(families),
+                    recommendation=SSH_WEAK["recommendation"],
                     data={"weak_algorithms": weak, "families": sorted(weak)},
                     observations=group,
                     dedupe_key=service_dedupe_key(sample),

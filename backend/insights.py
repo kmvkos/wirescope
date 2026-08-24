@@ -91,7 +91,8 @@ def _asset_label(asset: Any) -> str:
         for item in (getattr(asset, "addresses", None) or [])
         if getattr(item, "address", None)
     ]
-    return (names or addresses or [str(getattr(asset, "mac", None) or getattr(asset, "id", "unknown"))])[0]
+    fallback = str(getattr(asset, "mac", None) or getattr(asset, "id", "unknown"))
+    return (names or addresses or [fallback])[0]
 
 
 def dashboard(services, audit_id: str) -> dict[str, Any]:
@@ -107,17 +108,13 @@ def dashboard(services, audit_id: str) -> dict[str, Any]:
         ).total
         for status in FindingStatus
     }
-    jobs_page = services.jobs.list_jobs(
-        limit=500,
-        offset=0,
-        audit_id=audit_id,
-    )
+    jobs_page = services.jobs.list_jobs(limit=500, offset=0, audit_id=audit_id)
     jobs = list(jobs_page.items)
 
     pipeline: list[dict[str, Any]] = []
     for stage, aliases in _PIPELINE_TYPES:
         matches = [job for job in jobs if job.type in aliases]
-        latest = matches[0] if matches else None
+        latest = max(matches, key=lambda item: item.created_at) if matches else None
         pipeline.append(
             {
                 "stage": stage,
@@ -167,9 +164,6 @@ def audit_diff(services, base_audit_id: str, compare_audit_id: str) -> dict[str,
     base_asset_map = {_asset_identity(item): item for item in base_assets}
     next_asset_map = {_asset_identity(item): item for item in next_assets}
 
-    added_asset_keys = sorted(next_asset_map.keys() - base_asset_map.keys())
-    removed_asset_keys = sorted(base_asset_map.keys() - next_asset_map.keys())
-
     base_id_to_identity = {item.id: key for key, item in base_asset_map.items()}
     next_id_to_identity = {item.id: key for key, item in next_asset_map.items()}
 
@@ -190,20 +184,39 @@ def audit_diff(services, base_audit_id: str, compare_audit_id: str) -> dict[str,
         for item in _all_services(services.inventory, compare_audit_id)
         if item.state in {"open", "open|filtered"}
     }
+    base_service_id_to_identity = {
+        item.id: service_key(item, base_id_to_identity)
+        for item in base_services.values()
+    }
+    next_service_id_to_identity = {
+        item.id: service_key(item, next_id_to_identity)
+        for item in next_services.values()
+    }
 
-    def finding_key(item: Any, id_map: dict[str, str]) -> tuple[str, str, str]:
-        return (
-            str(item.rule_id),
-            id_map.get(str(item.asset_id), "none") if item.asset_id else "none",
-            str(item.family),
+    def finding_key(
+        item: Any,
+        asset_map: dict[str, str],
+        service_map: dict[str, tuple[str, str, int]],
+    ) -> tuple[str, str, str, str]:
+        asset_identity = (
+            asset_map.get(str(item.asset_id), f"asset:{item.asset_id}")
+            if item.asset_id
+            else "none"
         )
+        endpoint = service_map.get(str(item.service_id)) if item.service_id else None
+        service_identity = (
+            f"{endpoint[0]}:{endpoint[1]}/{endpoint[2]}"
+            if endpoint is not None
+            else "none"
+        )
+        return str(item.rule_id), asset_identity, service_identity, str(item.family)
 
     base_findings = {
-        finding_key(item, base_id_to_identity): item
+        finding_key(item, base_id_to_identity, base_service_id_to_identity): item
         for item in _all_findings(services.findings, base_audit_id)
     }
     next_findings = {
-        finding_key(item, next_id_to_identity): item
+        finding_key(item, next_id_to_identity, next_service_id_to_identity): item
         for item in _all_findings(services.findings, compare_audit_id)
     }
 
@@ -216,11 +229,12 @@ def audit_diff(services, base_audit_id: str, compare_audit_id: str) -> dict[str,
             "product": item.product,
         }
 
-    def finding_payload(key: tuple[str, str, str], item: Any) -> dict[str, Any]:
+    def finding_payload(key: tuple[str, str, str, str], item: Any) -> dict[str, Any]:
         return {
             "rule_id": key[0],
             "asset": key[1],
-            "family": key[2],
+            "service": key[2],
+            "family": key[3],
             "title": item.title,
             "severity": getattr(item.severity, "value", item.severity),
             "status": getattr(item.status, "value", item.status),
@@ -232,11 +246,11 @@ def audit_diff(services, base_audit_id: str, compare_audit_id: str) -> dict[str,
         "assets": {
             "added": [
                 {"identity": key, "label": _asset_label(next_asset_map[key])}
-                for key in added_asset_keys
+                for key in sorted(next_asset_map.keys() - base_asset_map.keys())
             ],
             "removed": [
                 {"identity": key, "label": _asset_label(base_asset_map[key])}
-                for key in removed_asset_keys
+                for key in sorted(base_asset_map.keys() - next_asset_map.keys())
             ],
         },
         "services": {

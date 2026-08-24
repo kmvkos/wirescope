@@ -2,7 +2,7 @@
 
 [Русский](../REPORTING_MODEL.md) · **English**
 
-A WireScope report is built only from persisted audit state. Report generation does not re-run Nmap, protocol modules, or passive capture.
+WireScope reports are built only from persisted audit state. Report generation and export do not re-run Nmap, protocol modules, or passive capture.
 
 ```text
 audit metadata
@@ -10,60 +10,100 @@ audit metadata
 + confirmed scope
 + passive result / assessment
 + inventory
-+ protocol observations
 + findings
 + artifact metadata
         ↓
-audit-report v1
+audit-report v1 JSON   ← canonical document
         ↓
-JSON
-├── self-contained HTML
-└── Markdown
+        ├── human-readable HTML
+        └── Markdown for Git/wiki/tickets
 ```
 
-JSON `audit-report` v1 remains the canonical document. HTML and Markdown are views over the same persisted state.
-
-Schema:
+Canonical schema:
 
 ```text
 reports/schema/audit-report-v1.json
 ```
 
-## Report contents
+## Core rule
 
-### Executive summary
+JSON keeps stable machine values and remains the source of truth. Human-facing HTML and Markdown can improve without changing the schema or the report `source_hash`.
 
-Includes:
+For example, the machine value `high` remains `high` in JSON while the Russian operator report displays **«Высокая»**. Profiles, statuses, confidence values, device classes, and headline tokens are localized the same way.
+
+This keeps external integrations stable while allowing the presentation layer to improve.
+
+## Operator-facing structure
+
+The HTML report follows the order in which a human normally makes a decision:
+
+1. **Audit result** — concise conclusion, highest open severity, and key counts.
+2. **Detected problems** — each finding is explained as:
+   - what was detected;
+   - why it matters;
+   - what should be done.
+3. **Action plan** — prioritized recommendations.
+4. **Scope** — what was actually authorized for checking.
+5. **Assets and services** — inventory.
+6. **Passive observations** — what WireScope actually observed on the segment.
+7. **Technical data** — evidence, hashes, metadata, and warnings.
+
+Evidence IDs and internal technical detail are intentionally kept out of the opening summary while remaining available for verification.
+
+## Executive summary
+
+The canonical summary contains:
 
 - asset/service/finding counts;
-- open findings;
+- open finding count;
 - highest open severity;
-- headline and short summary;
-- basic passive metrics.
+- a headline token;
+- a deterministic Russian conclusion;
+- core passive metrics.
 
-Narrative text is deterministic and derived from persisted data. An LLM is not used to invent CVEs or missing facts.
+Narrative text is derived from persisted data. An LLM is not used to invent CVEs, causes, or missing facts.
 
-### Environment and scope
+When no findings exist, the human report explicitly states that this conclusion applies only to checks that actually ran and is not proof of absolute security.
 
-The report records the environment snapshot, capture interface, and confirmed active scope. Missing L3 connectivity does not invalidate a passive-only report.
+## Scope and passive data
 
-### Passive data
+The report records the environment snapshot, capture interface, and confirmed active scope.
 
-Includes frame count, visibility/segment notes, 802.1Q tags actually observed, LLDP/CDP, STP, ARP/DHCP, and other normalized passive observations.
+Passive sections include frame count, visibility/segment state, 802.1Q tags actually observed, ARP/DHCP, and other normalized observations.
 
-Untagged traffic does not receive an invented VLAN ID. LLDP/CDP native or voice VLAN values remain neighbor metadata.
+Untagged traffic does not receive an invented VLAN ID, and the human report explains that limitation directly.
 
-### Inventory
+## Inventory
 
 Assets and services come from persisted inventory together with available vendor, OS, and device-class hints.
 
-### Findings
+The Russian presentation translates machine values such as:
 
-Open, suppressed, and accepted-risk findings are retained so exported reports preserve operator decisions. Recommendations are derived from current findings.
+```text
+server-like          → Сервер
+workstation-like     → Рабочая станция
+network-device-like  → Сетевое устройство
+printer-like         → Принтер / МФУ
+iot-like             → IoT / встроенное устройство
+```
 
-### Evidence references
+The JSON machine values remain unchanged.
 
-Raw PCAP/XML/stdout is not embedded in the main report. Evidence metadata includes:
+## Findings
+
+Canonical reports retain open, suppressed, and accepted-risk findings so operator decisions are not lost.
+
+HTML and Markdown show severity/confidence/status using clear Russian labels and separate:
+
+- observed condition;
+- security relevance;
+- recommended action.
+
+Raw provider stdout is not embedded in finding narrative.
+
+## Evidence references
+
+PCAP/XML/stdout is not embedded into the main narrative. Evidence metadata includes:
 
 - artifact id;
 - artifact type;
@@ -71,7 +111,7 @@ Raw PCAP/XML/stdout is not embedded in the main report. Evidence metadata includ
 - size;
 - SHA-256.
 
-Internal filesystem `relative_path` values are not exposed in the public report.
+Public report documents do not expose filesystem `relative_path` values.
 
 ## Generation
 
@@ -85,19 +125,13 @@ The worker:
 
 1. loads persisted audit state;
 2. builds `audit-report` v1;
-3. validates the document;
+3. validates canonical JSON;
 4. renders self-contained HTML;
-5. writes JSON and HTML through `EvidenceStore`;
-6. inserts a report-history row;
+5. stores JSON and HTML report artifacts;
+6. appends report history;
 7. records `source_hash`.
 
-Report generation does not need an interface lock because it does not touch the network.
-
-## `source_hash`
-
-`source_hash` reflects persisted source state rather than report id, generation timestamp, or job id.
-
-If inventory, findings, scope, and evidence are unchanged, repeated generation should retain the same source hash.
+Report generation does not require a network/interface lock.
 
 ## Export API
 
@@ -107,7 +141,37 @@ GET /api/v1/audits/{id}/reports/{report_id}/export?format=html
 GET /api/v1/audits/{id}/reports/{report_id}/export?format=markdown
 ```
 
-`format=md` is accepted as an alias for Markdown.
+`format=md` is an alias for Markdown.
+
+### JSON
+
+Returns the persisted canonical `audit-report v1` document.
+
+### HTML
+
+When opened, HTML is rendered from persisted canonical JSON using the current human-presentation renderer. Therefore **older saved reports automatically receive the current design and localization without re-running the audit**.
+
+The historical HTML artifact created by the report job remains immutable and is not rewritten.
+
+The rendered HTML is self-contained, responsive, print-friendly, and independent of the WireScope frontend bundle. All network-derived values are escaped before insertion.
+
+### Markdown
+
+Markdown is also rendered from canonical JSON and is Russian-first for the appliance operator. It is intended for Git, issue trackers, wiki systems, and technical documentation.
+
+## `source_hash`
+
+`source_hash` reflects persisted audit state rather than CSS, localization, report id, or export time.
+
+Presentation-only changes do not change the factual audit result.
+
+## HTML safety
+
+Hostnames, service banners, certificate subjects, finding titles, and similar values may originate from an untrusted network. The renderer escapes dynamic content and never embeds raw provider output as executable HTML.
+
+Tests explicitly cover XSS escaping and filesystem-path boundaries.
+
+## PDF
 
 PDF is not implemented yet:
 
@@ -115,55 +179,4 @@ PDF is not implemented yet:
 format=pdf → 422 pdf_not_available
 ```
 
-## HTML
-
-HTML is self-contained and requires neither the frontend bundle nor follow-up API calls to display the report body. Dynamic values are escaped so network-derived hostnames, HTTP titles, certificate subjects, and similar data cannot become HTML/JavaScript injection.
-
-## JSON
-
-JSON is the stable machine-readable `audit-report` v1 and the source of truth for other export formats.
-
-Schema keys and rule IDs remain stable. Human-facing titles, descriptions, and recommendations may be Russian.
-
-## Markdown
-
-Markdown is rendered from the persisted JSON report and does not create another scanner stage.
-
-It includes:
-
-- audit metadata;
-- executive summary;
-- scope;
-- passive summary;
-- assets;
-- services;
-- findings;
-- recommendations;
-- evidence references.
-
-It is intended for Git, issue trackers, wiki/Confluence-style systems, and manual inclusion in technical documentation.
-
-## Evidence access
-
-Evidence may be inspected separately from report exports through audit-scoped routes:
-
-```text
-GET /api/v1/audits/{audit_id}/findings/{finding_id}/evidence
-GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
-```
-
-The backend verifies that an artifact belongs to the requested audit before returning it. Artifact responses include `X-WireScope-SHA256`.
-
-## Report history
-
-A new generation appends history rather than overwriting the previous report. This supports comparisons after findings re-evaluation, accepted-risk changes, inventory changes, or new evidence.
-
-## Testing
-
-Reporting tests are fixture-based and do not require a live network. They cover schema validation, HTML escaping, evidence path boundaries, source-hash stability, and Markdown rendering.
-
-## Current limitations
-
-- PDF export is not available;
-- there is no separate multi-language human-report template system yet;
-- raw evidence remains referenced by artifact id/hash instead of being embedded into one giant file.
+It is not a v1.0 blocker: the self-contained HTML renderer includes a print layout and can be printed through the browser.

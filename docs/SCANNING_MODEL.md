@@ -2,15 +2,13 @@
 
 **Русский** · [English](en/SCANNING_MODEL.md)
 
-WireScope разделяет сетевой аудит на три слоя: пассивные наблюдения, активную инвентаризацию и протокольные проверки. Findings находятся ещё выше и не являются частью scanner/provider layer.
+WireScope разделяет аудит на несколько слоёв: пассивные наблюдения, подтверждение scope, активное обнаружение, protocol audits и findings. Это принципиально разные стадии. Данные, увиденные пассивно, не становятся автоматическим разрешением на сканирование.
 
-## Главное правило: увидели ≠ получили разрешение сканировать
+## Увидели сеть ≠ получили право её сканировать
 
-Пассивный анализ может показать IP, gateway, VLAN, DHCP server или LLDP/CDP neighbor. Environment discovery может показать connected route. Всё это — **наблюдаемая информация о сети**.
+Пассивный анализ может показать IP, gateway, VLAN, DHCP server, LLDP/CDP neighbor или IPv6 router. Environment discovery может показать connected routes. Всё это считается **наблюдаемой информацией**.
 
-Она не превращается автоматически в active scope.
-
-Перед Nmap оператор подтверждает цели, а backend создаёт immutable snapshot разрешённого scope.
+Перед Nmap оператор подтверждает цели. Backend сохраняет snapshot разрешённого scope, и worker повторно проверяет его перед реальным запуском provider.
 
 ```text
 environment + passive evidence
@@ -21,233 +19,202 @@ environment + passive evidence
             ↓
  confirmed scope snapshot
             ↓
-       Nmap discovery
+     active discovery
             ↓
-      asset inventory
+       inventory
             ↓
     protocol audits
+            ↓
+       findings
 ```
 
-Frontend не считается trust boundary: worker повторно проверяет scope перед реальным запуском scanner.
+Frontend не является trust boundary.
 
-## Формат scope
+## Scope
 
-`engine/scope.py` использует стандартный `ipaddress`.
+`engine/scope.py` работает со стандартным `ipaddress` и принимает одиночные IPv4/IPv6 адреса, CIDR и несколько целей одновременно.
 
-Допустимы:
-
-- одиночный IPv4;
-- одиночный IPv6;
-- IPv4 CIDR;
-- IPv6 CIDR;
-- несколько целей одновременно.
-
-Targets canonicalize'ятся: duplicates и адреса, уже покрытые более широкой сетью, убираются.
-
-Запрещены unspecified и multicast ranges, в том числе:
+Targets canonicalize'ятся: duplicates и адреса, уже покрытые более широкой сетью, убираются. Запрещены unspecified и multicast ranges, в том числе:
 
 ```text
 0.0.0.0/0
 ::/0
 224.0.0.0/4
-IPv6 multicast equivalents
+IPv6 multicast ranges
 ```
 
-Размер scope считается **до** создания job.
+Default caps:
 
-## Лимиты
-
-Default caps рассчитаны на небольшой appliance и обычный LAN-аудит:
-
-| Профиль | IPv4 limit | Примерно соответствует |
+| Профиль | IPv4 limit | Ориентир |
 | --- | ---: | --- |
 | Discovery | 4096 | `/20` |
 | Standard | 1024 | `/22` |
 | Deep | 256 | `/24` |
 
-IPv6 ограничен отдельно: 256 адресов. WireScope не пытается перебрать `/64`.
-
-При осознанной необходимости администратор может поднять caps через `WIRESCOPE_ALLOW_LARGE_SCOPES=true` и соответствующие `WIRESCOPE_*_MAX_TARGETS`, но запрет unspecified networks остаётся.
+IPv6 ограничен отдельно; WireScope не разворачивает `/64` в огромный список адресов.
 
 ## Interface и route validation
 
-Перед active discovery недостаточно, чтобы target формально лежал в CIDR.
+До создания active job проверяются:
 
-WireScope проверяет:
+- interface существует и разрешён policy;
+- link находится в подходящем состоянии;
+- target действительно маршрутизируется через выбранный interface;
+- есть source address нужного family;
+- выбранный VLAN subinterface уже существует.
 
-- interface существует;
-- interface проходит policy;
-- link UP;
-- `ip route get` для target реально указывает на выбранный `dev`;
-- есть source address нужного address family;
-- VLAN subinterface уже существует, если он выбран.
+Route context сохраняется вместе со scope: source, gateway, interface, family и признак directly connected/routed.
 
-Контекст маршрута сохраняется вместе со scope: source, gateway, interface, family, directly connected/routed.
+Пассивный capture может работать на NIC без L3-адреса. Active discovery требует реального L3 path. WireScope не создаёт VLAN subinterfaces автоматически внутри discovery pipeline.
 
-Если capture NIC не имеет L3-адреса, passive capture всё равно работает. Active discovery требует реального L3 path — например адрес на самом NIC, существующий `eth0.10` или явно подтверждённую и корректно маршрутизируемую сеть.
+## Декларативные scan profiles
 
-WireScope сам не создаёт VLAN subinterfaces в active-discovery pipeline.
+Пользователь выбирает профиль, а не набор CLI flags. Профили описаны в:
 
-## Профили Nmap
+```text
+config/active_profiles.json
+```
 
-Пользователь выбирает профиль, а не CLI flags. Timing по умолчанию — **T3**. T5 не используется.
+Поддерживаются только три имени:
+
+```text
+discovery
+standard
+deep
+```
+
+Файл строго валидируется. Неизвестные поля запрещены. UDP ports ограничены 256 значениями, каждый port должен лежать в `1..65535`, а произвольное выражение для TCP range не принимается. Полный диапазон разрешён только как явно поддерживаемое `1-65535` для Deep.
+
+Через `WIRESCOPE_ACTIVE_PROFILES_FILE` можно указать другой declarative profile file. Это даёт возможность менять безопасные параметры без возможности подсунуть произвольную командную строку Nmap.
 
 ### Discovery
 
-Цель — быстро понять, какие узлы отвечают.
-
-Для directly connected IPv4 при доступных raw privileges используется ARP discovery. Для routed IPv4 — ICMP/TCP discovery probes. Для IPv6 — neighbor discovery при доступных privileges либо TCP probes.
-
-Port scan, `-sV` и OS detection здесь не выполняются.
+Цель — быстро определить responsive hosts. Port scan, `-sV` и OS detection не выполняются.
 
 ### Standard
 
-Основной профиль для обычного аудита:
+Основной профиль:
 
 - host discovery;
 - TCP top 1000;
 - `-sV --version-intensity 5`;
-- OS detection, если process уже имеет нужные capabilities;
-- ограниченный UDP-набор:
-  `53,67,68,69,111,123,137,161,162,500,623,1900,4500,5353,5355`.
+- OS detection, когда process уже имеет нужные возможности;
+- ограниченный UDP-набор.
 
 ### Deep
 
-Более шумный и долгий режим:
+Более шумный режим:
 
-- host discovery;
 - TCP `1-65535`;
 - `--version-intensity 7`;
-- OS detection при наличии privilege;
+- OS detection при доступных privileges;
 - расширенный UDP-набор.
 
-Deep по-прежнему не включает NSE, `-sC`, `vuln`, brute, exploit, auth или DoS scripts.
+Ни один профиль не включает NSE, `-sC`, `vuln`, brute-force, exploit, auth или DoS scripts.
+
+Фактически загруженные профили можно посмотреть через:
+
+```text
+GET /api/v1/scan-profiles
+```
 
 ## Nmap provider
 
-Единственная точка запуска Nmap — `providers/nmap.py`.
-
-Provider:
+Nmap запускается через `providers/nmap.py`. Provider:
 
 - определяет binary/version;
-- проверяет доступность raw-socket режима без повышения привилегий;
-- строит argv;
-- пишет targets в внутренний `0600` target file и передаёт его через `-iL`;
-- просит XML через `-oX`;
-- сохраняет XML как evidence artifact;
+- проверяет доступность raw-socket режима без privilege escalation;
+- строит argv из typed profile;
+- пишет targets во внутренний `0600` file и передаёт его через `-iL`;
+- получает XML через `-oX`;
+- сохраняет XML как evidence;
 - поддерживает timeout и cooperative cancellation;
 - возвращает нормализованные hosts/services/OS hints.
 
-Если raw privileges нет:
+Если raw privileges недоступны, WireScope не повышает Nmap. Используются доступные непривилегированные режимы, а недоступные capabilities фиксируются отдельно.
 
-```text
-SYN / ARP / OS / UDP unavailable
-             ↓
-        TCP connect -sT
-             ↓
- skipped capabilities recorded
-```
+Ошибка provider — это job error, а не «найдено 0 hosts».
 
-WireScope не запускает по Nmap process на каждый host. Один audit использует небольшое число scanner processes по стадиям.
+## Inventory и идентичность assets
 
-Default `WIRESCOPE_MAX_ACTIVE_DISCOVERY_JOBS=1`.
+Inventory хранит:
 
-## Host state
-
-Отсутствие ICMP echo не равно «host down».
-
-Inventory различает:
-
-- `observed` — есть только пассивные evidence;
-- `responsive` — scanner подтвердил `up`;
-- `unresponsive` — одиночный target не ответил;
-- `unknown` — состояние определить нельзя.
-
-При сканировании большого CIDR WireScope не создаёт тысячи asset rows для каждого неответившего адреса.
-
-Ошибка Nmap — job error, а не «найдено 0 узлов».
-
-## Inventory
-
-Asset не идентифицируется глобально одним IP.
-
-Хранятся:
-
-- MAC и vendor, если известны;
+- MAC и vendor;
 - addresses с provenance;
 - hostnames с provenance;
 - services;
 - OS hints;
-- device-class hints;
-- first/last seen.
+- device-class hint + confidence;
+- first/last seen;
+- identity conflicts.
 
 Service уникален внутри asset по `(protocol, port)`.
 
-### Корреляция passive + active
+### Passive + active correlation
 
-Порядок:
+Базовый порядок идентичности:
 
 1. exact MAC;
 2. exact IP.
 
-Если MAC говорит, что это asset A, а IP уже принадлежит asset B, WireScope не «угадывает» и не merge'ит их. Конфликт фиксируется отдельно.
+Если MAC указывает на asset A, а IP уже принадлежит asset B, WireScope не объединяет их молча. Создаётся `identity_conflict`, а конфликтующие данные сохраняются для разбора.
 
-Имена из PTR, DHCP, mDNS, LLMNR, NBNS и Nmap сохраняют source/provenance.
+Hostname намеренно **не используется как самостоятельное merge-доказательство**: DHCP/PTR/mDNS имена могут повторяться, переезжать между адресами и быть устаревшими.
 
-### Vendor lookup
+Источник каждого имени сохраняется: Nmap, DHCP, mDNS, LLMNR, NBNS и т.д.
 
-OUI lookup локальный:
+Объяснение текущей корреляции доступно через:
 
 ```text
-/usr/share/ieee-data/oui.txt
+GET /api/v1/audits/{audit_id}/correlations
 ```
 
-или bundled subset.
+Ответ показывает identity basis, passive/active sources, addresses/names с provenance и факт того, подтверждается ли asset одновременно пассивными и активными источниками.
 
-На каждый MAC HTTP-запросы наружу не выполняются.
+## Device classification
 
-### OS и device class
+Классификация — это hint, а не finding. Она использует несколько слабых сигналов вместе:
 
-OS match и device class — hints, а не confirmed facts.
+- OS hint;
+- MAC vendor;
+- открытые management/server/printer ports;
+- naming protocols;
+- сетевые признаки вроде SNMP + management ports.
 
-Примеры device class:
+Классы:
 
-- `server-like`;
-- `workstation-like`;
-- `network-device-like`;
-- `printer-like`;
-- `iot-like`;
-- `unknown`.
+```text
+server-like
+workstation-like
+network-device-like
+printer-like
+iot-like
+unknown
+```
 
-## Resource locking
+Confidence повышается только при сочетании независимых сигналов. Например, printer vendor + TCP/9100 сильнее, чем один TCP/9100; MikroTik vendor + RouterOS + SNMP/management ports сильнее, чем один открытый HTTP.
 
-Active discovery берёт:
+## Host state
 
-- `interface:<name>`;
-- resource group `active_discovery`.
+Inventory различает:
 
-Поэтому capture и Nmap не работают на одном interface одновременно при стандартной конфигурации.
+- `observed` — есть пассивные evidence;
+- `responsive` — active provider подтвердил host;
+- `unresponsive` — одиночная цель не ответила;
+- `unknown` — состояние определить нельзя.
 
-Default limit — один active-discovery job.
-
-## Network impact
-
-`Standard` + `/24` + T3 — базовый сценарий.
-
-`Deep` заметно тяжелее: полный TCP range и больше UDP probes. Его default scope cap специально ограничен 256 адресами.
-
-Cancellation завершает Nmap process group и переводит job в `cancelled`. Уже корректно сохранённые результаты предыдущих stages могут остаться в inventory.
+Отсутствие ICMP echo не трактуется автоматически как host down. При CIDR scan WireScope не материализует тысячи rows для каждого неответившего адреса.
 
 ## Protocol audits
 
-После active inventory включается следующий слой: проверки конкретных сервисов.
+После inventory запускаются проверки конкретных сервисов:
 
 ```text
 inventory service
       ↓
-registry predicate match
+module predicate match
       ↓
-check authorized address
+authorized address check
       ↓
 provider argv
       ↓
@@ -255,100 +222,45 @@ external tool
       ↓
 parser
       ↓
-normalized protocol observation
+normalized observation
       ↓
-evidence + SQLite
+SQLite + evidence
 ```
 
-Protocol audit не является vulnerability scanner. Он собирает структурированные факты, которые позже читает findings engine.
+Текущие modules:
 
-## Контракт модуля
-
-Каждый module в `protocol_audits/modules/` задаёт:
-
-- port/transport/service/product/tunnel predicates;
-- required tool;
-- optional minimum version;
-- safety class: `safe`, `gated`, `never-default`;
-- argv builder;
-- parser без доступа к SQLite;
-- timeout budget;
-- normalized observation kinds.
-
-Добавление модуля требует registry registration, а не правки orchestration core.
-
-## Текущие protocol modules
-
-| Модуль | Инструмент | Что собирается |
+| Модуль | Инструмент | Основные observations |
 | --- | --- | --- |
 | SSH | `ssh-audit` | banner, KEX, host-key, cipher, MAC algorithms |
 | TLS | `openssl s_client` | protocol, cipher, certificate metadata, verify code |
 | HTTP | `curl` | status, selected headers, HTML title |
 | DNS | `dig` | CHAOS identity и DNS flags |
-| SMB | `smbclient -N -L` | разрешён/отклонён null session |
+| SMB | `smbclient -N -L` | null-session list probe |
 | SNMP | `snmpget -v3 -l noAuthNoPriv` | unauthenticated response/timeout |
 | LDAP | `ldapsearch -x` | anonymous base DSE / refusal |
 
+`testssl.sh`, Nikto и Nuclei зарегистрированы только как `never-default` stubs.
+
 ## Safety limits protocol audits
 
-- Только confirmed inventory addresses внутри authorized scope.
+- Только inventory addresses внутри confirmed scope.
 - Credential store отсутствует.
 - Password/community guessing отсутствует.
 - SNMP walk не выполняется.
-- HTTP redirects не follow'ятся автоматически (`--max-redirs 0`).
-- SMB enumeration ограничена null-session list probe.
+- HTTP redirects не follow'ятся автоматически.
+- SMB ограничен null-session list probe.
 - Authenticated AD/LDAP audit пока не реализован.
-- Внешние Internet callbacks для проверок не нужны.
 
-Default:
+Ошибки инструментов (`tool_unavailable`, timeout, malformed output, cancellation) не смешиваются с отрицательным результатом проверки. Например, отсутствие `smbclient` не означает, что SMB null session запрещён.
 
-```text
-WIRESCOPE_MAX_PROTOCOL_AUDIT_JOBS=1
-WIRESCOPE_PROTOCOL_AUDIT_CONCURRENCY=1
-WIRESCOPE_PROTOCOL_AUDIT_TIMEOUT_SECONDS=20
-```
+## Evidence
 
-## NSE policy
+Raw outputs providers сохраняются как evidence artifacts с SHA-256. Findings engine работает с нормализованными observations, а не парсит raw stdout повторно.
 
-Protocol-audit path Nmap Scripting Engine не использует.
-
-Нет `-sC` и нет allowlist для `vuln/brute/exploit/dos/auth`, потому что NSE здесь вообще не является provider model.
-
-`testssl.sh`, Nikto и Nuclei зарегистрированы только как `never-default` stubs. Они не строят команды и обычным API request не запускаются.
-
-## Ошибки инструментов
-
-Protocol observation может сообщить:
-
-- `tool_unavailable`;
-- timeout;
-- cancelled;
-- malformed output;
-- tool failure;
-- protocol-specific negative result.
-
-Эти состояния не должны смешиваться.
-
-Например:
+Текстовые evidence можно открыть из GUI или через audit-scoped API:
 
 ```text
-smbclient отсутствует
+GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
-не означает:
-
-```text
-SMB null session запрещён
-```
-
-и тем более не означает «SMB отсутствует».
-
-## Evidence и повторный запуск
-
-Raw stdout/stderr protocol providers сохраняется как `protocol_tool_output` evidence artifact с SHA-256.
-
-Нормализованные observations upsert'ятся по стабильному dedupe identity, а не дублируются бесконечно при каждом повторном запуске.
-
-Findings engine читает уже эти normalized observations. Raw output ему не нужен.
-
-Подробнее: [FINDINGS_MODEL.md](FINDINGS_MODEL.md).
+Подробнее: [FINDINGS_MODEL.md](FINDINGS_MODEL.md) и [API.md](API.md).

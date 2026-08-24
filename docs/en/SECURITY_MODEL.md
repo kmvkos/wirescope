@@ -2,55 +2,43 @@
 
 [Русский](../SECURITY_MODEL.md) · **English**
 
-WireScope actively inspects networks, so its security model is built around concrete boundaries: who accepts input, who may start processes, which component owns packet-capture privileges, and which targets are actually authorized.
+WireScope actively inspects networks, so its security model is based on explicit boundaries: who accepts input, which component may start external processes, where elevated privileges live, and which targets are authorized.
 
-## The short version
+## Core rules
 
-- API and worker do not run as root.
+- API and worker run without root privileges.
 - Packet-capture capabilities belong only to `dumpcap`.
-- Active discovery requires a confirmed scope.
-- Clients cannot supply arbitrary Nmap or provider flags.
+- Active discovery requires operator-confirmed scope.
+- Clients cannot supply arbitrary Nmap/provider flags.
 - External tools run as argv arrays without a shell.
-- Raw evidence is stored behind internal artifact IDs, not caller-supplied paths.
-- Mutating operational APIs require the `auditor` role.
-- Plain HTTP exposed to a LAN is not the recommended production setup.
+- Raw evidence is exposed through registered artifact IDs, not caller-selected filesystem paths.
+- Mutating APIs require the `auditor` role.
+- A normal appliance listens on `0.0.0.0:8000` so the UI is reachable through any configured physical or Wi‑Fi interface.
 
 ## Trust boundaries
 
-### HTTP/API boundary
+### HTTP/API
 
-FastAPI accepts external input and is responsible for:
+FastAPI owns authentication, role checks, and validation of interfaces, scope, addresses, ports, filters, and job parameters. User-controlled strings are not forwarded directly into a shell or scanner CLI.
 
-- authentication;
-- role checks;
-- validation of interfaces, scope, addresses, ports, filters, and job parameters;
-- durable audit/job metadata;
-- controlled read access through API models.
+### Worker
 
-A user-controlled string is not forwarded directly into a shell or scanner command line.
-
-### Job boundary
-
-The worker executes only registered internal job types.
-
-Network-sensitive jobs currently include:
+The worker executes only registered job types. Network-sensitive jobs are:
 
 - `passive_discovery`;
 - `packet_capture`;
 - `active_discovery`;
 - `protocol_audit`.
 
-`findings_evaluation` and `report_generation` operate only on persisted data and do not contact the network themselves.
+`findings_evaluation` and `report_generation` operate only on persisted data.
 
-### External-tool boundary
+### External tools
 
-`ToolRunner` executes argument arrays. `shell=True` is not used on this path.
-
-Provider modules construct the allowed argv. The API does not expose an unrestricted “extra flags” field for Nmap or other tools.
+`ToolRunner` executes argument arrays and does not use `shell=True`. Providers build the allowed argv; the HTTP API does not expose unrestricted extra flags.
 
 ## Least privilege
 
-A normal system install should look like this:
+A normal system install looks like this:
 
 ```text
 wirescope-api            wirescope-worker
@@ -66,8 +54,6 @@ uid=wirescope            uid=wirescope
 
 Python, Uvicorn, and the worker must not carry `CAP_NET_RAW` or `CAP_NET_ADMIN`.
 
-Useful checks:
-
 ```bash
 getcap /usr/bin/dumpcap
 stat -c '%U:%G %a' /usr/bin/dumpcap
@@ -75,23 +61,13 @@ sudo -u wirescope /usr/bin/dumpcap -D
 getcap /opt/wirescope/.venv/bin/python || true
 ```
 
-The Python interpreter should return without capabilities.
+Elevated packet-capture rights are isolated in the narrow capture provider instead of running the entire backend as root.
 
-`appliance verify` also checks that `dumpcap` is not setuid, permissions have the expected shape, and the backend did not inherit packet-capture capabilities.
+## Active discovery
 
-### Why `dumpcap` gets privileges instead of the backend
+An immutable confirmed-scope snapshot is persisted before Nmap starts. The worker revalidates scope and routing immediately before invoking the scanner.
 
-WireScope does not run the whole application as root just to capture packets. `dumpcap` is a narrow capture provider with the minimum file capabilities required for that task.
-
-That keeps a bug in the API, parser, or frontend from automatically turning into a root-level process and packet-access bug.
-
-## Nmap and active discovery
-
-Nmap starts only after server-side scope confirmation and route validation.
-
-An immutable confirmed-scope snapshot is persisted before the job runs. The worker validates that snapshot again before invoking Nmap.
-
-The following are rejected:
+Rejected inputs include:
 
 - `0.0.0.0/0`;
 - `::/0`;
@@ -99,178 +75,104 @@ The following are rejected:
 - uncontrolled expansion of large IPv6 prefixes;
 - raw user-supplied Nmap flags.
 
-WireScope does not elevate Nmap. If raw-socket privileges already exist, the provider may use the corresponding discovery/scanning methods. Otherwise it falls back to TCP connect and records skipped UDP/OS-detection capabilities.
-
-Active discovery does not use NSE, `-sC`, `vuln`, brute-force, exploit, or DoS scripts.
+WireScope does not elevate Nmap. Without raw sockets, the provider uses supported fallbacks and records unavailable capabilities. NSE, `-sC`, `vuln`, brute-force, exploit, and DoS scripts are not part of the default discovery path.
 
 See [SCANNING_MODEL.md](SCANNING_MODEL.md).
 
-## Protocol audits
+## Protocol audits and capabilities
 
-A protocol module runs only when:
+A protocol module runs only for a matching inventory service whose address remains inside authorized scope.
 
-1. a matching service already exists in inventory;
-2. the module predicate matches;
-3. the chosen asset address is still inside authorized scope;
-4. the module safety class is allowed by the current profile.
+Default modules do not guess credentials or community strings. A missing optional binary is represented as an unavailable capability / `tool_unavailable`, never as a passed check.
 
-Current default modules do not guess credentials or community strings.
-
-Examples:
-
-- SMB uses a conservative null-session probe;
-- SNMP uses an SNMPv3 noAuth probe without `public/private` guessing or walks;
-- LDAP uses anonymous base DSE;
-- HTTP does not follow redirects automatically;
-- `testssl.sh`, Nikto, and Nuclei are `never-default` stubs.
-
-A missing binary produces `tool_unavailable`; it is not evidence that the protocol is absent.
+`GET /api/v1/capabilities` exposes the tools actually available on the appliance. Readiness depends on the core capture/decode dependencies; a missing optional provider such as `ssh-audit` or `smbclient` does not make the whole appliance unready.
 
 ## Authentication and roles
 
-Users are local SQLite records.
+Local roles are `auditor` and `viewer`.
 
 | Action | `auditor` | `viewer` |
 | --- | --- | --- |
 | Read audits/jobs/inventory/findings/reports | yes | yes |
+| Dashboard / diff / capabilities / evidence | yes | yes |
 | Change own password | yes | yes |
 | Create audits | yes | no |
 | Start/cancel jobs | yes | no |
-| Listen/record capture | yes | list/download only |
+| Listen/Record | yes | no |
 | Change network configuration | yes | no |
 | Change finding state | yes | no |
 | Generate reports | yes | no |
 
-Session tokens are random.
+Session tokens are random. The browser receives an HttpOnly cookie while SQLite stores only its SHA-256 digest. `SameSite=strict` is used; `Secure` is enabled for direct TLS or trusted-proxy deployments. Passwords use PBKDF2-HMAC-SHA256. There is no permanent built-in default password.
 
-- the browser receives an HttpOnly cookie;
-- cookies use `SameSite=strict`;
-- SQLite stores only the token's SHA-256 digest;
-- cookies become `Secure` when direct TLS or a trusted reverse proxy is configured.
+## Web listener, firewall, and TLS
 
-Passwords use PBKDF2-HMAC-SHA256.
+### Default appliance policy
 
-There is no built-in default password.
-
-## Bind address and TLS
-
-The application-level default is `127.0.0.1:8000`. The installer CLI currently has a separate `0.0.0.0` default, so production commands set the intended bind explicitly.
-
-### Local kiosk
-
-For an autonomous appliance:
+WireScope is intended to behave as a standalone network appliance that an operator reaches through whichever interface is available in the current segment. Application settings, installer, and upgrade path therefore default to:
 
 ```text
-127.0.0.1:8000
+0.0.0.0:8000
 ```
 
-The API does not need to be reachable from another host at all.
+This means “listen on all local IPv4 interfaces”; it does not by itself make the service Internet-reachable. Actual reachability still depends on addressing, routing, VLANs, and host/network firewall policy.
 
-### LAN access
-
-Recommended layout:
+The local kiosk continues to open:
 
 ```text
-management browser
-      │ HTTPS :443
-      ▼
-Caddy / nginx
-      │ loopback HTTP
-      ▼
-127.0.0.1:8000
+http://127.0.0.1:8000/
 ```
 
-Installer example:
+because loopback is simply another local path to the same listener.
+
+### Restricted deployments
+
+A particular deployment can opt into loopback-only binding:
+
+```bash
+sudo ./packaging/install.sh --bind-host 127.0.0.1
+```
+
+TCP/8000 may also be restricted with a firewall, protected with direct TLS, or placed behind a reverse proxy. The installer does not rewrite firewall policy automatically.
+
+Direct TLS example:
 
 ```bash
 sudo ./packaging/install.sh \
-  --bind-host 127.0.0.1 \
-  --trust-proxy \
-  --generate-admin-password
+  --bind-host 0.0.0.0 \
+  --bind-port 8443 \
+  --tls-cert /etc/wirescope/tls/cert.pem \
+  --tls-key /etc/wirescope/tls/key.pem
 ```
 
-In this mode:
+`GET /api/v1/capabilities` reports the effective bind host/port, TLS state, and trust-proxy state.
 
-- API remains on loopback;
-- session cookies are `Secure`;
-- forwarded headers are trusted only from the loopback proxy;
-- TCP 8000 does not need to be exposed to the LAN.
+## Evidence
 
-Example proxy/firewall snippets live under `packaging/proxy/`.
+PCAP and raw provider output may contain sensitive data. Clients do not select artifact paths; WireScope creates UUID-based artifacts and registers their metadata in SQLite.
 
-### Direct TLS
+Evidence writes follow temporary file → flush/fsync → atomic rename → SHA-256 → metadata registration.
 
-Direct Uvicorn TLS is also supported, commonly on port 8443. Certificate/key paths belong in `wirescope.env`; PEM contents must not be embedded in systemd units.
-
-### Plain HTTP on `0.0.0.0`
-
-Technically supported, but not the recommended LAN configuration. If used, the port should be restricted to the management network by the host firewall.
-
-The installer does not rewrite firewall policy automatically.
-
-## API documentation
-
-Swagger/OpenAPI/ReDoc may be enabled in development.
-
-Production appliance configuration should set:
-
-```text
-WIRESCOPE_DOCS_ENABLED=false
-```
-
-`/api/health` and `/api/ready` remain public so a kiosk or reverse proxy can check appliance state before login.
-
-## Evidence and sensitive data
-
-A PCAP may contain:
-
-- clear-text credentials;
-- internal addresses and hostnames;
-- cookies/tokens;
-- user traffic;
-- device identifiers.
-
-The evidence root must therefore be treated as sensitive audit storage.
-
-Clients do not choose evidence paths. WireScope generates internal UUID-based locations.
-
-Artifact write path:
-
-1. temporary file;
-2. flush/fsync;
-3. atomic rename;
-4. SHA-256;
-5. metadata registration in SQLite.
-
-Normal modes are:
+Normal permissions are:
 
 ```text
 directories: 0700
 files:       0600
 ```
 
-Raw PCAP retention for the normal passive-audit path is disabled by default (`passive_retain_capture=false`). In Listen / Record mode the PCAP is the intended output and is retained as evidence.
+Artifact downloads are audit-scoped:
 
-Retention is an operator-policy concern. Policy-driven automatic deletion of registered audit evidence is not implemented yet.
+```text
+GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
+```
 
-## SQLite
+The backend verifies that the artifact belongs to the requested audit. Normal passive captures are not retained long-term by default (`passive_retain_capture=false`); Listen/Record intentionally retains its PCAP as evidence.
 
-SQLite contains:
+## SQLite and durability
 
-- selected scope and interfaces;
-- jobs/events/errors;
-- inventory;
-- findings;
-- report metadata;
-- local users;
-- hashed sessions;
-- evidence references.
+SQLite stores audits, jobs/events, confirmed scopes, inventory, findings, report metadata, local users/sessions, and evidence references.
 
-It should be protected as audit data.
-
-Do not place the live database on NFS.
-
-Runtime database settings include:
+Runtime policy includes:
 
 - WAL;
 - foreign keys;
@@ -278,76 +180,46 @@ Runtime database settings include:
 - short transactions;
 - `synchronous=FULL` by default.
 
-Operator backup/restore:
+Do not place the live database on NFS.
 
-```bash
-python -m appliance backup
-python -m appliance restore <archive>
-```
+## Resource locking, cancellation, and restart
 
-## Resource locking and concurrency
+Locks live in SQLite. `interface:<name>` prevents conflicting capture/active work from using the same interface concurrently, while resource groups limit overall concurrency.
 
-Resource locks live in SQLite.
+Cancellation is persistent state. The worker terminates the subprocess group and moves the job to `cancelled`.
 
-They prevent conflicts even across worker threads:
+After worker restart:
 
-- `interface:<name>` prevents simultaneous capture and active discovery on one interface;
-- packet capture has a global resource-group limit;
-- active discovery has its own group limit;
-- protocol audits serialize by audit/group;
-- findings and reports serialize separately and do not hold an interface lock.
+- queued jobs stay queued;
+- old running jobs become `interrupted` with `application_restart`;
+- locks are released;
+- network scanner jobs are not automatically resumed or retried.
 
-Default concurrency is conservative: the main network jobs run one at a time.
-
-Only one healthy worker supervisor should own the supervisor lease, preventing an accidentally launched second process from multiplying configured concurrency.
-
-## Cancellation
-
-Cancellation of a running job is persistent state, not just an in-memory flag.
-
-The worker observes the request, sets the cancellation token, and `ToolRunner` terminates the subprocess group.
-
-A cancelled job ends as `cancelled`, not `failed`.
-
-Valid partial observations already persisted before cancellation may remain in inventory/evidence.
-
-## Restart recovery
-
-After a worker restart:
-
-- queued jobs remain queued;
-- old running jobs become `interrupted`;
-- the error code is `application_restart`;
-- resource locks are released;
-- jobs are not resumed or retried automatically.
-
-This is intentional: an arbitrary network scan is safer to restart explicitly than to resume from an uncertain execution point.
-
-Restarting the browser or kiosk does not affect job lifetime.
+Restarting Chromium or the kiosk does not affect durable jobs.
 
 ## Network configuration helper
 
-WireScope can change host network configuration through a separate `netctl` privilege boundary. The API itself does not become root and does not execute arbitrary `sudo` commands.
+Host network changes pass through a separate `netctl` privilege boundary. The API itself does not become root and does not execute arbitrary `sudo` commands. A change that may break the management path requires server-side confirmation.
 
-System installs use a tightly scoped helper/sudoers path. Input still passes model validation and confirmation checks, especially when a change may remove the current management path.
+## API docs and logging
 
-## Logging
+Swagger/OpenAPI/ReDoc can be disabled with:
 
-HTTP clients receive typed safe errors. Python tracebacks are not returned in API responses.
+```text
+WIRESCOPE_DOCS_ENABLED=false
+```
 
-The worker emits structured operational logs with audit/job context. A separate immutable security audit-log table does not exist yet; this is current technical debt.
+`/api/health` and `/api/ready` remain public for appliance health checks.
 
-## Production checklist
+HTTP clients receive typed safe errors without Python tracebacks. The worker emits structured operational logs. A dedicated immutable security audit-log table is still future work.
 
-At minimum, verify:
+## Operational checklist
 
-- API/worker are not root;
-- Python has no network capabilities;
-- `dumpcap` is not setuid and has the expected file capabilities;
-- `WIRESCOPE_DOCS_ENABLED=false`;
-- LAN UI is HTTPS unless the host is an explicitly isolated lab system;
-- TCP 8000 is not exposed when using a reverse proxy;
-- `/etc/wirescope` and `/var/lib/wirescope` are not world-readable;
-- `initial-admin.txt` has been removed after the password was stored safely;
-- backups receive the same protection as the main database/evidence;
-- scope caps have not been raised without a documented reason.
+- API/worker are not root.
+- Python has no network capabilities.
+- `dumpcap` is not setuid and has the expected capabilities.
+- `/etc/wirescope` and `/var/lib/wirescope` are not world-readable.
+- the generated initial-admin secret is stored and the temporary file removed;
+- firewall/TLS policy matches the deployment segment;
+- scope caps are not raised without a reason;
+- backups receive the same protection as the live database/evidence.

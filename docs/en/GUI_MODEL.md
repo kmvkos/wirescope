@@ -2,51 +2,47 @@
 
 [Русский](../GUI_MODEL.md) · **English**
 
-The GUI is the normal operator interface. A regular audit does not require shell access: audit creation, passive capture, scope confirmation, active discovery, protocol audits, findings, and report generation are available from the browser.
+The GUI is the normal operator interface. A regular audit does not require shell access: audit creation, passive capture, scope confirmation, active discovery, protocol audits, findings, evidence, and reports are available from the browser.
 
-The frontend is a client of the durable API. It does not own worker-job lifetime: closing the tab, reloading the page, or restarting the kiosk does not cancel running work.
+The frontend is only a client of the durable API. Closing a tab, reloading the page, or restarting the kiosk does not cancel worker jobs.
 
 ## Where the GUI runs
 
-Two modes are supported.
-
 ### Local kiosk
 
-Chromium runs on the WireScope appliance itself:
+Chromium runs on the appliance itself and opens:
 
 ```text
 http://127.0.0.1:8000/
 ```
 
-No management network to another PC is required.
-
-The system kiosk runs on `tty1` without GNOME/KDE/XFCE. VMware uses Xorg/xinit; other suitable hardware can use Cage with xinit as a fallback.
+The system kiosk owns `tty1` without a full GNOME/KDE/XFCE desktop. VMware uses Xorg/xinit; suitable hardware may use Cage.
 
 ### Remote browser
 
-An operator connects from another machine. The preferred production path is:
+A normal appliance installation listens on `0.0.0.0:8000`, so the operator may open the UI through any configured WireScope interface:
 
 ```text
-browser → HTTPS → Caddy/nginx → 127.0.0.1:8000
+http://<wirescope-ip>:8000/
 ```
 
-See [INSTALLATION.md](INSTALLATION.md) and [SECURITY_MODEL.md](SECURITY_MODEL.md).
+A deployment may tighten exposure with a firewall, direct TLS, a reverse proxy, or an explicit `--bind-host 127.0.0.1`. Loopback-only operation is a deployment choice rather than the WireScope appliance default.
 
 ## Frontend stack
 
-The frontend intentionally has no build framework:
+The frontend intentionally remains build-free:
 
 ```text
 frontend/
 ├── index.html
 ├── app.js
 ├── i18n.js
-└── style.css
+├── style.css
+├── enhancements.js
+└── enhancements.css
 ```
 
-It is plain HTML/CSS/JavaScript.
-
-The application is no longer a trivial page, though. It contains the audit wizard, status polling, inventory screens, findings, report preview, network settings, login/password flows, and the separate listen/record workflow.
+`app.js` contains the established wizard and operational screens. `enhancements.js` is loaded separately and adds operator insights without rewriting the primary audit workflow.
 
 ## Main audit flow
 
@@ -65,235 +61,197 @@ profile
   ↓
 confirmation
   ↓
-passive / active / protocol jobs
+passive → discovery → protocol → findings → report
   ↓
-summary
-  ↓
-assets / observations / assessment / findings
-  ↓
-report
+summary / inventory / evidence / report
 ```
 
-The home screen also provides:
+## Pipeline
 
-- Listen / Record;
-- Network settings;
-- Change password;
-- previous audit history.
+Progress and summary views expose the durable pipeline:
+
+```text
+Passive analysis
+      ↓
+Discovery
+      ↓
+Protocol checks
+      ↓
+Findings
+      ↓
+Report
+```
+
+Stage state is derived from persisted jobs. The browser does not maintain a second pipeline state machine.
+
+## WireScope overview
+
+An additional **Overview** panel can inspect any saved audit.
+
+### Overview tab
+
+Shows:
+
+- asset count;
+- service count;
+- finding count;
+- Critical/High counts;
+- assets supported by both passive and active sources;
+- pipeline state;
+- device-class distribution;
+- most common open services.
+
+Data comes from:
+
+```text
+GET /api/v1/audits/{audit_id}/dashboard
+GET /api/v1/audits/{audit_id}/correlations
+```
+
+There is no separate dashboard database.
+
+### System tab
+
+Shows external-tool availability and the active scan profiles actually loaded by the backend:
+
+```text
+GET /api/v1/capabilities
+GET /api/v1/scan-profiles
+```
+
+The operator can distinguish a healthy appliance from a missing optional provider such as `ssh-audit` or `smbclient`.
+
+The capability response also exposes the current web listener: bind host/port, TLS, and trust-proxy state.
+
+### Compare tab
+
+Two persisted audits can be compared through:
+
+```text
+GET /api/v1/audits/{new_id}/diff?against={old_id}
+```
+
+The UI groups:
+
+- added/removed assets;
+- added/removed open services;
+- added/removed findings.
+
+The backend computes the diff; the frontend only renders it.
+
+### Evidence tab
+
+For each finding, the UI queries registered evidence artifacts:
+
+```text
+GET /api/v1/audits/{audit_id}/findings/{finding_id}/evidence
+```
+
+Text, JSON, and XML evidence can be inspected inline. Binary artifacts are opened/downloaded separately.
+
+The canonical artifact route is audit-scoped:
+
+```text
+GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
+```
+
+## Device classification
+
+The UI renders device-class hints computed by the inventory layer:
+
+```text
+server-like
+workstation-like
+network-device-like
+printer-like
+iot-like
+unknown
+```
+
+Classification remains a confidence-rated inventory hint, not a security finding.
 
 ## Roles
 
-Local roles are:
-
-- `auditor`;
-- `viewer`.
+Local roles are `auditor` and `viewer`.
 
 | Action | Auditor | Viewer |
 | --- | --- | --- |
-| Login and read audits/jobs/inventory/findings/reports | yes | yes |
+| Read audits/jobs/inventory/findings/reports | yes | yes |
+| Dashboard / diff / capabilities / evidence | yes | yes |
 | Change own password | yes | yes |
-| Create audit | yes | no |
+| Create an audit | yes | no |
 | Start/cancel jobs | yes | no |
-| Start/stop listen capture | yes | no |
-| List/download saved captures | yes | yes |
+| Listen / Record | yes | no |
 | Change network settings | yes | no |
-| Suppress / accept risk / reopen a finding | yes | no |
+| Change finding state | yes | no |
 | Generate a report | yes | no |
 
-Role enforcement is performed by the backend, not merely by hiding buttons in JavaScript.
+The backend enforces roles independently of button visibility in JavaScript.
 
-## Login and sessions
+## Sessions
 
-After authentication, the backend sets an HttpOnly session cookie.
+After login, the backend issues an HttpOnly cookie. The token is random; SQLite stores a SHA-256 digest. `SameSite=strict` is used, and `Secure` is enabled for direct TLS/trusted-proxy deployments.
 
-Properties:
+The active audit id is kept in `sessionStorage` so a reload can return to progress/summary. This is a browser convenience only; backend/SQLite state remains authoritative.
 
-- random token;
-- `SameSite=strict`;
-- SQLite stores the token's SHA-256 digest;
-- `Secure` is enabled for trusted reverse proxy or direct TLS.
+## Summary / observations / assessment / findings
 
-If a `Secure` cookie is expected while the operator opens the site over plain HTTP, login may appear not to persist. The UI warns about that situation.
+The GUI keeps these concepts separate:
 
-## Password change
+- **Summary** — compact audit state and pipeline;
+- **Observations** — normalized facts from protocol modules;
+- **Assessment** — confidence-qualified passive interpretation;
+- **Findings** — rule-engine conclusions with severity/recommendation/state.
 
-The home screen provides **Change password**.
-
-The user supplies:
-
-1. current password;
-2. new password;
-3. confirmation.
-
-The backend verifies the current hash, updates the password, and revokes the user's other sessions. The browser session that submitted the change remains active.
-
-`appliance set-password` is mainly a lock-out recovery command.
-
-## Layout
-
-The compact baseline is a 480×320 landscape kiosk.
-
-Key constraints:
-
-- single column;
-- minimum 44px touch targets;
-- compact header;
-- separate scrollable content area;
-- confirmation/stop dialogs use `role="alertdialog"`.
-
-At 900px and above, a denser laptop/desktop layout enables grids, more information per row, and a larger report preview.
-
-The project does not maintain separate kiosk and desktop frontends.
-
-## Job progress
-
-The GUI polls durable job state.
-
-If a poll fails temporarily:
-
-- a warning is shown;
-- polling retries with backoff;
-- the job is not cancelled.
-
-Stop is an explicit `auditor` action with a confirmation dialog.
-
-The active audit ID is kept in `sessionStorage` so a reload can return to progress or summary.
-
-This is only UI convenience. The actual source of truth is persisted backend/worker state in SQLite.
-
-## Summary, observations, assessment, findings
-
-These are separate views on purpose.
-
-### Summary
-
-A compact audit picture:
-
-- capture interface;
-- whether it had an L3 address;
-- frame count;
-- tagged VLAN IDs actually observed;
-- LLDP/CDP neighbors;
-- segment/access-vs-trunk note;
-- downstream stage state.
-
-### Observations
-
-Normalized facts from protocol modules, such as TLS session/certificate data, SSH algorithms, or HTTP response metadata.
-
-### Assessment
-
-Confidence-qualified interpretation of passive evidence: VLAN hints, neighbors, STP, ARP/DHCP, and similar context.
-
-### Findings
-
-Rule results with severity, recommendation, evidence, and state.
-
-A passive sensor hit does not become a finding just because it exists.
+A passive sensor hit does not automatically become a finding.
 
 ## VLAN display
 
-The UI follows the same model as backend and reports.
-
-An 802.1Q VLAN ID is shown as observed in traffic only when the tag actually existed in a frame.
-
-If an access port sends untagged frames, WireScope shows untagged traffic but does not invent a VLAN ID.
-
-An LLDP/CDP advertised native/voice VLAN is displayed as neighbor metadata and is not confused with a frame tag.
+A VLAN ID is shown as observed only when an 802.1Q tag was actually present. Untagged access traffic does not receive an invented VLAN ID. LLDP/CDP native or voice VLAN values remain neighbor metadata.
 
 ## Listen / Record
 
-Listen / Record is a separate workflow, not the short passive capture performed as part of an audit.
-
-The operator chooses:
+The separate `packet_capture` workflow accepts:
 
 - interface;
 - optional BPF/tcpdump filter;
 - duration;
 - maximum PCAP size.
 
-The resulting job type is:
-
-```text
-packet_capture
-```
-
-In this mode `dumpcap` runs promiscuously and the resulting PCAP is retained in the evidence store.
-
-Default settings:
-
-```text
-duration: 120 s
-max file size: 16 MiB
-```
-
-Current policy maximums:
-
-```text
-duration: 1800 s
-max file size: 64 MiB
-filter length: 512 chars
-```
-
-Duration `0` means capture until Stop, while the file-size limit remains a safety boundary.
-
-### What promiscuous mode actually means
-
-Promiscuous mode does not make a switch send all segment traffic to the host.
-
-Without SPAN/mirroring, the NIC generally sees:
-
-- broadcast;
-- flooded traffic;
-- multicast that reaches the port;
-- unicast to its own MAC;
-- any other traffic the switch actually forwards to that port.
-
-`dumpcap` records everything the NIC receives, not magically every frame on the VLAN.
-
-### BPF filter
-
-The filter is normalized/validated separately and passed as one `dumpcap -f` argument.
-
-No shell is used for filter execution.
+`dumpcap` runs promiscuously, but promiscuous mode does not cause a switch to mirror all VLAN traffic to the port. The resulting PCAP is stored in the evidence store.
 
 ## Network screen
 
-The GUI can view and change host network configuration through backend `NetworkService` and the appliance `netctl` boundary.
-
-If a change may remove the current management path, the backend requires additional confirmation. Frontend code cannot bypass that server-side check.
+Network configuration is handled through backend `NetworkService` and the `netctl` privilege boundary. Potentially disruptive management-path changes require server-side confirmation and cannot be bypassed by frontend code.
 
 ## Reports
 
-The UI can:
+The GUI can:
 
-- enqueue report generation (`auditor` only);
-- show report history;
-- open HTML preview;
-- download HTML/JSON exports.
-
-A viewer may read existing reports but cannot generate new ones.
+- enqueue report generation for an `auditor`;
+- browse report history;
+- open HTML;
+- export JSON;
+- export Markdown.
 
 PDF currently returns `422 pdf_not_available`.
 
 ## Error handling
 
-The UI should not translate backend failure into “nothing found”.
-
-Distinct cases include:
+The UI distinguishes at least:
 
 - validation error;
 - worker not ready;
-- missing provider;
+- optional provider unavailable;
 - timeout;
 - cancellation;
 - partial result;
 - authorization/role error;
-- network-apply confirmation or failure.
+- network-apply confirmation/failure.
+
+A missing provider must never be presented as a passed check or as “nothing found”.
 
 ## Kiosk lifecycle
-
-The kiosk process is independent:
 
 ```text
 wirescope-api      survives Chromium restart
@@ -301,12 +259,8 @@ wirescope-worker   survives Chromium restart
 wirescope-kiosk    may restart independently
 ```
 
-A display reload or restart therefore does not cancel an audit.
-
 The screen is a client, not the executor.
 
-## Browser tests
+## Testing
 
-The main GUI/API workflows are fixture-based. Optional Playwright tests are marked `browser` and skipped when Playwright/Chromium is unavailable.
-
-A headless CI system without Chromium does not fail the backend test suite just because kiosk browser tests cannot run.
+Core GUI/API contracts are fixture-based. Optional Playwright tests are marked `browser` and skipped when Playwright/Chromium is unavailable. CI compiles Python sources and runs the default `pytest` suite.

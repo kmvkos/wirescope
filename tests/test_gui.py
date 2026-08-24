@@ -50,7 +50,13 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert 'lang="ru"' in html
     assert "/static/i18n.js" in html
     assert "Сеть / VLAN / область" in html
-    assert "уполномоченный диапазон" in html
+    assert "уполномоченный диапазон" in html or "уполномоченный L3-диапазон" in html
+    assert 'id="scope-proposal"' in html
+    assert 'data-i18n="scope.confirmAction"' in html
+    assert "<details class=\"advanced\">" in html
+    assert 'id="scope-targets"' in html
+    assert "Будем сканировать эти сети" in i18n
+    assert "один CIDR или хост на строку" in i18n
     assert 'data-profile="passive"' in html
     assert 'data-profile="discovery"' in html
     assert 'data-profile="standard"' in html
@@ -62,6 +68,12 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "beforeunload" not in script
     assert "pagehide" not in script
     assert 't("error.viewerCannotStart")' in script
+    assert "combinedTargets()" in script
+    assert "derived_from" in script
+    assert "applyVlanScanInterface" in script
+    assert "/api/scope/proposal" in script
+    assert "state.draft.proposed" in script
+    assert "required" not in html.split('id="scope-targets"')[1].split("</textarea>")[0]
     assert "Наблюдатель не может запускать аудиты" in i18n
     assert 'const locale = "ru"' in i18n
     assert 'role="alertdialog"' in html
@@ -168,3 +180,30 @@ def test_me_policy_exposes_duration_limits_for_the_gui(api_context):
     assert "start_audits" in me.json()["capabilities"]
     assert viewer.json()["capabilities"] == []
     assert viewer.json()["role"] == "viewer"
+
+
+def test_scope_proposal_endpoint_derives_interface_prefix(api_context):
+    app, _service, _evidence, _environment = api_context
+
+    response = http_request(
+        app,
+        "GET",
+        "/api/scope/proposal",
+        params={"interface": "eth0"},
+    )
+    missing = http_request(
+        app,
+        "GET",
+        "/api/scope/proposal",
+        params={"interface": "eth9"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "interface_prefix"
+    assert payload["canonical_targets"] == ["192.0.2.0/24"]
+    assert payload["assigned_addresses"] == ["192.0.2.10/24"]
+    assert "0.0.0.0/0" not in payload["canonical_targets"]
+    assert "::/0" not in payload["canonical_targets"]
+    assert missing.status_code == 422
+    assert missing.json()["detail"]["code"] == "unknown_interface"

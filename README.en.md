@@ -171,9 +171,11 @@ The recommended system layout keeps the source checkout in `/opt/wirescope`.
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
+cd wirescope
+git checkout milestone-8-appliance
+cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
-sudo git checkout milestone-8-appliance
 
 sudo ./packaging/install.sh \
   --generate-admin-password \
@@ -182,7 +184,7 @@ sudo ./packaging/install.sh \
   --enable-kiosk
 ```
 
-The clone is intentionally performed without `sudo` above because `sudo git clone` uses root's SSH keys rather than the current user's keys.
+The clone is intentionally performed without `sudo` because `sudo git clone` would use root's SSH configuration and keys. The branch checkout is also done before moving the repository into `/opt`, avoiding unnecessary ownership and Git `safe.directory` issues.
 
 The installer runs **from the checkout**; it does not copy the application tree elsewhere. Do not delete or rename that checkout after installation because the systemd units reference it.
 

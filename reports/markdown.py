@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from reports.presentation import human_headline
+
 
 _RU = {
     "severity": {
@@ -92,7 +94,7 @@ def render_markdown(document: dict[str, Any]) -> str:
     evidence = document.get("evidence_references") or []
     by_severity = summary.get("by_severity") or {}
 
-    headline = _text(summary.get("headline"))
+    headline = _text(human_headline(summary.get("headline")))
     summary_text = str(summary.get("summary") or "Итоговое заключение отсутствует.")
     targets = scope.get("targets") or []
     vlans = passive.get("tagged_vlan_ids") or []
@@ -255,7 +257,7 @@ def render_markdown(document: dict[str, Any]) -> str:
     if evidence:
         lines.extend([
             "| ID | Тип | Формат | Размер, байт | SHA-256 |",
-            "| --- | --- | --- | ---: | --- |",
+            "| --- | --- | ---: | ---: | --- |",
         ])
         for item in evidence:
             lines.append(

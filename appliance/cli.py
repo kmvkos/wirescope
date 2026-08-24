@@ -447,3 +447,13 @@ def cmd_tls_selfsigned(args: argparse.Namespace) -> int:
     )
     os.execvp(argv[0], argv)
     return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    try:
+        parser = build_parser()
+        args = parser.parse_args(argv)
+        raise SystemExit(args.handler(args))
+    except KeyboardInterrupt:
+        print("установка прервана / install interrupted", file=sys.stderr)
+        raise SystemExit(130)

@@ -2,15 +2,13 @@
 
 [Русский](README.md) · **English**
 
-WireScope is a self-contained network audit appliance for Linux. It can run on a small PC, laptop, server, virtual machine, or ARM64 device and is meant to be used as a dedicated tool for examining an unfamiliar network segment.
+WireScope is a self-contained network audit appliance for Linux. It can run on a small PC, laptop, server, virtual machine, or ARM64 device and is intended as a dedicated tool for examining an unfamiliar network segment.
 
-The workflow is deliberately conservative: connect WireScope to a network, observe the segment passively, explicitly confirm what may be scanned, then build an inventory, run service-aware checks, evaluate findings, and produce a report. WireScope does not treat every route visible from the host as permission to scan it.
+The workflow is conservative by design: observe the network passively first, explicitly define what may be scanned, build an inventory, run checks that match discovered services, and produce a technical report. WireScope does not treat every route reachable from the host as automatically authorized scope.
 
-The project targets ordinary Linux distributions: Debian/Ubuntu, Fedora/RHEL/Rocky, and openSUSE on `amd64` or `arm64`. Raspberry Pi is a supported hardware option, not a requirement, and Raspberry Pi OS is not required.
+The target platform is ordinary Linux: Debian/Ubuntu, Fedora/RHEL/Rocky, and openSUSE on `amd64` and `arm64`. Raspberry Pi is one supported hardware option, not a requirement, and Raspberry Pi OS is not required.
 
-## What WireScope does
-
-A normal audit follows this path:
+## Audit workflow
 
 ```text
 connect to a network
@@ -19,9 +17,9 @@ snapshot host and interface state
         ↓
 passive packet capture
         ↓
-observations: ARP, DHCP, VLAN, LLDP/CDP, STP, IPv6, mDNS, LLMNR, NBNS, SSDP
+ARP / DHCP / VLAN / LLDP / CDP / STP / IPv6 / naming protocols
         ↓
-operator confirms the authorized scope
+operator confirms authorized scope
         ↓
 active discovery with Nmap
         ↓
@@ -34,43 +32,31 @@ findings
 HTML / JSON report
 ```
 
-There is also a separate **Listen / Record** mode. The operator chooses an interface, optionally supplies a BPF/tcpdump filter, sets time and size limits, and WireScope stores the resulting PCAP as an evidence artifact.
+A separate **Listen / Record** mode lets the operator select an interface, optionally provide a BPF/tcpdump filter, set time and file-size limits, and retain the resulting PCAP as an evidence artifact.
 
 ### Passive analysis
 
-A regular audit performs one bounded capture with `dumpcap`, then decodes the PCAP once using `tshark -T ek`. The protocol sensors run in-process after that decode step.
+A normal audit performs one bounded capture with `dumpcap`, then decodes the PCAP once with `tshark -T ek`. Sensors operate on normalized packet records inside the Python process.
 
-Current passive coverage includes:
+Current coverage includes Ethernet/MAC, 802.1Q/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS, and SSDP.
 
-- Ethernet/MAC;
-- 802.1Q VLAN and QinQ;
-- ARP;
-- DHCPv4 and DHCPv6;
-- LLDP and CDP;
-- STP;
-- IPv6 RA and Neighbor Discovery;
-- mDNS, LLMNR, NBNS;
-- SSDP.
-
-WireScope keeps observations separate from assumptions. ARP addresses, for example, can provide a useful grouping hint but are not treated as proof of a subnet mask. If an access port delivers untagged frames, WireScope does not invent a VLAN ID for them.
+Observations stay separate from assumptions. ARP addresses, for example, may provide a useful grouping hint but are not proof of the actual subnet mask. If an access port delivers untagged frames, WireScope does not invent a VLAN ID.
 
 ### Active discovery
 
-Nmap runs only after the operator confirms an authorized scope. API clients provide targets and a scan profile, not arbitrary Nmap flags.
+Nmap runs only after scope confirmation. Clients submit targets and a profile, not arbitrary Nmap flags.
 
-Three profiles are available:
+Profiles:
 
 - **Discovery** — fast live-host discovery;
-- **Standard** — the normal inventory profile: discovery, TCP top 1000, `-sV`, a curated UDP set, and OS detection when the required privileges already exist;
-- **Deep** — full TCP `1-65535`, higher service-version intensity, and an expanded UDP set.
+- **Standard** — normal inventory: host discovery, TCP top 1000, `-sV`, a curated UDP set, and OS detection when the required privileges already exist;
+- **Deep** — TCP `1-65535`, deeper service identification, and an expanded UDP set.
 
-`0.0.0.0/0`, `::/0`, multicast ranges, and uncontrolled expansion of large IPv6 prefixes are rejected. Each profile has a target-count limit.
-
-Active discovery does not use NSE, `-sC`, `vuln`, brute-force, exploit, or DoS scripts.
+`0.0.0.0/0`, `::/0`, multicast ranges, and uncontrolled expansion of large IPv6 prefixes are rejected. Discovery does not use NSE, `-sC`, `vuln`, brute-force, exploit, or DoS scripts.
 
 ### Protocol checks
 
-After inventory is built, WireScope dispatches only the modules that match discovered services. The current set includes:
+After inventory is built, WireScope runs only modules that match discovered services:
 
 - SSH — `ssh-audit`;
 - TLS — `openssl s_client`;
@@ -80,24 +66,19 @@ After inventory is built, WireScope dispatches only the modules that match disco
 - SNMP — a conservative SNMPv3 noAuth probe;
 - LDAP — anonymous base DSE with `ldapsearch`.
 
-These modules do not guess passwords or community strings. `testssl.sh`, Nikto, and Nuclei exist only as `never-default` stubs and are not dispatched by normal profiles.
+The modules do not guess passwords or community strings. `testssl.sh`, Nikto, and Nuclei remain `never-default` and are not dispatched by normal profiles.
 
 ### Findings and reports
 
-Protocol modules store observations, not ready-made “vulnerabilities”. A separate rule engine evaluates normalized data and creates findings. This keeps a fact such as “the server negotiated this cipher” separate from the interpretation “this cipher is weak”.
+Protocol modules persist facts. A separate rule engine evaluates normalized observations and creates findings, keeping a fact such as “the server offered this cipher” separate from the interpretation “this cipher is weak”.
 
-A finding records severity, confidence, the affected asset/service, rationale, recommendation, and links to supporting evidence. Findings may be marked `suppressed` or `accepted_risk`; state changes are retained in an audit trail.
+A finding records severity, confidence, affected asset/service, rationale, recommendation, and links to evidence. `suppressed` and `accepted_risk` states retain their change history.
 
-Report generation works from persisted data and does not re-run scanners. Current exports are:
+Report generation uses persisted data and does not re-run scanners. Current outputs are self-contained HTML and normalized JSON using the `audit-report` v1 schema. PDF is not implemented yet.
 
-- self-contained HTML;
-- normalized JSON using the `audit-report` v1 schema.
+## Architecture
 
-PDF export is not implemented yet.
-
-## Architecture in one page
-
-WireScope is a modular monolith. The API and worker are separate processes, but the system is intentionally not split into networked microservices.
+WireScope remains a modular monolith. API and worker are separate processes, but they are not networked microservices.
 
 ```text
 frontend (HTML/CSS/JS)
@@ -105,8 +86,8 @@ frontend (HTML/CSS/JS)
         ▼
 FastAPI
         │
-        ├── auth
-        ├── environment / interfaces / network / scope
+        ├── backend/routers/
+        ├── auth / network / scope
         ├── audits / jobs
         ├── inventory
         ├── findings / reports
@@ -124,15 +105,30 @@ worker
         └── report generation
 ```
 
-SQLite runs in WAL mode. Normalized application data and artifact metadata stay in the database; larger raw files such as PCAPs, Nmap XML, provider stdout/stderr, and generated HTML/JSON reports live in the evidence store and are registered by UUID, size, and SHA-256.
+`backend/app.py` is the composition root: it constructs services and attaches API routers, the frontend, and static files. HTTP routes are grouped by domain under `backend/routers/`.
 
-See [Architecture](docs/en/ARCHITECTURE.md) for the full design.
+SQLite runs in WAL mode. Normalized data and artifact metadata live in the database; PCAPs, Nmap XML, raw provider stdout/stderr, and generated reports live in the evidence store and are registered by UUID, size, and SHA-256.
+
+See [Architecture](docs/en/ARCHITECTURE.md).
+
+## HTTP API
+
+The canonical API is under `/api/v1`:
+
+```text
+GET  /api/v1/health
+GET  /api/v1/environment
+POST /api/v1/audits
+GET  /api/v1/jobs/{job_id}
+```
+
+The old `/api/*` prefix is temporarily retained as a compatibility alias, so the current frontend and existing clients continue to work. Legacy routes are hidden from OpenAPI; Swagger/ReDoc expose only `/api/v1/*`.
+
+See [docs/en/API.md](docs/en/API.md).
 
 ## Privilege model
 
-`wirescope-api` and `wirescope-worker` are not supposed to run as root.
-
-Only `/usr/bin/dumpcap` receives packet-capture privileges:
+`wirescope-api` and `wirescope-worker` are not supposed to run as root. Packet-capture privileges belong only to `/usr/bin/dumpcap`:
 
 ```text
 wirescope-api / wirescope-worker
@@ -143,31 +139,31 @@ root:wireshark, 0750
 cap_net_admin,cap_net_raw=eip
 ```
 
-WireScope does not elevate Nmap. If raw sockets are unavailable, the provider falls back to TCP connect scans and skips features that require those capabilities.
+WireScope does not elevate Nmap. If raw sockets are unavailable, the provider uses TCP connect scanning and skips features that require those capabilities.
 
-External commands are executed as argument arrays through the common runner. `shell=True` is not used on this path.
+External commands are executed as argument arrays through the common runner; `shell=True` is not used on this path.
 
 See [Security model](docs/en/SECURITY_MODEL.md).
 
 ## Operator UI
 
-Operators work through a browser. There are two supported deployment styles:
+Operators use a browser. Two main deployment modes are supported:
 
-1. **local kiosk** — Chromium on the appliance itself, normally at `http://127.0.0.1:8000/`;
+1. **local kiosk** — Chromium on the appliance itself, normally `http://127.0.0.1:8000/`;
 2. **remote browser** — LAN access through TLS and a reverse proxy.
 
-The kiosk does not require GNOME, KDE, or XFCE. The system kiosk owns `tty1` and starts Chromium through Cage or Xorg/xinit. VMware uses the Xorg path.
+The kiosk does not require GNOME, KDE, or XFCE. The system kiosk owns `tty1` and starts Chromium through Cage or Xorg/xinit; VMware uses the Xorg path.
 
-Local roles are:
+Roles:
 
-- `auditor` — may start and cancel work, change network settings, manage finding state, and generate reports;
+- `auditor` — start/cancel jobs, change network settings, manage finding state, generate reports;
 - `viewer` — read-only access.
 
-Sessions use HttpOnly cookies. SQLite stores the SHA-256 digest of the random session token, not the token itself.
+Sessions use an HttpOnly cookie. SQLite stores the SHA-256 digest of the token rather than the token itself.
 
 ## Quick install
 
-The recommended system layout keeps the source checkout in `/opt/wirescope`.
+The recommended system layout keeps the checkout in `/opt/wirescope`.
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
@@ -179,14 +175,21 @@ cd /opt/wirescope
 
 sudo ./packaging/install.sh \
   --generate-admin-password \
-  --bind-host 127.0.0.1 \
   --with-kiosk \
   --enable-kiosk
 ```
 
-The clone is intentionally performed without `sudo` because `sudo git clone` would use root's SSH configuration and keys. The branch checkout is also done before moving the repository into `/opt`, avoiding unnecessary ownership and Git `safe.directory` issues.
+Clone without `sudo` so Git uses the current user's SSH keys. Checkout before moving the repository into `/opt` to avoid unnecessary ownership and `safe.directory` issues.
 
-The installer runs **from the checkout**; it does not copy the application tree elsewhere. Do not delete or rename that checkout after installation because the systemd units reference it.
+The installer runs **from the checkout** and does not copy application code elsewhere. Do not remove or rename the checkout after installation because systemd units reference it.
+
+Both installer and application defaults bind to **`127.0.0.1:8000`**. A public bind must be explicit:
+
+```bash
+sudo ./packaging/install.sh --bind-host 0.0.0.0
+```
+
+For access from another machine, the preferred deployment keeps the API on loopback and puts Caddy or nginx with TLS in front of it.
 
 Default system-install layout:
 
@@ -197,9 +200,7 @@ Default system-install layout:
 /etc/systemd/system             system units
 ```
 
-For Debian/Ubuntu, Fedora/RHEL/Rocky, openSUSE, user systemd, kiosk setup, TLS, upgrade, and rollback, see [Installation](docs/en/INSTALLATION.md).
-
-> Note: the appliance CLI currently defaults `--bind-host` to `0.0.0.0`. The documented autonomous-kiosk and reverse-proxy setups therefore pass `--bind-host 127.0.0.1` explicitly. Exposing plain HTTP on `0.0.0.0:8000` should be a deliberate exception, not the default deployment choice.
+See [Installation](docs/en/INSTALLATION.md) for distro-specific setup, user systemd, kiosk mode, TLS, upgrade, and rollback.
 
 ## Development
 
@@ -211,44 +212,45 @@ python3 -m venv .venv
 .venv/bin/alembic upgrade head
 ```
 
-Run API and worker in separate terminals:
+Run API and worker separately:
 
 ```bash
 .venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000
 .venv/bin/python -m jobs.worker
 ```
 
-The normal test suite does not touch the live network:
+The normal test suite does not contact a live network:
 
 ```bash
 .venv/bin/pytest
 ```
 
-Tests marked `network` or `live_pi` are opt-in.
+`network` and `live_pi` tests are opt-in.
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
+| [API](docs/en/API.md) | `/api/v1`, compatibility policy, authorization semantics |
 | [Installation](docs/en/INSTALLATION.md) | system/user install, kiosk, TLS, distro notes, upgrade/rollback |
 | [Architecture](docs/en/ARCHITECTURE.md) | modules, data flow, jobs, persistence, privilege boundaries |
 | [Scanning model](docs/en/SCANNING_MODEL.md) | scope, Nmap profiles, inventory, protocol audits |
-| [Security model](docs/en/SECURITY_MODEL.md) | trust boundaries, authentication, TLS, evidence, least privilege |
+| [Security model](docs/en/SECURITY_MODEL.md) | trust boundaries, auth, TLS, evidence, least privilege |
 | [Findings model](docs/en/FINDINGS_MODEL.md) | rules, severity/confidence, deduplication, false-positive boundaries |
 | [Reporting](docs/en/REPORTING_MODEL.md) | `audit-report` v1, HTML/JSON, evidence references |
 | [Operator GUI](docs/en/GUI_MODEL.md) | roles, wizard, listen/record, kiosk/laptop layout |
 | [Development](docs/en/DEVELOPMENT.md) | local run, migrations, tests, handler contract |
 | [Runbook](docs/en/RUNBOOK.md) | operations, diagnostics, backup/restore, recovery |
-| [Implementation plan](docs/en/IMPLEMENTATION_PLAN.md) | M0–M8 history and remaining release work |
+| [Implementation plan](docs/en/IMPLEMENTATION_PLAN.md) | M0–M8 history and remaining work |
 
 ## Current state
 
-The `milestone-8-appliance` branch contains the M0–M7 feature set plus the current M8 appliance work: installer, systemd integration, kiosk mode, backup/restore, dependency detection, network configuration, TLS/proxy guidance, and the PCAP listen/record workflow.
+The appliance line contains the M0–M7 feature set plus the current M8 work: installer, systemd integration, kiosk mode, backup/restore, dependency detection, network configuration, TLS/proxy support, and PCAP listen/record.
 
 Known limitations include:
 
-- no PDF export;
+- no PDF export yet;
 - no dedicated security audit-log table yet;
 - no policy-driven automatic deletion of completed audits and registered evidence;
 - no automatic retry for terminal/interrupted jobs;
-- tshark compatibility still needs release testing against the package versions shipped by each supported distribution.
+- tshark compatibility still needs release testing against the package versions shipped by supported distributions.

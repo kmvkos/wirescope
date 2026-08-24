@@ -7,6 +7,7 @@ follow caller-supplied filesystem paths.
 ```text
 audit + environment snapshot
 confirmed scope
+passive capture assessment (VLAN tags, neighbors, naming)
 assets / services
 findings + recommendations
 artifact metadata (ids, types, hashes)
@@ -27,8 +28,9 @@ Schema name `audit-report`, version 1. Published JSON Schema:
 
 Sections:
 
-- executive summary (counts, highest open severity, headline);
-- environment (hostname, interfaces, default route, DNS);
+- executive summary (counts, capture frames, L3 on the capture NIC, tagged VLAN IDs, segment note, highest open severity, headline);
+- environment (hostname, capture interface and whether it had an L3 address, interfaces, default route, DNS);
+- passive assessment (802.1Q tags actually observed, CDP/LLDP neighbors, STP, ARP/DHCP/mDNS/LLMNR/NBNS summaries, duration);
 - scope (confirmed snapshot plus the audit scope object);
 - assets and services;
 - findings (including suppressed and accepted-risk rows);
@@ -72,3 +74,24 @@ which rejects paths outside the evidence root.
 
 Default tests stay fixture-based (`pytest -m not network`). Report generation
 never contacts a live network.
+
+## Silent tap / no DHCP
+
+`dumpcap` does not need an IPv4 address on the capture NIC. A quiet or
+unaddressed tap still produces a useful report:
+
+- frame count, duration, and whether the segment looked quiet;
+- 802.1Q VLAN IDs **only** when tagged frames arrive (typically a trunk);
+- CDP/LLDP neighbors, including advertised native/voice VLAN and port, when
+  those PDUs hit the port;
+- ARP, DHCP, mDNS, LLMNR, and NBNS summaries from `passive_result`.
+
+An access port usually sends untagged frames. WireScope does **not** invent a
+VLAN ID in that case. The HTML report states: «VLAN в кадре виден только при
+802.1Q; access-порт коммутатора часто без тега — тогда ID неизвестен, но
+трафик этой сети всё равно виден».
+
+Active Nmap still requires a usable L3 path: an address on the capture
+interface, an existing VLAN subinterface (`eth0.10`), or extra confirmed
+CIDRs. `0.0.0.0/0` remains prohibited. Deep is blocked until that scope
+exists.

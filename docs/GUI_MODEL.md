@@ -68,13 +68,17 @@ keep running independently.
 
 The GUI keeps those layers on separate screens:
 
+- **Summary** — audit status plus the passive picture: capture NIC L3 yes/no,
+  frame count, tagged VLAN IDs actually seen, CDP/LLDP neighbors, and the
+  access-vs-trunk VLAN note;
 - **Observations** — protocol-module facts from `/api/audits/{id}/observations`;
 - **Assessment** — confidence-qualified interpretations from a completed
-  passive job result;
+  passive job result, including VLANs, neighbors, STP, and ARP;
 - **Findings** — severity-bearing rule results from `/api/audits/{id}/findings`.
 
 Passive sensor hits stay inside the passive result document. They are not
-shown as findings.
+shown as findings. VLAN IDs are never invented for untagged access-port
+traffic.
 
 ## Reports
 

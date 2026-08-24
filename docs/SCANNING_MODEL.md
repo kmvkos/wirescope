@@ -85,6 +85,12 @@ checks that:
 - VLAN subinterfaces are accepted only when they already exist (`eth0.10`).
   WireScope does not create VLAN interfaces in Milestone 3.
 
+Without an L3 address on the capture NIC, Deep (and any other active profile)
+stays blocked unless a VLAN subinterface already has an address or the
+operator confirms extra on-link CIDRs. `0.0.0.0/0` and `::/0` are never
+accepted. Passive capture still runs; it does not invent a VLAN ID for
+untagged access-port traffic.
+
 The resolved context records target, source address, gateway, directly
 connected versus routed, address family, and link state. Unknown interface
 names are never forwarded to Nmap.

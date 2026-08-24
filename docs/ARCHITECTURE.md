@@ -123,8 +123,10 @@ Converts observations into explicitly qualified interpretations:
 
 - traffic visibility;
 - trunk-like versus access-or-native port hints;
-- tagged VLAN observations;
-- LLDP/CDP neighbors;
+- tagged VLAN observations (802.1Q tags in frames only; LLDP/CDP PVID is a
+  neighbor fact, not a tag);
+- LLDP/CDP neighbors, including advertised native/voice VLAN and port;
+- STP root from BPDUs when present;
 - IPv4 `/24` grouping hints;
 - IPv6 router observations;
 - DHCP presence.
@@ -164,8 +166,11 @@ suppress/accepted-risk audit trail.
 
 `reports/` is the Milestone 6 reporting package. It builds a versioned
 `audit-report` view from persisted audits, inventory, findings, environment
-snapshots, and artifact metadata. HTML and JSON are written through the
-evidence store. Raw provider output is referenced by id and hash only.
+snapshots, stored `passive_result` assessments, and artifact metadata. HTML
+and JSON prominently include the capture NIC, whether it had an L3 address,
+observed 802.1Q VLAN IDs, CDP/LLDP neighbors, and ARP/DHCP/naming summaries.
+Raw provider output is referenced by id and hash only. Untagged access-port
+traffic is never assigned an invented VLAN ID.
 
 `auth/` is the Milestone 7 local identity package. Users have role
 `auditor` or `viewer`. Sessions are random tokens stored as SHA-256
@@ -454,6 +459,8 @@ Normal capture disables promiscuous mode by default (`dumpcap -p`), uses a
 65,535-byte snap length, and enforces independent duration, packet-count, and
 file-size limits. Capture directories are `0700`; decode output is `0600`.
 Dropped packet counters produce warnings even when dumpcap exits successfully.
+An L3 address on the capture NIC is not required for `dumpcap`; CDP, LLDP,
+STP, ARP, and tagged 802.1Q frames are still decoded if they arrive.
 
 ## Persistence and jobs
 

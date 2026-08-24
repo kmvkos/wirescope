@@ -232,3 +232,24 @@ def test_recommendations_only_include_open_findings():
     assert report.executive_summary.open_finding_count == 1
     assert report.executive_summary.finding_count == 2
     assert report.executive_summary.highest_open_severity == "high"
+
+
+def test_empty_capture_headline_is_honest():
+    report = build_audit_report(
+        sample_source(
+            audit_summary={"schema": "passive-summary", "frame_count": 0},
+            confirmed_scope=None,
+            assets=[],
+            services=[],
+            findings=[],
+            detected_sensors=[],
+        ),
+        report_id=REPORT_ID,
+        generated_at=FROZEN,
+        product="WireScope",
+        version="0.1.0",
+    )
+    html = render_html(report)
+    assert report.executive_summary.headline == "Capture completed with no frames"
+    assert "Захват завершён: кадров нет" in html
+    assert report.executive_summary.asset_count == 0

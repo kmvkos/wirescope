@@ -1,4 +1,4 @@
-from jobs.models import RetentionClass
+from jobs.models import ErrorCategory, JobError, RetentionClass
 from tests.helpers import http_request as request
 
 
@@ -477,3 +477,79 @@ def test_reports_api_enqueues_lists_and_rejects_pdf(api_context):
     )
     assert pdf.status_code == 422
     assert pdf.json()["detail"]["code"] == "pdf_not_available"
+
+
+def test_completed_audit_can_enqueue_discovery_and_report(api_context):
+    app, service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+    job_id = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/passive",
+        json={"duration_seconds": 30},
+    ).json()["job_id"]
+    assert service.claim_next("worker-1") is not None
+    service.complete_job(
+        job_id,
+        result_reference=None,
+        summary={
+            "schema": "passive-summary",
+            "frame_count": 0,
+            "detected_sensors": [],
+        },
+    )
+    assert service.get_audit(audit_id).status.value == "completed"
+
+    discovery = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/discovery",
+        json={
+            "interface": "eth0",
+            "scope": ["192.0.2.0/24"],
+            "profile": "discovery",
+        },
+    )
+    report = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/reports",
+        json={},
+    )
+    assert discovery.status_code == 202
+    assert report.status_code == 202
+    assert service.get_job(discovery.json()["job_id"]).type == "active_discovery"
+    assert service.get_job(report.json()["job_id"]).type == "report_generation"
+
+
+def test_failed_audit_report_explains_invalid_transition(api_context):
+    app, service, _evidence, _environment = api_context
+    audit_id = create_audit(app).json()["id"]
+    job_id = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/passive",
+        json={},
+    ).json()["job_id"]
+    assert service.claim_next("worker-1") is not None
+    service.fail_job(
+        job_id,
+        JobError(
+            code="permission_denied",
+            category=ErrorCategory.PERMISSION,
+            message="Permission denied while starting: /usr/bin/dumpcap",
+            component="capture",
+            retryable=False,
+        ),
+    )
+    response = request(
+        app,
+        "POST",
+        f"/api/audits/{audit_id}/reports",
+        json={},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_state_transition"
+    assert detail["current"] == "failed"
+    assert "failed" in detail["message"]

@@ -64,6 +64,63 @@ def test_create_audit_job_progress_events_and_completion(job_service):
     ]
 
 
+def test_completed_audit_accepts_follow_on_jobs_and_merges_summary(job_service):
+    audit, job = create_job(job_service, resource=False)
+    job_service.claim_next("worker-1")
+    job_service.complete_job(
+        job.id,
+        result_reference=None,
+        summary={"schema": "passive-summary", "frame_count": 3},
+    )
+    assert job_service.get_audit(audit.id).status.value == "completed"
+
+    follow_on = job_service.create_job(
+        audit_id=audit.id,
+        job_type="report_generation",
+        target="eth0",
+    )
+    reopened = job_service.get_audit(audit.id)
+    assert follow_on.status == JobStatus.QUEUED
+    assert reopened.status.value == "running"
+    assert reopened.finished_at is None
+
+    job_service.claim_next("worker-2")
+    job_service.complete_job(
+        follow_on.id,
+        result_reference=None,
+        summary={"schema": "report-summary", "asset_count": 0},
+    )
+    final = job_service.get_audit(audit.id)
+    assert final.status.value == "completed"
+    assert final.summary["frame_count"] == 3
+    assert final.summary["asset_count"] == 0
+    assert final.summary["schema"] == "report-summary"
+
+
+def test_failed_audit_rejects_follow_on_jobs(job_service):
+    audit, job = create_job(job_service, resource=False)
+    job_service.claim_next("worker-1")
+    job_service.fail_job(
+        job.id,
+        JobError(
+            code="tool_missing",
+            category=ErrorCategory.TOOL_MISSING,
+            message="Required tool is missing",
+            component="test_handler",
+            retryable=False,
+        ),
+    )
+
+    with pytest.raises(InvalidTransition) as caught:
+        job_service.create_job(
+            audit_id=audit.id,
+            job_type="report_generation",
+            target="eth0",
+        )
+    assert caught.value.current.value == "failed"
+    assert "failed" in str(caught.value)
+
+
 def test_invalid_job_transition_is_rejected(job_service):
     _audit, job = create_job(job_service, resource=False)
 

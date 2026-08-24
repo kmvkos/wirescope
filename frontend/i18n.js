@@ -111,6 +111,10 @@ const I18N = (() => {
             "summary.services": "Службы",
             "summary.findings": "Находки",
             "summary.jobs": "Задания",
+            "summary.frames": "Кадры",
+            "summary.sensors": "Датчики",
+            "summary.emptyCapture": "Захват завершён без кадров. Сегмент мог быть тихим (NAT/VM). Отчёт всё равно можно сформировать.",
+            "summary.framesWithoutAssets": "Кадры есть, но в инвентарь не попали хосты с MAC/IP. Откройте оценку или сформируйте отчёт.",
             "nav.assets": "Активы",
             "nav.observations": "Наблюдения",
             "nav.assessment": "Оценка",
@@ -119,7 +123,7 @@ const I18N = (() => {
             "assets.title": "Активы",
             "assets.services": "Службы",
             "assets.emptyTitle": "Нет активов",
-            "assets.emptyDetail": "Запустите обнаружение после подтверждения области.",
+            "assets.emptyDetail": "Пассивный захват не дал MAC/IP, либо активное обнаружение не нашло хостов.",
             "assets.meta": "{state} · {mac} · {vendor}",
             "assets.serviceMeta": "{state} · {product}",
             "observations.title": "Наблюдения",
@@ -244,7 +248,7 @@ const I18N = (() => {
             "error.username_taken": "Такое имя пользователя уже существует",
             "error.interface_required": "У аудита нет интерфейса захвата",
             "error.invalid_duration": "Длительность пассива вне допустимого диапазона",
-            "error.invalid_state_transition": "Недопустимый переход состояния",
+            "error.invalid_state_transition": "Нельзя поставить задание: аудит в состоянии «{current}». Отчёт доступен после успешного завершения.",
             "error.interface_mismatch": "Интерфейс обнаружения должен совпадать с интерфейсом аудита",
             "error.not_found": "Объект не найден",
             "error.scope_not_confirmed": "Аудит протоколов требует подтверждённую уполномоченную область",
@@ -426,6 +430,10 @@ const I18N = (() => {
             "summary.services": "Services",
             "summary.findings": "Findings",
             "summary.jobs": "Jobs",
+            "summary.frames": "Frames",
+            "summary.sensors": "Sensors",
+            "summary.emptyCapture": "Capture finished with no frames. The segment may have been quiet (NAT/VM). A report can still be generated.",
+            "summary.framesWithoutAssets": "Frames were captured, but no MAC/IP hosts were written to inventory. Open assessment or generate a report.",
             "nav.assets": "Assets",
             "nav.observations": "Observations",
             "nav.assessment": "Assessment",
@@ -434,7 +442,7 @@ const I18N = (() => {
             "assets.title": "Assets",
             "assets.services": "Services",
             "assets.emptyTitle": "No assets",
-            "assets.emptyDetail": "Run discovery after confirming scope.",
+            "assets.emptyDetail": "Passive capture had no MAC/IP hosts, or active discovery found none.",
             "assets.meta": "{state} · {mac} · {vendor}",
             "assets.serviceMeta": "{state} · {product}",
             "observations.title": "Observations",
@@ -559,7 +567,7 @@ const I18N = (() => {
             "error.username_taken": "Username already exists",
             "error.interface_required": "Audit has no capture interface",
             "error.invalid_duration": "Passive duration is outside the allowed range",
-            "error.invalid_state_transition": "Invalid state transition",
+            "error.invalid_state_transition": "Cannot enqueue a job: audit status is “{current}”. Reports are allowed after a successful completion.",
             "error.interface_mismatch": "Discovery interface must match the audit interface",
             "error.not_found": "Not found",
             "error.scope_not_confirmed": "Protocol audits require a confirmed authorized scope",
@@ -695,7 +703,15 @@ const I18N = (() => {
             const primary = messages[locale] || {};
             const secondary = messages[fallback] || {};
             if (primary[key] || secondary[key]) {
-                return t(key);
+                const detail = (
+                    error.detail && typeof error.detail === "object"
+                ) ? error.detail : {};
+                return t(key, {
+                    current: token("status", detail.current),
+                    desired: token("status", detail.desired),
+                    entity: detail.entity || "",
+                    jobType: token("jobType", detail.job_type),
+                });
             }
         }
         if (error.message) {

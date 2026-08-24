@@ -472,13 +472,7 @@ def create_app(
         except InterfaceValidationError as exc:
             raise _interface_http_error(exc) from exc
         except InvalidTransition as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "invalid_state_transition",
-                    "message": str(exc),
-                },
-            ) from exc
+            raise _invalid_transition_http(exc) from exc
         return JobAcceptedResponse(
             audit_id=audit.id,
             job_id=job.id,
@@ -546,13 +540,7 @@ def create_app(
         except RouteValidationError as exc:
             raise _route_http_error(exc) from exc
         except InvalidTransition as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "invalid_state_transition",
-                    "message": str(exc),
-                },
-            ) from exc
+            raise _invalid_transition_http(exc) from exc
         return JobAcceptedResponse(
             audit_id=audit.id,
             job_id=job.id,
@@ -751,13 +739,7 @@ def create_app(
         except EntityNotFound as exc:
             raise _not_found(exc) from exc
         except InvalidTransition as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "invalid_state_transition",
-                    "message": str(exc),
-                },
-            ) from exc
+            raise _invalid_transition_http(exc) from exc
         return JobAcceptedResponse(
             audit_id=audit.id,
             job_id=job.id,
@@ -829,13 +811,7 @@ def create_app(
         except EntityNotFound as exc:
             raise _not_found(exc) from exc
         except InvalidTransition as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "invalid_state_transition",
-                    "message": str(exc),
-                },
-            ) from exc
+            raise _invalid_transition_http(exc) from exc
         return JobAcceptedResponse(
             audit_id=audit.id,
             job_id=job.id,
@@ -1009,13 +985,7 @@ def create_app(
         except EntityNotFound as exc:
             raise _not_found(exc) from exc
         except InvalidTransition as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "invalid_state_transition",
-                    "message": str(exc),
-                },
-            ) from exc
+            raise _invalid_transition_http(exc) from exc
         return JobAcceptedResponse(
             audit_id=audit.id,
             job_id=job.id,
@@ -1372,6 +1342,21 @@ def _not_found(error: EntityNotFound) -> HTTPException:
         detail={
             "code": "not_found",
             "message": str(error),
+        },
+    )
+
+
+def _invalid_transition_http(error: InvalidTransition) -> HTTPException:
+    current = getattr(error.current, "value", error.current)
+    desired = getattr(error.desired, "value", error.desired)
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "invalid_state_transition",
+            "message": str(error),
+            "entity": error.entity,
+            "current": current,
+            "desired": desired,
         },
     )
 

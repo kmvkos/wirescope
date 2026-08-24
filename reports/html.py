@@ -473,6 +473,15 @@ _HEADLINES = {
         "По подтверждённой области открытых находок нет"
     ),
     "No open findings were recorded": "Открытых находок не зафиксировано",
+    "Capture completed with no frames": (
+        "Захват завершён: кадров нет. Сегмент мог быть тихим."
+    ),
+    "Passive observations were recorded": (
+        "Зафиксированы пассивные наблюдения"
+    ),
+    "No hosts, services, or findings were recorded": (
+        "Хосты, службы и находки не зафиксированы"
+    ),
 }
 
 

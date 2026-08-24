@@ -10,6 +10,7 @@ from engine.passive_models import (
     PassiveResult,
     PipelineErrorCode,
 )
+from inventory.service import InventoryService
 from jobs.errors import JobCancelled, JobExecutionError
 from jobs.models import (
     ErrorCategory,
@@ -24,8 +25,18 @@ class PassiveDiscoveryHandler:
     def __init__(
         self,
         pipeline_factory: Callable[[], PassivePipeline] | None = None,
+        inventory_factory: (
+            Callable[[HandlerContext], InventoryService] | None
+        ) = None,
     ) -> None:
         self.pipeline_factory = pipeline_factory or PassivePipeline
+        self.inventory_factory = inventory_factory or (
+            lambda context: InventoryService(
+                context.evidence_store.database,
+                context.settings,
+                context.evidence_store,
+            )
+        )
 
     def execute(self, context: HandlerContext) -> HandlerResult:
         interface = str(
@@ -111,22 +122,32 @@ class PassiveDiscoveryHandler:
             schema_name="passive-result",
             schema_version=1,
         )
+        hosts_persisted = self.inventory_factory(context).ingest_passive_from_audit(
+            context.audit.id,
+            job_id=context.job.id,
+        )
         return HandlerResult(
             result_reference=result_artifact.id,
-            summary=self._summary(result, result_artifact.id),
+            summary=self._summary(result, result_artifact.id, hosts_persisted),
         )
 
     @staticmethod
     def _summary(
         result: PassiveResult,
         result_reference: str,
+        hosts_persisted: int = 0,
     ) -> dict[str, Any]:
+        visibility = None
+        if result.assessment is not None and result.assessment.visibility is not None:
+            visibility = result.assessment.visibility.value
         return {
             "schema": "passive-summary",
             "schema_version": 1,
             "result_reference": result_reference,
             "interface": result.interface,
             "frame_count": result.capture.frame_count,
+            "hosts_persisted": hosts_persisted,
+            "visibility": visibility,
             "detected_sensors": sorted(
                 name
                 for name, sensor in result.sensors.items()

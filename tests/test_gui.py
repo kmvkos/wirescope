@@ -77,6 +77,8 @@ def test_frontend_defines_kiosk_workflow_screens():
     assert "state.draft.proposed" in script
     assert "job.dumpcapPermission" in i18n
     assert "службе не хватает группы wireshark" in i18n
+    assert "Захват завершён без кадров" in i18n
+    assert "id=\"summary-note\"" in html
     assert "required" not in html.split('id="scope-targets"')[1].split("</textarea>")[0]
     assert "Наблюдатель не может запускать аудиты" in i18n
     assert 'const locale = "ru"' in i18n

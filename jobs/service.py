@@ -20,6 +20,7 @@ from jobs.models import (
     Page,
 )
 from jobs.state import (
+    AUDIT_JOB_ACCEPTING,
     InvalidTransition,
     require_audit_transition,
     require_job_transition,
@@ -154,15 +155,21 @@ class JobService:
         )
         with self.database.session() as session, session.begin():
             audit = self._require_audit(session, audit_id)
-            if AuditStatus(audit.status) not in {
-                AuditStatus.CREATED,
-                AuditStatus.RUNNING,
-            }:
+            current = AuditStatus(audit.status)
+            if current not in AUDIT_JOB_ACCEPTING:
                 raise InvalidTransition(
                     "audit",
-                    AuditStatus(audit.status),
+                    current,
                     AuditStatus.RUNNING,
+                    reason=(
+                        "Cannot enqueue a job because the audit is "
+                        f"{current.value}"
+                    ),
                 )
+            if current == AuditStatus.COMPLETED:
+                require_audit_transition(current, AuditStatus.RUNNING)
+                audit.status = AuditStatus.RUNNING.value
+                audit.finished_at = None
             session.add(job)
             session.flush()
             self._add_event(
@@ -309,13 +316,12 @@ class JobService:
                         )
                     )
                 audit = self._require_audit(session, job.audit_id)
-                if AuditStatus(audit.status) == AuditStatus.CREATED:
-                    require_audit_transition(
-                        AuditStatus.CREATED,
-                        AuditStatus.RUNNING,
-                    )
+                current = AuditStatus(audit.status)
+                if current in {AuditStatus.CREATED, AuditStatus.COMPLETED}:
+                    require_audit_transition(current, AuditStatus.RUNNING)
                     audit.status = AuditStatus.RUNNING.value
                     audit.started_at = audit.started_at or utc_now()
+                    audit.finished_at = None
                 return self._job_record(job)
         return None
 
@@ -366,7 +372,9 @@ class JobService:
             self._release_lock(session, job.id)
             if summary is not None:
                 audit = self._require_audit(session, job.audit_id)
-                audit.summary = summary
+                merged = dict(audit.summary or {})
+                merged.update(summary)
+                audit.summary = merged
             self._refresh_audit(session, job.audit_id)
         return self._job_record(job)
 
@@ -608,6 +616,7 @@ class JobService:
         audit.status = desired.value
         if desired == AuditStatus.RUNNING:
             audit.started_at = audit.started_at or utc_now()
+            audit.finished_at = None
         elif desired in {
             AuditStatus.COMPLETED,
             AuditStatus.FAILED,

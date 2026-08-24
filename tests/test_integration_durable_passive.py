@@ -1,4 +1,5 @@
 from engine.passive import PassivePipeline
+from inventory.service import InventoryService
 from jobs.handlers.passive import PassiveDiscoveryHandler
 from jobs.models import JobStatus, RetentionClass
 from jobs.registry import HandlerRegistry
@@ -124,5 +125,11 @@ def test_passive_job_result_survives_application_object_restart(
         assert result["schema_version"] == 1
         assert result["result"]["sensors"]["lldp"]["detected"] is True
         assert result["result"]["metrics"]["decode_subprocesses"] == 1
+        inventory = InventoryService(
+            restarted_database,
+            durable_settings,
+            restarted_evidence,
+        )
+        assert inventory.summary(audit.id).assets >= 1
     finally:
         restarted_database.dispose()

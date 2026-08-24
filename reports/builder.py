@@ -65,7 +65,14 @@ def build_audit_report(
             summary=dict(source.audit_summary),
         ),
         executive_summary=ExecutiveSummary(
-            headline=_headline(open_findings, highest, confirmed),
+            headline=_headline(
+                open_findings,
+                highest,
+                confirmed,
+                frame_count=_frame_count(source),
+                asset_count=len(source.assets),
+                detected_sensors=source.detected_sensors,
+            ),
             asset_count=len(source.assets),
             service_count=len(source.services),
             finding_count=len(findings),
@@ -231,6 +238,10 @@ def _headline(
     open_findings: list[ReportFinding],
     highest: str | None,
     confirmed: bool,
+    *,
+    frame_count: int | None = None,
+    asset_count: int = 0,
+    detected_sensors: list[str] | None = None,
 ) -> str:
     if highest == Severity.CRITICAL.value:
         return "Open critical findings require attention"
@@ -240,9 +251,24 @@ def _headline(
         return "Open medium-severity findings were identified"
     if open_findings:
         return "Open findings were recorded"
+    if frame_count == 0 and asset_count == 0:
+        return "Capture completed with no frames"
     if confirmed:
         return "No open findings were recorded for the confirmed scope"
+    if asset_count == 0 and detected_sensors:
+        return "Passive observations were recorded"
+    if asset_count == 0:
+        return "No hosts, services, or findings were recorded"
     return "No open findings were recorded"
+
+
+def _frame_count(source: ReportSource) -> int | None:
+    raw = source.audit_summary.get("frame_count")
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str) and raw.isdigit():
+        return int(raw)
+    return None
 
 
 def _highest_severity(findings: list[ReportFinding]) -> str | None:

@@ -719,11 +719,17 @@ async function showSummary() {
     const inventory = await api("GET", `/api/audits/${state.auditId}/inventory`);
     const findings = await api("GET", `/api/audits/${state.auditId}/findings?limit=1`);
     const jobs = await api("GET", `/api/audits/${state.auditId}/jobs?limit=20`);
+    const sensors = Array.isArray(audit.summary && audit.summary.detected_sensors)
+        ? audit.summary.detected_sensors
+        : [];
+    const frames = audit.summary && audit.summary.frame_count;
     const rows = [
         [t("summary.audit"), audit.id],
         [t("summary.status"), I18N.status(audit.status)],
         [t("summary.profile"), I18N.profile(audit.profile)],
         [t("summary.interface"), audit.interface || t("common.dash")],
+        [t("summary.frames"), frames === undefined || frames === null ? t("common.dash") : String(frames)],
+        [t("summary.sensors"), sensors.length ? sensors.join(", ") : t("common.dash")],
         [t("summary.assets"), String(inventory.assets)],
         [t("summary.services"), String(inventory.services)],
         [t("summary.findings"), String(findings.total)],
@@ -743,6 +749,19 @@ async function showSummary() {
         dd.textContent = value;
         list.append(dt, dd);
     });
+    const note = $("summary-note");
+    if (note) {
+        if (frames === 0) {
+            note.hidden = false;
+            note.textContent = t("summary.emptyCapture");
+        } else if (Number(frames) > 0 && inventory.assets === 0) {
+            note.hidden = false;
+            note.textContent = t("summary.framesWithoutAssets");
+        } else {
+            note.hidden = true;
+            note.textContent = "";
+        }
+    }
 }
 
 async function showAssets() {
@@ -761,7 +780,7 @@ async function showAssets() {
         const name = (asset.names || []).map((item) => item.name).join(", ");
         assetList.append(
             listItem(
-                name || address || asset.id,
+                name || address || asset.mac || asset.id,
                 t("assets.meta", {
                     state: I18N.assetState(asset.state),
                     mac: asset.mac || t("common.noMac"),

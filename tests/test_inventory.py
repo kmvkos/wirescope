@@ -190,6 +190,68 @@ def test_multiple_addresses_and_conflicting_identity_are_preserved(
         assert "00:50:56:00:00:02" in macs
 
 
+def test_passive_ethernet_and_arp_are_persisted_as_assets(
+    database,
+    durable_settings,
+    evidence_store,
+    job_service,
+):
+    audit = job_service.create_audit(profile="passive", interface="eth0")
+    inventory = service(database, durable_settings, evidence_store)
+    persisted = inventory.ingest_passive_sensors(
+        audit_id=audit.id,
+        job_id=None,
+        sensors={
+            "ethernet": {
+                "observations": [
+                    {
+                        "data": {
+                            "mac": "00:0c:29:15:66:41",
+                            "frames": 12,
+                            "multicast_source": False,
+                        }
+                    },
+                    {
+                        "data": {
+                            "mac": "01:00:5e:00:00:fb",
+                            "frames": 4,
+                            "multicast_source": True,
+                        }
+                    },
+                ]
+            },
+            "arp": {
+                "observations": [
+                    {
+                        "data": {
+                            "sender_mac": "00:0c:29:15:66:41",
+                            "sender_ipv4": "192.168.32.149",
+                        }
+                    },
+                    {
+                        "data": {
+                            "sender_mac": "00:50:56:f0:1a:65",
+                            "sender_ipv4": "192.168.32.2",
+                        }
+                    },
+                ]
+            },
+        },
+    )
+    page = inventory.list_assets(audit_id=audit.id, limit=10, offset=0)
+    addresses = {
+        item.address
+        for asset in page.items
+        for item in asset.addresses
+    }
+    macs = {asset.mac for asset in page.items}
+    assert persisted >= 2
+    assert page.total == 2
+    assert macs == {"00:0C:29:15:66:41", "00:50:56:F0:1A:65"}
+    assert addresses == {"192.168.32.149", "192.168.32.2"}
+    assert inventory.summary(audit.id).assets == 2
+
+
 def test_unresponsive_cidr_hosts_are_not_materialized(
     database,
     durable_settings,

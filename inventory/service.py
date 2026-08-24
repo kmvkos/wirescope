@@ -26,9 +26,10 @@ from inventory.models import (
 )
 from inventory.normalize import canonical_ip, canonical_mac, escape_like
 from inventory.vendor import OuiResolver
+from jobs.errors import JobExecutionError
+from jobs.models import ArtifactRecord, RetentionClass
 from parsers.nmap import NmapHost, NmapScanDocument
 from persistence.database import Database
-from jobs.models import ArtifactRecord, RetentionClass
 from persistence.models import (
     ArtifactModel,
     AssetAddressModel,
@@ -45,6 +46,7 @@ from storage.evidence import EvidenceStore
 SOURCE_CONFIDENCE = {
     "arp": ConfidenceLevel.HIGH,
     "dhcp": ConfidenceLevel.HIGH,
+    "ethernet": ConfidenceLevel.MEDIUM,
     "mdns": ConfidenceLevel.MEDIUM,
     "llmnr": ConfidenceLevel.MEDIUM,
     "nbns": ConfidenceLevel.MEDIUM,
@@ -204,6 +206,16 @@ class InventoryService:
             evidence_reference=artifact_id,
         )
 
+    def ensure_passive_inventory(
+        self,
+        audit_id: str,
+        job_id: str | None = None,
+    ) -> int:
+        try:
+            return self.ingest_passive_from_audit(audit_id, job_id=job_id)
+        except JobExecutionError:
+            return 0
+
     def ingest_passive_sensors(
         self,
         *,
@@ -214,6 +226,9 @@ class InventoryService:
     ) -> int:
         created_or_updated = 0
         with self.database.session() as session, session.begin():
+            created_or_updated += self._ingest_ethernet(
+                session, audit_id, job_id, sensors, evidence_reference
+            )
             created_or_updated += self._ingest_arp(
                 session, audit_id, job_id, sensors, evidence_reference
             )
@@ -237,6 +252,7 @@ class InventoryService:
             self._refresh_classifications(session, audit_id)
 
     def summary(self, audit_id: str) -> InventorySummary:
+        self.ensure_passive_inventory(audit_id)
         with self.database.session() as session:
             assets = session.scalar(
                 select(func.count()).select_from(AssetModel).where(
@@ -304,6 +320,7 @@ class InventoryService:
         device_class: DeviceClassHint | None = None,
         include_services: bool = False,
     ) -> InventoryPage[AssetRecord]:
+        self.ensure_passive_inventory(audit_id)
         with self.database.session() as session:
             filters = [AssetModel.audit_id == audit_id]
             if state is not None:
@@ -403,6 +420,7 @@ class InventoryService:
         service_name: str | None = None,
         product: str | None = None,
     ) -> InventoryPage[ServiceRecord]:
+        self.ensure_passive_inventory(audit_id)
         with self.database.session() as session:
             filters = [ServiceModel.audit_id == audit_id]
             if asset_id:
@@ -647,6 +665,42 @@ class InventoryService:
             }
             return chosen, conflict
         return None, {}
+
+    def _ingest_ethernet(
+        self,
+        session: Session,
+        audit_id: str,
+        job_id: str | None,
+        sensors: dict[str, Any],
+        evidence_reference: str | None,
+    ) -> int:
+        count = 0
+        ethernet = sensors.get("ethernet") or {}
+        for observation in ethernet.get("observations") or []:
+            data = observation.get("data") or {}
+            if data.get("multicast_source"):
+                continue
+            mac = canonical_mac(data.get("mac"))
+            if not mac or mac == "00:00:00:00:00:00":
+                continue
+            try:
+                if int(mac.split(":", 1)[0], 16) & 1:
+                    continue
+            except ValueError:
+                continue
+            self._upsert_identity(
+                session,
+                audit_id=audit_id,
+                job_id=job_id,
+                mac=mac,
+                addresses=[],
+                names=[],
+                source="ethernet",
+                evidence_reference=evidence_reference,
+                state=AssetState.OBSERVED,
+            )
+            count += 1
+        return count
 
     def _ingest_arp(
         self,

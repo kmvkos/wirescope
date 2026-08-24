@@ -42,20 +42,40 @@ AUDIT_TRANSITIONS: dict[AuditStatus, frozenset[AuditStatus]] = {
             AuditStatus.INTERRUPTED,
         }
     ),
-    AuditStatus.COMPLETED: frozenset(),
+    AuditStatus.COMPLETED: frozenset({AuditStatus.RUNNING}),
     AuditStatus.FAILED: frozenset(),
     AuditStatus.CANCELLED: frozenset(),
     AuditStatus.INTERRUPTED: frozenset(),
 }
 
+AUDIT_JOB_ACCEPTING = frozenset(
+    {
+        AuditStatus.CREATED,
+        AuditStatus.RUNNING,
+        AuditStatus.COMPLETED,
+    }
+)
+
 
 class InvalidTransition(ValueError):
-    def __init__(self, entity: str, current: Enum, desired: Enum) -> None:
+    def __init__(
+        self,
+        entity: str,
+        current: Enum,
+        desired: Enum,
+        *,
+        reason: str | None = None,
+    ) -> None:
         self.entity = entity
         self.current = current
         self.desired = desired
+        self.reason = reason
         super().__init__(
-            f"Invalid {entity} transition: {current.value} -> {desired.value}"
+            reason
+            or (
+                f"Invalid {entity} transition: "
+                f"{current.value} -> {desired.value}"
+            )
         )
 
 

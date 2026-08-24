@@ -68,6 +68,8 @@ class Settings:
     protocol_runtime_dir: Path
     oui_database_path: Path
     docs_enabled: bool
+    bind_host: str
+    bind_port: int
     allowed_interfaces: tuple[str, ...]
     allow_loopback: bool
     require_interface_up: bool
@@ -164,6 +166,10 @@ class Settings:
             raise ValueError("session_ttl_seconds must be at least 60")
         if not self.session_cookie_name:
             raise ValueError("session_cookie_name must not be empty")
+        if not self.bind_host.strip():
+            raise ValueError("bind_host must not be empty")
+        if not (1 <= self.bind_port <= 65_535):
+            raise ValueError("bind_port must be between 1 and 65535")
         _validate_bootstrap_pair(
             self.bootstrap_auditor_username,
             self.bootstrap_auditor_password,
@@ -228,6 +234,9 @@ def get_settings() -> Settings:
             Path("/usr/share/ieee-data/oui.txt"),
         ),
         docs_enabled=_env_bool("WIRESCOPE_DOCS_ENABLED", True),
+        bind_host=os.getenv("WIRESCOPE_BIND_HOST", "127.0.0.1").strip()
+        or "127.0.0.1",
+        bind_port=_env_int("WIRESCOPE_BIND_PORT", 8000),
         allowed_interfaces=_env_list("WIRESCOPE_ALLOWED_INTERFACES"),
         allow_loopback=_env_bool("WIRESCOPE_ALLOW_LOOPBACK", False),
         require_interface_up=_env_bool(

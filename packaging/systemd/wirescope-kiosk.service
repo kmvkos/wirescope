@@ -1,0 +1,26 @@
+[Unit]
+Description=WireScope local kiosk browser
+Documentation=file:///opt/wirescope/docs/INSTALLATION.md
+After=wirescope-api.service
+Wants=wirescope-api.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=wirescope
+Group=wirescope
+WorkingDirectory=/opt/wirescope
+EnvironmentFile=-/etc/wirescope/wirescope.env
+Environment=WIRESCOPE_KIOSK_URL=http://127.0.0.1:8000/
+ExecStart=/opt/wirescope/packaging/kiosk/kiosk.sh
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wirescope-kiosk
+PrivateTmp=true
+
+[Install]
+WantedBy=graphical.target

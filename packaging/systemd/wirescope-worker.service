@@ -1,0 +1,31 @@
+[Unit]
+Description=WireScope durable worker
+Documentation=file:///opt/wirescope/docs/INSTALLATION.md
+After=network-online.target local-fs.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=wirescope
+Group=wirescope
+SupplementaryGroups=wireshark
+WorkingDirectory=/opt/wirescope
+EnvironmentFile=-/etc/wirescope/wirescope.env
+Environment=HOME=/var/lib/wirescope
+ExecStart=/opt/wirescope/.venv/bin/python -m jobs.worker
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=90
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wirescope-worker
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/wirescope
+
+[Install]
+WantedBy=multi-user.target

@@ -37,6 +37,7 @@ include = [
     "findings*",
     "reports*",
     "auth*",
+    "appliance*",
     "providers*",
     "sensors*",
     "storage*",
@@ -49,9 +50,10 @@ reports = ["schema/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = ["-ra", "-m", "not network"]
+addopts = ["-ra", "-m", "not network and not live_pi"]
 markers = [
     "network: opt-in tests that may contact a live network",
     "integration: broader pipeline tests that still stay fixture-based unless also marked network",
     "browser: optional headless browser tests skipped when Playwright is unavailable",
+    "live_pi: opt-in Raspberry Pi OS / ARM64 hardware tests",
 ]

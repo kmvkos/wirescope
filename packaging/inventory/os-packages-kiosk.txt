@@ -1,0 +1,5 @@
+xserver-xorg
+xinit
+openbox
+unclutter
+chromium

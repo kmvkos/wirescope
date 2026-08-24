@@ -1,0 +1,8 @@
+nmap
+openssl
+curl
+bind9-dnsutils
+smbclient
+snmp
+ldap-utils
+ssh-audit

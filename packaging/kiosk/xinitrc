@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+xset s off -dpms || true
+unclutter -idle 1 -root &
+openbox &
+exec /opt/wirescope/packaging/kiosk/kiosk.sh

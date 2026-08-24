@@ -263,6 +263,8 @@ def build_registry() -> HandlerRegistry:
 
 
 def main() -> None:
+    if os.geteuid() == 0:
+        raise SystemExit("WireScope worker must not run as root")
     settings = get_settings()
     database = Database(settings)
     service = JobService(database)

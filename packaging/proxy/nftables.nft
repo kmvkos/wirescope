@@ -9,7 +9,10 @@ table inet wirescope_lan {
         tcp dport 22 accept
         ip saddr 192.0.2.0/24 tcp dport 443 accept
         ip6 saddr 2001:db8::/32 tcp dport 443 accept
+        # Let's Encrypt HTTP-01 (Caddy automatic HTTPS or certbot webroot):
+        # ip saddr 192.0.2.0/24 tcp dport 80 accept
         # Direct TLS alternative: tcp dport 8443 from the same prefix
+        # Operators who insist on a direct HTTP bind: tcp dport 8000 from the prefix
         # Do not accept 8000 from the LAN when using a reverse proxy.
     }
 }

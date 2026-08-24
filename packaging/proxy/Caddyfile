@@ -1,8 +1,15 @@
 # Recommended LAN: terminate TLS here. Keep WireScope on 127.0.0.1:8000.
-# Replace the hostname and certificate paths. Do not expose TCP 8000.
+# Replace the hostname. Do not expose TCP 8000.
 #
 #   sudo install.sh --trust-proxy --bind-host 127.0.0.1
 #   sudo systemctl enable --now caddy
+#
+# Lab (default below): operator-supplied or self-signed files
+#   python3 -m appliance tls-selfsigned --output-dir /etc/wirescope/tls
+#
+# Production Let's Encrypt: delete the `tls` line. Caddy obtains and renews
+# certificates when this hostname is publicly resolvable and TCP 80 + 443
+# reach this host. No PEM in systemd units.
 
 wirescope.example {
 	tls /etc/wirescope/tls/cert.pem /etc/wirescope/tls/key.pem

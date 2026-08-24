@@ -1,0 +1,14 @@
+# Example firewalld commands (Fedora / RHEL / Rocky / openSUSE).
+# Replace 192.0.2.0/24 with the management network.
+# Do not run these blindly on a remote SSH host.
+
+firewall-cmd --permanent --add-service=ssh
+firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address="192.0.2.0/24" port port="443" protocol="tcp" accept'
+firewall-cmd --reload
+firewall-cmd --list-all
+
+# Direct TLS without a proxy (less preferred):
+# firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address="192.0.2.0/24" port port="8443" protocol="tcp" accept'
+
+# Bare HTTP on 8000 (discouraged; only if operators insist on a direct bind):
+# firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address="192.0.2.0/24" port port="8000" protocol="tcp" accept'

@@ -14,6 +14,7 @@ PROXY_SAMPLE_NAMES = (
     "nginx.conf",
     "nftables.nft",
     "ufw.example",
+    "firewalld.example",
 )
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})

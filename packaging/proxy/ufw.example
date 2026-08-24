@@ -3,9 +3,15 @@
 
 ufw allow OpenSSH
 ufw allow from 192.0.2.0/24 to any port 443 proto tcp
+# Let's Encrypt HTTP-01 (optional):
+# ufw allow from 192.0.2.0/24 to any port 80 proto tcp
 ufw deny 8000/tcp
 ufw enable
 ufw status verbose
 
 # Direct TLS without a proxy (less preferred):
 # ufw allow from 192.0.2.0/24 to any port 8443 proto tcp
+
+# Bare HTTP on 8000 (discouraged; only if operators insist on a direct bind):
+# ufw allow from 192.0.2.0/24 to any port 8000 proto tcp
+# ufw delete deny 8000/tcp

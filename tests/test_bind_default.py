@@ -3,6 +3,16 @@ from pathlib import Path
 
 from appliance.__main__ import _argv
 from appliance.install import InstallConfig
+from config.settings import get_settings
+
+
+def test_application_defaults_to_all_interfaces(monkeypatch):
+    monkeypatch.delenv("WIRESCOPE_BIND_HOST", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().bind_host == "0.0.0.0"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_appliance_install_defaults_to_all_interfaces():

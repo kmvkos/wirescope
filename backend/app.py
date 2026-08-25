@@ -31,6 +31,7 @@ _UI_ASSET_VERSION = "20260825-ui14"
 _TOPOLOGY_HISTORY_ASSET_VERSION = "20260825-ui15"
 _SNMP_TOPOLOGY_ASSET_VERSION = "20260825-ui16"
 _TOPOLOGY_HARDENING_ASSET_VERSION = "20260826-ui17"
+_SSH_TOPOLOGY_ASSET_VERSION = "20260826-ui18"
 
 
 def create_app(
@@ -152,13 +153,8 @@ def create_app(
                     audit_id=audit_id_from_path(request.url.path),
                 )
             except Exception:
-                # Audit logging must never turn an otherwise valid operator
-                # action into an application outage. Diagnostics will expose
-                # database/migration health separately.
                 pass
 
-    # /api/v1 is canonical. /api remains a compatibility alias for existing
-    # installations and external clients during the v1 transition.
     application.include_router(api_router, prefix="/api/v1")
     application.include_router(
         api_router,
@@ -176,8 +172,6 @@ def create_app(
     def root() -> HTMLResponse:
         index = active_settings.frontend_dir / "index.html"
         page = index.read_text(encoding="utf-8")
-        # Cache-bust all core frontend assets. Kiosk Chromium can otherwise keep
-        # an old UI across an appliance code upgrade until a manual hard reload.
         for asset in (
             "style.css",
             "enhancements.css",
@@ -201,6 +195,7 @@ def create_app(
                 f'<link rel="stylesheet" href="/static/topology_hardening.css?v={_TOPOLOGY_HARDENING_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/topology_compare.css?v={_TOPOLOGY_HISTORY_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/snmp_topology.css?v={_UI_ASSET_VERSION}&feature={_SNMP_TOPOLOGY_ASSET_VERSION}">\n'
+                f'<link rel="stylesheet" href="/static/ssh_topology.css?v={_SSH_TOPOLOGY_ASSET_VERSION}">\n'
                 "</head>"
             ),
         )
@@ -220,6 +215,7 @@ def create_app(
                 f'<script src="/static/topology_hardening.js?v={_TOPOLOGY_HARDENING_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_compare.js?v={_TOPOLOGY_HISTORY_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/snmp_topology.js?v={_UI_ASSET_VERSION}&feature={_SNMP_TOPOLOGY_ASSET_VERSION}"></script>\n'
+                f'<script src="/static/ssh_topology.js?v={_SSH_TOPOLOGY_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_tab.js?v={_UI_ASSET_VERSION}&feature={_TOPOLOGY_HARDENING_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/operations.js?v={_UI_ASSET_VERSION}"></script>\n'
                 "</body>"

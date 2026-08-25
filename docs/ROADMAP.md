@@ -72,30 +72,48 @@
 
 ### M10.3 — расширенная диагностика
 
-Статус: **в работе; первый диагностический слой реализован**.
+Статус: **основной диагностический слой реализован; продолжается проверка на реальных PCAP**.
 
-Уже реализовано:
+Реализовано:
 - средняя интенсивность захвата в packets/s и наблюдаемая полоса;
 - TCP handshake visibility: начатые потоки, наблюдаемый SYN/ACK, потоки без наблюдаемого SYN/ACK;
 - повторные SYN, вычисляемые детерминированно по TCP stream, без зависимости от нестабильного tshark-поля;
 - привязка retransmission / duplicate ACK / out-of-order / zero-window / RST к конкретным парам узлов;
+- previous/lost segment hints с осторожным объяснением capture/offload/visibility ограничений;
 - DNS latency: average / p50 / p95 / max и наиболее медленные имена;
+- разделение обычного DNS и локального `.local` name-discovery;
 - DNS error names и клиенты для NXDOMAIN/SERVFAIL;
 - ARP request/reply статистика и repeated unanswered ARP hints;
 - ICMP / ICMPv6 диагностические/error-типы и основные источники;
-- top broadcast/multicast contributors в человекочитаемом отчёте;
-- верхнеуровневая секция «Состояние захвата» с разделением факта, возможного значения и следующей проверки;
-- portable tshark compatibility path и graceful fallback: если расширенный pass недоступен, базовый анализ PCAP всё равно сохраняется.
-
-Следующие пункты M10.3:
-- RTT/latency hints там, где их можно корректно вывести из PCAP;
-- DHCP sequence analysis;
-- ARP storm / более точная unanswered ARP корреляция по времени;
-- TLS metadata без расшифровки payload;
-- SMB/DNS/HTTP/QUIC traffic summaries;
-- сравнение двух captures.
+- top broadcast/multicast contributors;
+- определение доминирующего обмена и наблюдаемых связей local↔global IP;
+- операторский «Краткий диагноз» с разделением факта, возможного значения и следующей проверки;
+- portable tshark compatibility path и graceful fallback.
 
 Принцип: WireScope не объявляет причину доказанной, если PCAP даёт только симптом. Формулировки должны различать факт, гипотезу и рекомендацию проверки.
+
+### M10.4 — Protocol Intelligence
+
+Статус: **первый срез реализован; требуется проверка на реальных захватах**.
+
+Цель: объяснять не только объём трафика, но и доступные прикладные метаданные без расшифровки payload.
+
+Реализовано:
+- динамическое определение поддерживаемых полей установленного `tshark` через `-G fields`;
+- TLS: SNI/server name, version metadata, ALPN и основные пары узлов;
+- HTTP/1.x: Host, методы, коды ответа, 4xx/5xx и основные пары;
+- QUIC: версии и основные пары;
+- SMB/SMB2: команды, NT status и основные пары без экспорта filenames/payload;
+- обычный DNS отдельно от mDNS/LLMNR: клиенты, DNS-серверы, имена, RCODE и наблюдаемые A/AAAA ответы;
+- DHCP: типы сообщений, server identifiers, hostnames и базовая DORA sequence correlation;
+- findings-like operator observations для legacy TLS, HTTP 5xx, заметной доли DNS errors, SMB status и нескольких DHCP servers;
+- отдельная секция «Протокольный разбор» в TXT/Markdown;
+- graceful fallback: недоступные protocol fields не ломают базовый PCAP-анализ.
+
+Следующие пункты перед закрытием M10:
+- RTT/latency hints только там, где обе стороны TCP и timing позволяют корректный вывод;
+- более точная ARP/DHCP корреляция по времени при необходимости после real-PCAP проверки;
+- сравнение двух captures: traffic shape, TCP signals, DNS, узлы и communications graph.
 
 ---
 
@@ -168,6 +186,6 @@ WireScope не должен угадывать невидимый L2-комму�
 
 ## Текущий следующий шаг
 
-**M10.3 — расширенная PCAP-диагностика и проверка на реальных сетевых захватах.**
+**Проверить M10.4 Protocol Intelligence на реальном сохранённом PCAP.**
 
-После стабилизации M10.3 следующий продуктовый этап — **M11.1 Network Topology**, использующий уже сохранённый `communications_graph` совместно с inventory, ARP, routes, DHCP, LLDP/CDP, STP и VLAN evidence.
+После проверки: реализовать корректные RTT hints и сравнение двух captures. Затем закрыть M10/v1.1 и перейти к **M11.1 Network Topology**, используя уже сохранённый `communications_graph` совместно с inventory, ARP, routes, DHCP, LLDP/CDP, STP и VLAN evidence.

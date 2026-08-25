@@ -27,7 +27,7 @@ from reports.store import ReportStore
 from storage.evidence import EvidenceStore
 
 
-_UI_ASSET_VERSION = "20260825-ui9"
+_UI_ASSET_VERSION = "20260825-ui10"
 
 
 def create_app(

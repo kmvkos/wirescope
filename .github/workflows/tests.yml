@@ -37,7 +37,20 @@ jobs:
           python -m pip install -e '.[dev]'
 
       - name: Compile Python sources
-        run: python -m compileall -q backend appliance config engine findings inventory jobs parsers persistence protocol_audits providers reports storage traffic_analysis tests
+        run: python -m compileall -q backend appliance config engine findings inventory jobs parsers persistence protocol_audits providers reports storage traffic_analysis topology tests
 
       - name: Run default test suite
         run: pytest -q
+
+      - name: Build wheel
+        run: |
+          rm -rf dist
+          python -m pip wheel . --no-deps --wheel-dir dist
+
+      - name: Smoke-test installed wheel outside source tree
+        run: |
+          python -m venv /tmp/wirescope-wheel-venv
+          /tmp/wirescope-wheel-venv/bin/python -m pip install --upgrade pip
+          /tmp/wirescope-wheel-venv/bin/python -m pip install dist/wirescope-*.whl
+          cd /tmp
+          /tmp/wirescope-wheel-venv/bin/python -c "import topology; from topology import build_topology; print(topology.__file__)"

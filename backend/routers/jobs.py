@@ -13,6 +13,7 @@ from backend.http import (
     not_found,
 )
 from backend.models import JobEventPageResponse, JobPageResponse, JobResponse
+from backend.snmp_credentials import CredentialReferenceError, SnmpCredentialSpool
 from jobs.errors import JobExecutionError
 from jobs.models import JobStatus
 from jobs.service import EntityNotFound
@@ -39,7 +40,12 @@ def audit_jobs(
         status=status,
         audit_id=audit_id,
     )
-    return job_page(page)
+    return JobPageResponse(
+        items=[job_response(item) for item in page.items],
+        limit=page.limit,
+        offset=page.offset,
+        total=page.total,
+    )
 
 
 @router.get("/jobs", response_model=JobPageResponse)
@@ -79,7 +85,23 @@ def cancel_job(
     services: AppServices = Depends(get_services),
 ) -> JobResponse:
     try:
-        return job_response(services.jobs.request_cancel(job_id))
+        before = services.jobs.get_job(job_id)
+        result = services.jobs.request_cancel(job_id)
+        # A queued job never reaches the worker, so its consume-once secret
+        # spool must be removed here. Running jobs delete it in the handler's
+        # finally block after the cancellation token stops the tool process.
+        if (
+            before.type == "snmp_topology"
+            and before.status == JobStatus.QUEUED
+            and result.status == JobStatus.CANCELLED
+        ):
+            reference = str(before.parameters.get("credential_ref") or "")
+            if reference:
+                try:
+                    SnmpCredentialSpool(services.settings).delete(reference)
+                except CredentialReferenceError:
+                    pass
+        return job_response(result)
     except EntityNotFound as exc:
         raise not_found(exc) from exc
 

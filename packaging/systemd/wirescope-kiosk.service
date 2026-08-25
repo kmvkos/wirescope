@@ -4,7 +4,6 @@ Documentation=file:///opt/wirescope/docs/INSTALLATION.md
 After=wirescope-api.service getty@tty1.service systemd-user-sessions.service
 Wants=wirescope-api.service
 Conflicts=getty@tty1.service
-OnFailure=getty@tty1.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

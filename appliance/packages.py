@@ -101,6 +101,11 @@ _OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
         "rhel": ("nmap",),
         "suse": ("nmap",),
     },
+    "traceroute": {
+        "debian": ("traceroute",),
+        "rhel": ("traceroute",),
+        "suse": ("traceroute",),
+    },
     "openssl": {
         "debian": ("openssl",),
         "rhel": ("openssl",),

@@ -1,0 +1,189 @@
+.ws-topology-coverage {
+    margin: 12px 0 16px;
+    padding: 14px;
+    border: 1px solid rgba(93, 153, 190, .34);
+    border-radius: 14px;
+    background: rgba(7, 23, 36, .7);
+}
+
+.ws-topology-coverage-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.ws-coverage-status {
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: .82rem;
+}
+
+.ws-coverage-sufficient {
+    border-color: rgba(89, 223, 211, .55) !important;
+}
+
+.ws-coverage-partial {
+    border-color: rgba(242, 190, 86, .55) !important;
+}
+
+.ws-coverage-missing {
+    border-color: rgba(125, 146, 168, .34) !important;
+    opacity: .82;
+}
+
+.ws-coverage-status.ws-coverage-sufficient,
+.ws-claim-yes {
+    color: #7be6dc;
+}
+
+.ws-coverage-status.ws-coverage-partial {
+    color: #f2be56;
+}
+
+.ws-topology-coverage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+}
+
+.ws-coverage-card {
+    min-height: 62px;
+    padding: 9px 10px;
+    text-align: left;
+    background: rgba(17, 38, 57, .78);
+    border: 1px solid rgba(99, 130, 157, .3);
+    border-radius: 10px;
+}
+
+.ws-coverage-card strong,
+.ws-coverage-card span {
+    display: block;
+}
+
+.ws-coverage-card span {
+    margin-top: 5px;
+    font-size: .78rem;
+    opacity: .82;
+}
+
+.ws-topology-claim-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 11px 0 0;
+}
+
+.ws-topology-claim-line span {
+    padding: 3px 7px;
+    border-radius: 7px;
+    background: rgba(13, 34, 52, .76);
+    font-size: .78rem;
+}
+
+.ws-claim-no {
+    color: #8292a6;
+}
+
+.ws-topology-coverage-details {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(8, 27, 42, .7);
+}
+
+.ws-topology-coverage-details p {
+    margin: 5px 0;
+}
+
+.ws-topology-recommendations {
+    margin-top: 9px;
+}
+
+.ws-topology-v2-controls {
+    row-gap: 8px;
+}
+
+.ws-topology-v2-canvas {
+    margin-top: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(92, 132, 165, .35);
+    border-radius: 14px;
+    background: #071522;
+}
+
+.ws-topology-graph-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(92, 132, 165, .24);
+}
+
+.ws-topology-graph-toolbar button {
+    min-width: 38px;
+    padding: 6px 9px;
+}
+
+.ws-topology-v2-canvas .ws-topology-svg {
+    display: block;
+    width: 100%;
+    min-height: 620px;
+    max-height: 78vh;
+    background: #071522;
+    touch-action: none;
+    user-select: none;
+}
+
+.ws-topology-v2-canvas .ws-topology-node {
+    cursor: pointer;
+}
+
+.ws-topology-v2-canvas .ws-topology-node:hover rect,
+.ws-topology-v2-canvas .ws-topology-node:focus rect {
+    stroke-width: 3;
+    filter: brightness(1.15);
+}
+
+.ws-topology-v2-canvas .ws-topology-region {
+    cursor: zoom-in;
+}
+
+.ws-topology-v2-canvas .ws-topology-details {
+    min-height: 54px;
+    padding: 12px 14px;
+    border-top: 1px solid rgba(92, 132, 165, .24);
+}
+
+.ws-topology-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(110px, 160px) 1fr;
+    gap: 5px 12px;
+    margin: 8px 0 0;
+}
+
+.ws-topology-detail-grid dt {
+    font-weight: 700;
+    opacity: .78;
+}
+
+.ws-topology-detail-grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.ws-topology-export-actions {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+    .ws-topology-v2-canvas .ws-topology-svg {
+        min-height: 520px;
+    }
+
+    .ws-topology-coverage-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

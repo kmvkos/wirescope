@@ -49,11 +49,42 @@
     function stageLabel(value) {
         return ({
             passive: "Пассивный анализ",
-            discovery: "Discovery",
-            protocol: "Протоколы",
-            findings: "Findings",
+            discovery: "Поиск устройств",
+            protocol: "Проверка протоколов",
+            findings: "Выводы",
             report: "Отчёт",
         })[value] || value;
+    }
+
+    function statusLabel(value) {
+        return ({
+            created: "создан",
+            queued: "в очереди",
+            running: "идёт",
+            completed: "готово",
+            failed: "ошибка",
+            cancelled: "отменён",
+            interrupted: "прерван",
+            pending: "не запускался",
+        })[value] || value || "не запускался";
+    }
+
+    function profileLabel(value) {
+        return ({
+            passive: "Пассивный",
+            discovery: "Поиск устройств",
+            standard: "Стандартный",
+            deep: "Глубокий",
+        })[value] || value;
+    }
+
+    function externalNmapStage(item) {
+        if (!item || item.status !== "running" || item.stage !== "discovery") return false;
+        return new Set([
+            "Discovering hosts",
+            "Scanning TCP services",
+            "Selected UDP discovery",
+        ]).has(String(item.message || ""));
     }
 
     function pipeline(data) {
@@ -61,10 +92,13 @@
         (data || []).forEach((item) => {
             const stage = el("div", null, "ws-pipeline-stage");
             stage.dataset.status = item.status || "pending";
+            const progress = externalNmapStage(item)
+                ? "идёт"
+                : (item.progress === null || item.progress === undefined ? "" : `${item.progress}%`);
             stage.append(
                 el("strong", stageLabel(item.stage)),
-                el("span", item.status || "не запускался"),
-                el("span", item.progress === null || item.progress === undefined ? "" : `${item.progress}%`)
+                el("span", statusLabel(item.status || "pending")),
+                el("span", progress)
             );
             wrap.append(stage);
         });
@@ -79,7 +113,7 @@
         if (!select) return;
         clear(select);
         audits.forEach((audit) => {
-            const option = el("option", `${audit.profile} · ${audit.interface || "—"} · ${audit.status}`);
+            const option = el("option", `${profileLabel(audit.profile)} · ${audit.interface || "—"} · ${statusLabel(audit.status)}`);
             option.value = audit.id;
             option.selected = audit.id === selectedAudit;
             select.append(option);
@@ -103,12 +137,12 @@
         grid.append(
             metric("Узлы", inv.assets),
             metric("Сервисы", inv.services),
-            metric("Findings", findings.total),
-            metric("Critical", severity.critical || 0),
-            metric("High", severity.high || 0),
-            metric("Passive + active", `${correlations.correlated_assets || 0}/${correlations.total_assets || 0}`)
+            metric("Проблемы", findings.total),
+            metric("Критические", severity.critical || 0),
+            metric("Высокие", severity.high || 0),
+            metric("Пассивные + активные", `${correlations.correlated_assets || 0}/${correlations.total_assets || 0}`)
         );
-        body.append(grid, sectionTitle("Pipeline"), pipeline(data.pipeline));
+        body.append(grid, sectionTitle("Этапы аудита"), pipeline(data.pipeline));
 
         body.append(sectionTitle("Классы устройств"));
         const classesGrid = el("div", null, "ws-metric-grid");
@@ -163,13 +197,13 @@
         body.append(sectionTitle("Профили активного обнаружения"));
         Object.entries((profiles && profiles.profiles) || {}).forEach(([name, profile]) => {
             const block = el("div", null, "ws-section");
-            block.append(el("strong", name));
+            block.append(el("strong", profileLabel(name)));
             const details = [
-                `timing ${profile.timing}`,
-                profile.tcp_top_ports ? `TCP top ${profile.tcp_top_ports}` : (profile.tcp_ports ? `TCP ${profile.tcp_ports}` : "без TCP scan"),
-                profile.udp_ports && profile.udp_ports.length ? `UDP ${profile.udp_ports.length} ports` : "без UDP scan",
-                profile.service_detection ? "service detection" : "без service detection",
-                `timeout ${profile.timeout_seconds}s`,
+                `тайминг ${profile.timing}`,
+                profile.tcp_top_ports ? `TCP: top ${profile.tcp_top_ports}` : (profile.tcp_ports ? `TCP: ${profile.tcp_ports}` : "без TCP-сканирования"),
+                profile.udp_ports && profile.udp_ports.length ? `UDP: ${profile.udp_ports.length} портов` : "без UDP-сканирования",
+                profile.service_detection ? "определение версий служб" : "без определения версий",
+                `таймаут ${profile.timeout_seconds} с`,
             ];
             block.append(el("p", details.join(" · ")));
             body.append(block);
@@ -202,7 +236,7 @@
         const label = el("label", "Сравнить с: ");
         const select = el("select");
         candidates.forEach((audit) => {
-            const option = el("option", `${audit.profile} · ${audit.interface || "—"} · ${audit.id.slice(0, 8)}`);
+            const option = el("option", `${profileLabel(audit.profile)} · ${audit.interface || "—"} · ${audit.id.slice(0, 8)}`);
             option.value = audit.id;
             select.append(option);
         });
@@ -219,8 +253,8 @@
                     diffGroup("Исчезнувшие узлы", data.assets.removed),
                     diffGroup("Новые сервисы", data.services.added),
                     diffGroup("Исчезнувшие сервисы", data.services.removed),
-                    diffGroup("Новые findings", data.findings.added),
-                    diffGroup("Исчезнувшие findings", data.findings.removed)
+                    diffGroup("Новые проблемы", data.findings.added),
+                    diffGroup("Исчезнувшие проблемы", data.findings.removed)
                 );
             } catch (error) {
                 result.append(el("p", error.message, "error"));
@@ -233,7 +267,7 @@
         if (!selectedAudit) return body.append(el("p", "Нет выбранного аудита."));
         const auditId = encodeURIComponent(selectedAudit);
         const page = await request(`/audits/${auditId}/findings?limit=100`);
-        if (!(page.items || []).length) return body.append(el("p", "Findings отсутствуют."));
+        if (!(page.items || []).length) return body.append(el("p", "Проблемы отсутствуют."));
 
         for (const finding of page.items) {
             const block = el("div", null, "ws-section");
@@ -245,12 +279,12 @@
                 try {
                     const evidence = await request(`/audits/${auditId}/findings/${encodeURIComponent(finding.id)}/evidence`);
                     if (!(evidence.items || []).length) {
-                        details.append(el("p", "Для этого finding evidence не зарегистрирован."));
+                        details.append(el("p", "Для этой проблемы доказательства не зарегистрированы."));
                         return;
                     }
                     for (const item of evidence.items) {
                         if (!item.available) {
-                            details.append(el("p", `${item.id}: artifact отсутствует`, "ws-missing"));
+                            details.append(el("p", `${item.id}: артефакт отсутствует`, "ws-missing"));
                             continue;
                         }
                         const line = el("div", null, "ws-section");
@@ -322,7 +356,7 @@
             ["overview", "Обзор"],
             ["capabilities", "Система"],
             ["diff", "Сравнение"],
-            ["evidence", "Evidence"],
+            ["evidence", "Доказательства"],
         ];
         tabNames.forEach(([key, label]) => {
             const button = el("button", label, key === "overview" ? "primary" : "secondary");
@@ -436,7 +470,7 @@
             metrics.append(
                 metric("Узлы", inv.assets),
                 metric("Сервисы", inv.services),
-                metric("Findings", f.total)
+                metric("Проблемы", f.total)
             );
             box.append(metrics, pipeline(data.pipeline));
         } catch {}

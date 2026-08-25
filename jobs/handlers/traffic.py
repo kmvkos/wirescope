@@ -13,11 +13,12 @@ from traffic_analysis.advanced import merge_advanced
 from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
 from traffic_analysis.insights import enrich_document
+from traffic_analysis.latency import TcpLatencyAnalyzer, merge_tcp_latency
 from traffic_analysis.protocol_intelligence import (
     ProtocolIntelligenceAnalyzer,
     merge_protocol_intelligence,
 )
-from traffic_analysis.render_v4 import render_markdown, render_text
+from traffic_analysis.render_v5 import render_markdown, render_text
 
 
 class TrafficAnalysisHandler:
@@ -182,6 +183,26 @@ class TrafficAnalysisHandler:
                 }
             )
 
+        try:
+            latency = TcpLatencyAnalyzer(settings=context.settings).analyze(
+                Path(pcap_path),
+                cancellation_token=context.cancellation_token,
+                progress=progress,
+            )
+            merge_tcp_latency(document, latency)
+        except JobExecutionError as exc:
+            if context.cancellation_token.cancelled or exc.error.category == ErrorCategory.CANCELLED:
+                raise
+            document["tcp_latency"] = {
+                "status": "unavailable",
+                "reason": exc.error.code,
+                "overall": {"samples": 0},
+                "top_pairs": [],
+            }
+            document.setdefault("limitations", []).append(
+                "TCP ACK RTT hints недоступны для этого PCAP; остальные результаты анализа сохранены."
+            )
+
         context.report_progress(
             JobProgress(
                 percentage=78,
@@ -256,6 +277,7 @@ class TrafficAnalysisHandler:
                 "traffic_analysis_observations": len(document.get("observations") or []),
                 "advanced_diagnostics_status": (document.get("advanced_diagnostics") or {}).get("status"),
                 "protocol_intelligence_status": (document.get("protocol_intelligence_status") or {}).get("status"),
+                "tcp_latency_status": (document.get("tcp_latency") or {}).get("status"),
                 "analyzer_version": ANALYZER_VERSION,
             },
         )

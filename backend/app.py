@@ -27,7 +27,7 @@ from reports.store import ReportStore
 from storage.evidence import EvidenceStore
 
 
-_UI_ASSET_VERSION = "20260825-ui2"
+_UI_ASSET_VERSION = "20260825-ui3"
 
 
 def create_app(
@@ -188,7 +188,11 @@ def create_app(
             )
         page = page.replace(
             "</head>",
-            f'<link rel="stylesheet" href="/static/modern.css?v={_UI_ASSET_VERSION}">\n</head>',
+            (
+                f'<link rel="stylesheet" href="/static/modern.css?v={_UI_ASSET_VERSION}">\n'
+                f'<link rel="stylesheet" href="/static/polish.css?v={_UI_ASSET_VERSION}">\n'
+                "</head>"
+            ),
         )
         page = page.replace(
             "</body>",

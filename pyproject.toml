@@ -37,6 +37,7 @@ include = [
     "findings*",
     "reports*",
     "traffic_analysis*",
+    "topology*",
     "auth*",
     "appliance*",
     "providers*",

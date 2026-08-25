@@ -14,6 +14,7 @@ from backend.http import (
 )
 from backend.models import JobEventPageResponse, JobPageResponse, JobResponse
 from backend.snmp_credentials import CredentialReferenceError, SnmpCredentialSpool
+from backend.ssh_credentials import SshCredentialReferenceError, SshCredentialSpool
 from jobs.errors import JobExecutionError
 from jobs.models import JobStatus
 from jobs.service import EntityNotFound
@@ -79,6 +80,22 @@ def get_job(
         raise not_found(exc) from exc
 
 
+def _delete_queued_management_credentials(services: AppServices, job) -> None:
+    reference = str(job.parameters.get("credential_ref") or "")
+    if not reference:
+        return
+    if job.type == "snmp_topology":
+        try:
+            SnmpCredentialSpool(services.settings).delete(reference)
+        except CredentialReferenceError:
+            pass
+    elif job.type == "ssh_topology":
+        try:
+            SshCredentialSpool(services.settings).delete(reference)
+        except SshCredentialReferenceError:
+            pass
+
+
 @router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
 def cancel_job(
     job_id: str,
@@ -91,16 +108,11 @@ def cancel_job(
         # spool must be removed here. Running jobs delete it in the handler's
         # finally block after the cancellation token stops the tool process.
         if (
-            before.type == "snmp_topology"
+            before.type in {"snmp_topology", "ssh_topology"}
             and before.status == JobStatus.QUEUED
             and result.status == JobStatus.CANCELLED
         ):
-            reference = str(before.parameters.get("credential_ref") or "")
-            if reference:
-                try:
-                    SnmpCredentialSpool(services.settings).delete(reference)
-                except CredentialReferenceError:
-                    pass
+            _delete_queued_management_credentials(services, before)
         return job_response(result)
     except EntityNotFound as exc:
         raise not_found(exc) from exc

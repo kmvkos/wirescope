@@ -9,6 +9,7 @@ from sqlalchemy import select
 from jobs.models import AuditStatus, JobStatus
 from persistence.database import Database
 from persistence.models import AuditModel, JobEventModel, JobModel
+from traffic_analysis import ANALYZER_VERSION
 
 
 class TrafficAnalysisSourceNotReady(RuntimeError):
@@ -23,6 +24,10 @@ class TrafficAnalysisJobService:
     reopen that hidden capture audit because it performs no new network action.
     The ordinary JobService create_job contract remains unchanged for all other
     audit workflows.
+
+    Completed results are reused only when they were produced by the current
+    analyzer version. This lets an operator re-run an old retained PCAP after a
+    WireScope diagnostics upgrade while preserving idempotency within a version.
     """
 
     def __init__(self, database: Database) -> None:
@@ -53,6 +58,7 @@ class TrafficAnalysisJobService:
                 if (
                     parameters.get("source_capture_job_id") == source_capture_job_id
                     and parameters.get("pcap_artifact_id") == pcap_artifact_id
+                    and parameters.get("analyzer_version") == ANALYZER_VERSION
                     and JobStatus(job.status) in {
                         JobStatus.QUEUED,
                         JobStatus.RUNNING,
@@ -98,6 +104,7 @@ class TrafficAnalysisJobService:
                 parameters={
                     "source_capture_job_id": source_capture_job_id,
                     "pcap_artifact_id": pcap_artifact_id,
+                    "analyzer_version": ANALYZER_VERSION,
                 },
                 cancel_requested=False,
                 attempt=0,
@@ -118,6 +125,7 @@ class TrafficAnalysisJobService:
                     details={
                         "source_capture_job_id": source_capture_job_id,
                         "pcap_artifact_id": pcap_artifact_id,
+                        "analyzer_version": ANALYZER_VERSION,
                     },
                 )
             )

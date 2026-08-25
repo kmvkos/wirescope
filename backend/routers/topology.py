@@ -10,9 +10,11 @@ from backend.dependencies import AppServices, get_services
 from backend.http import invalid_transition_http, not_found
 from backend.models import JobAcceptedResponse
 from backend.snmp_credentials import SnmpCredentialSpool
+from backend.ssh_credentials import SshCredentialSpool
 from jobs.service import EntityNotFound
 from jobs.state import InvalidTransition
 from providers.snmp_topology import SnmpCredentialError, sanitize_credential_profile
+from providers.ssh_topology import SshTopologyCredentialError, sanitize_ssh_profile
 from topology import TopologySourceError, build_global_topology, build_topology
 from topology.history import compare_topology_history
 
@@ -51,6 +53,34 @@ class SnmpTopologyRequest(BaseModel):
             "auth_password": self.auth_password.get_secret_value() if self.auth_password else None,
             "priv_protocol": self.priv_protocol,
             "priv_password": self.priv_password.get_secret_value() if self.priv_password else None,
+        }
+
+
+class SshTopologyRequest(BaseModel):
+    target: str = Field(min_length=3, max_length=64)
+    username: str = Field(min_length=1, max_length=64)
+    port: int = Field(default=22, ge=1, le=65535)
+    authentication: Literal["private_key", "agent"] = "private_key"
+    private_key: SecretStr | None = Field(default=None, max_length=131072)
+    known_hosts: SecretStr = Field(max_length=65536)
+    priority: int = Field(default=0, ge=-100, le=100)
+
+    @model_validator(mode="after")
+    def validate_credentials(self) -> "SshTopologyRequest":
+        credentials = self.credentials()
+        try:
+            sanitize_ssh_profile(credentials)
+        except SshTopologyCredentialError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+    def credentials(self) -> dict[str, str | int | None]:
+        return {
+            "username": self.username.strip(),
+            "port": self.port,
+            "authentication": self.authentication,
+            "private_key": self.private_key.get_secret_value() if self.private_key else None,
+            "known_hosts": self.known_hosts.get_secret_value(),
         }
 
 
@@ -134,37 +164,12 @@ def enqueue_snmp_topology(
     spool = SnmpCredentialSpool(services.settings)
     credential_ref: str | None = None
     try:
-        audit = services.jobs.get_audit(audit_id)
-        if not audit.interface:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "interface_required", "message": "Audit has no active interface"},
-            )
-        try:
-            target = str(ipaddress.ip_address(payload.target.strip()))
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "snmp_target_invalid", "message": "SNMP target must be an IP address"},
-            ) from exc
-
-        confirmed = services.inventory.latest_scope(audit_id)
-        if confirmed is None:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "snmp_scope_required", "message": "Run and confirm active discovery scope before SNMP topology enrichment"},
-            )
-        if confirmed.interface != audit.interface:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "snmp_scope_interface_mismatch", "message": "Latest confirmed scope belongs to another interface"},
-            )
-        if not _in_scope(target, confirmed.targets):
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "snmp_target_out_of_scope", "message": "SNMP target is outside the confirmed active scope"},
-            )
-
+        audit, target, confirmed = _management_context(
+            services=services,
+            audit_id=audit_id,
+            target_raw=payload.target,
+            prefix="snmp",
+        )
         credentials = payload.credentials()
         credential_ref = spool.put(credentials)
         job = services.jobs.create_job(
@@ -205,6 +210,101 @@ def enqueue_snmp_topology(
         status=job.status,
         status_url=f"/api/v1/jobs/{job.id}",
     )
+
+
+@router.post(
+    "/audits/{audit_id}/topology/ssh",
+    response_model=JobAcceptedResponse,
+    status_code=202,
+)
+def enqueue_ssh_topology(
+    audit_id: str,
+    payload: SshTopologyRequest,
+    services: AppServices = Depends(get_services),
+) -> JobAcceptedResponse:
+    spool = SshCredentialSpool(services.settings)
+    credential_ref: str | None = None
+    try:
+        audit, target, confirmed = _management_context(
+            services=services,
+            audit_id=audit_id,
+            target_raw=payload.target,
+            prefix="ssh",
+        )
+        credentials = payload.credentials()
+        credential_ref = spool.put(credentials)
+        job = services.jobs.create_job(
+            audit_id=audit.id,
+            job_type="ssh_topology",
+            target=target,
+            parameters={
+                "target": target,
+                "interface": audit.interface,
+                "confirmed_scope_id": confirmed.id,
+                "credential_ref": credential_ref,
+                "credential_profile": sanitize_ssh_profile(credentials),
+            },
+            priority=payload.priority,
+            resource_key=f"interface:{audit.interface}",
+            resource_group="active_discovery",
+            resource_limit=services.settings.max_active_discovery_jobs,
+        )
+    except EntityNotFound as exc:
+        if credential_ref:
+            spool.delete(credential_ref)
+        raise not_found(exc) from exc
+    except InvalidTransition as exc:
+        if credential_ref:
+            spool.delete(credential_ref)
+        raise invalid_transition_http(exc) from exc
+    except Exception:
+        if credential_ref:
+            try:
+                spool.delete(credential_ref)
+            except Exception:
+                pass
+        raise
+
+    return JobAcceptedResponse(
+        audit_id=audit.id,
+        job_id=job.id,
+        status=job.status,
+        status_url=f"/api/v1/jobs/{job.id}",
+    )
+
+
+def _management_context(*, services: AppServices, audit_id: str, target_raw: str, prefix: str):
+    audit = services.jobs.get_audit(audit_id)
+    if not audit.interface:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "interface_required", "message": "Audit has no active interface"},
+        )
+    try:
+        target = str(ipaddress.ip_address(target_raw.strip()))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": f"{prefix}_target_invalid", "message": f"{prefix.upper()} target must be an IP address"},
+        ) from exc
+
+    confirmed = services.inventory.latest_scope(audit_id)
+    if confirmed is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": f"{prefix}_scope_required", "message": f"Run and confirm active discovery scope before {prefix.upper()} topology enrichment"},
+        )
+    if confirmed.interface != audit.interface:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": f"{prefix}_scope_interface_mismatch", "message": "Latest confirmed scope belongs to another interface"},
+        )
+    if not _in_scope(target, confirmed.targets):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": f"{prefix}_target_out_of_scope", "message": f"{prefix.upper()} target is outside the confirmed active scope"},
+        )
+    return audit, target, confirmed
 
 
 def _in_scope(address: str, targets: list[str]) -> bool:

@@ -29,7 +29,7 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui11" in page.text
+    assert "?v=20260825-ui12" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -111,7 +111,7 @@ def test_traffic_analysis_ui_is_capture_scoped_and_kiosk_responsive():
     assert "@media (max-width: 560px)" in css
 
 
-def test_topology_ui_has_global_segments_layers_and_explicit_overlay():
+def test_topology_ui_has_global_segments_layers_and_interactive_viewport():
     script = (FRONTEND / "topology.js").read_text(encoding="utf-8")
     tab = (FRONTEND / "topology_tab.js").read_text(encoding="utf-8")
     css = (FRONTEND / "topology.css").read_text(encoding="utf-8")
@@ -124,13 +124,24 @@ def test_topology_ui_has_global_segments_layers_and_explicit_overlay():
     assert '"L2 — канальный"' in script
     assert '"L3 — маршрутизация"' in script
     assert '"Traffic — PCAP"' in script
+    assert '"Только подтверждённые"' in script
     assert 'request("/topology/global?limit=100")' in script
+    assert 'function installViewport' in script
+    assert 'addEventListener("wheel"' in script
+    assert 'addEventListener("pointermove"' in script
+    assert 'data-zoom' in script
+    assert 'marker-end' in script and 'marker-start' in script
+    assert 'Internet / внешние адреса' in script
+    assert 'onSegmentFocus' in script
     assert '"Топология"' in tab
     assert 'window.WireScopeTopology.render' in tab
     assert '.ws-topology-confirmed' in css
     assert '.ws-topology-observed' in css
     assert '.ws-topology-inferred' in css
     assert '.ws-topology-segment-card' in css
+    assert '.ws-topology-region' in css
+    assert '.ws-topology-viewport-tools' in css
+    assert '.ws-topology-node-external' in css
     assert "@media (max-width: 560px)" in css
 
 

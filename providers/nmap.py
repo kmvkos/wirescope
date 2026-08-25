@@ -1,5 +1,6 @@
 """Controlled Nmap execution through ToolRunner. No shell strings."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,7 @@ from engine.scope import ValidatedScope
 from jobs.errors import JobCancelled, JobExecutionError
 from jobs.models import ErrorCategory, JobError, RetentionClass
 from parsers.nmap import NmapParseError, NmapScanDocument, parse_nmap_xml
+from providers.nmap_progress import NmapProgressParser, NmapProgressSnapshot
 from providers.tools import (
     CancellationToken,
     ToolCommand,
@@ -104,7 +106,14 @@ class NmapProvider:
     ) -> NmapCommandPlan:
         capabilities = self.capabilities()
         fallbacks: list[str] = []
-        args = ["-n", "-T" + profile.timing.removeprefix("T"), "-sn"]
+        args = [
+            "-n",
+            "-T" + profile.timing.removeprefix("T"),
+            "-sn",
+            "-v",
+            "--stats-every",
+            "5s",
+        ]
         ipv6_only = (
             6 in scope.address_families and 4 not in scope.address_families
         )
@@ -162,9 +171,22 @@ class NmapProvider:
         xml_path: Path,
         target_file: Path,
     ) -> NmapCommandPlan:
+        """Build the single-pass TCP scan used by Standard.
+
+        Deep uses ``build_tcp_sweep`` followed by ``build_tcp_fingerprint`` so
+        expensive service/OS probes are never run against every one of 65535
+        ports.
+        """
         capabilities = self.capabilities()
         fallbacks: list[str] = []
-        args = ["-n", "-T" + profile.timing.removeprefix("T"), "-Pn"]
+        args = [
+            "-n",
+            "-T" + profile.timing.removeprefix("T"),
+            "-Pn",
+            "-v",
+            "--stats-every",
+            "5s",
+        ]
         if 6 in scope.address_families and 4 not in scope.address_families:
             args.append("-6")
         if capabilities.privileged:
@@ -222,6 +244,153 @@ class NmapProvider:
             fallbacks=fallbacks,
         )
 
+    def build_tcp_sweep(
+        self,
+        *,
+        scope: ValidatedScope,
+        resolved: ResolvedScope,
+        profile: ActiveScanProfile,
+        xml_path: Path,
+        target_file: Path,
+    ) -> NmapCommandPlan:
+        """Fast full-range TCP discovery pass for Deep.
+
+        Coverage stays 1-65535.  The optimization is that service/version and
+        OS fingerprinting are deferred until the actually-open port set is
+        known.  Directly connected LAN targets can safely use Nmap T4 and one
+        retry; routed scopes keep the configured conservative timing.
+        """
+        capabilities = self.capabilities()
+        fallbacks: list[str] = []
+        local = self._all_routes_direct(resolved)
+        timing = "T4" if local else profile.timing
+        retries = "1" if local else "2"
+        args = [
+            "-n",
+            "-T" + timing.removeprefix("T"),
+            "-Pn",
+            "-v",
+            "--stats-every",
+            "5s",
+        ]
+        if 6 in scope.address_families and 4 not in scope.address_families:
+            args.append("-6")
+        if capabilities.privileged:
+            args.append("-sS")
+            tcp_method = "syn"
+        else:
+            args.extend(["--unprivileged", "-sT"])
+            tcp_method = "connect"
+            fallbacks.append("syn-to-connect")
+        tcp_ports = profile.tcp_ports or "1-65535"
+        args.extend(
+            [
+                "-p",
+                tcp_ports,
+                "--open",
+                "--max-retries",
+                retries,
+                "-e",
+                resolved.interface,
+                "-oX",
+                str(xml_path),
+                "-iL",
+                str(target_file),
+            ]
+        )
+        return NmapCommandPlan(
+            args=args,
+            xml_path=str(xml_path),
+            target_file=str(target_file),
+            scan_kind="tcp_sweep",
+            tcp_method=tcp_method,
+            host_discovery_method="none",
+            tcp_ports=tcp_ports,
+            service_detection=False,
+            version_intensity=None,
+            os_detection=False,
+            timing=timing,
+            privileged=capabilities.privileged,
+            skip_host_discovery=True,
+            fallbacks=fallbacks,
+        )
+
+    def build_tcp_fingerprint(
+        self,
+        *,
+        scope: ValidatedScope,
+        resolved: ResolvedScope,
+        profile: ActiveScanProfile,
+        ports: list[int],
+        xml_path: Path,
+        target_file: Path,
+    ) -> NmapCommandPlan | None:
+        if not ports:
+            return None
+        capabilities = self.capabilities()
+        fallbacks: list[str] = []
+        local = self._all_routes_direct(resolved)
+        timing = "T4" if local else profile.timing
+        retries = "1" if local else "2"
+        args = [
+            "-n",
+            "-T" + timing.removeprefix("T"),
+            "-Pn",
+            "-v",
+            "--stats-every",
+            "5s",
+        ]
+        if 6 in scope.address_families and 4 not in scope.address_families:
+            args.append("-6")
+        if capabilities.privileged:
+            args.append("-sS")
+            tcp_method = "syn"
+        else:
+            args.extend(["--unprivileged", "-sT"])
+            tcp_method = "connect"
+            fallbacks.append("syn-to-connect")
+        port_text = ",".join(str(port) for port in sorted(set(ports)))
+        args.extend(["-p", port_text, "--open"])
+        if profile.service_detection:
+            args.append("-sV")
+            if profile.version_intensity is not None:
+                args.extend(
+                    ["--version-intensity", str(profile.version_intensity)]
+                )
+        os_detection = bool(profile.os_detection and capabilities.privileged)
+        if profile.os_detection and not capabilities.privileged:
+            fallbacks.append("os-detection-skipped-unprivileged")
+        if os_detection:
+            args.extend(["-O", "--osscan-limit"])
+        args.extend(
+            [
+                "--max-retries",
+                retries,
+                "-e",
+                resolved.interface,
+                "-oX",
+                str(xml_path),
+                "-iL",
+                str(target_file),
+            ]
+        )
+        return NmapCommandPlan(
+            args=args,
+            xml_path=str(xml_path),
+            target_file=str(target_file),
+            scan_kind="tcp_fingerprint",
+            tcp_method=tcp_method,
+            host_discovery_method="none",
+            tcp_ports=port_text,
+            service_detection=profile.service_detection,
+            version_intensity=profile.version_intensity,
+            os_detection=os_detection,
+            timing=timing,
+            privileged=capabilities.privileged,
+            skip_host_discovery=True,
+            fallbacks=fallbacks,
+        )
+
     def build_udp_scan(
         self,
         *,
@@ -248,11 +417,19 @@ class NmapProvider:
                 skip_host_discovery=True,
                 fallbacks=["udp-skipped-unprivileged"],
             )
+        timing = (
+            "T4"
+            if profile.name.value == "deep" and self._all_routes_direct(resolved)
+            else profile.timing
+        )
         args = [
             "-n",
-            "-T" + profile.timing.removeprefix("T"),
+            "-T" + timing.removeprefix("T"),
             "-Pn",
             "-sU",
+            "-v",
+            "--stats-every",
+            "5s",
         ]
         if 6 in scope.address_families and 4 not in scope.address_families:
             args.append("-6")
@@ -292,7 +469,7 @@ class NmapProvider:
                 if profile.name.value == "deep"
                 else None
             ),
-            timing=profile.timing,
+            timing=timing,
             privileged=True,
             skip_host_discovery=True,
         )
@@ -306,6 +483,7 @@ class NmapProvider:
         evidence_store: EvidenceStore | None = None,
         audit_id: str | None = None,
         job_id: str | None = None,
+        progress_callback: Callable[[NmapProgressSnapshot], None] | None = None,
     ) -> NmapRun:
         if not plan.args:
             now = datetime.now(timezone.utc)
@@ -329,15 +507,28 @@ class NmapProvider:
             )
         xml_path = Path(plan.xml_path)
         xml_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        progress_parser = NmapProgressParser() if progress_callback else None
+
+        def stream(name: str, chunk: str) -> None:
+            if progress_parser is None or progress_callback is None:
+                return
+            for snapshot in progress_parser.feed(name, chunk):
+                progress_callback(snapshot)
+
         result = self.runner.run(
             ToolCommand(
                 tool=self.settings.nmap_binary,
                 args=plan.args,
                 timeout_seconds=timeout_seconds,
                 environment={"LC_ALL": "C"},
+                on_stdout=(lambda chunk: stream("stdout", chunk)) if progress_parser else None,
+                on_stderr=(lambda chunk: stream("stderr", chunk)) if progress_parser else None,
             ),
             cancellation_token=cancellation_token,
         )
+        if progress_parser is not None and progress_callback is not None:
+            for snapshot in progress_parser.flush():
+                progress_callback(snapshot)
         if result.cancelled:
             xml_path.unlink(missing_ok=True)
             raise JobCancelled("Active discovery was cancelled")
@@ -394,6 +585,38 @@ class NmapProvider:
         path.chmod(0o600)
         return path
 
+    @staticmethod
+    def open_tcp_ports(document: NmapScanDocument | None) -> list[int]:
+        if document is None:
+            return []
+        return sorted(
+            {
+                port.port
+                for host in document.hosts
+                if host.status == "up"
+                for port in host.ports
+                if port.protocol == "tcp" and port.state == "open"
+            }
+        )
+
+    @staticmethod
+    def targets_with_open_tcp(document: NmapScanDocument | None) -> list[str]:
+        if document is None:
+            return []
+        targets: list[str] = []
+        seen: set[str] = set()
+        for host in document.hosts:
+            if host.status != "up" or not any(
+                port.protocol == "tcp" and port.state == "open"
+                for port in host.ports
+            ):
+                continue
+            for address in (host.ipv4, host.ipv6):
+                if address and address not in seen:
+                    seen.add(address)
+                    targets.append(address)
+        return targets
+
     def _version(self) -> str | None:
         if self._version_cache is not False:
             return self._version_cache  # type: ignore[return-value]
@@ -448,6 +671,12 @@ class NmapProvider:
         scope: ValidatedScope,
     ) -> bool:
         return scope.address_families == [4] and all(
+            route.directly_connected for route in resolved.routes
+        )
+
+    @staticmethod
+    def _all_routes_direct(resolved: ResolvedScope) -> bool:
+        return bool(resolved.routes) and all(
             route.directly_connected for route in resolved.routes
         )
 

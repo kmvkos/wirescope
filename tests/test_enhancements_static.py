@@ -19,7 +19,7 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui3" in page.text
+    assert "?v=20260825-ui4" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -40,6 +40,8 @@ def test_polish_layer_is_presentation_only_and_responsive():
 
     assert "h1::before" in polish
     assert "#new-audit-button::before" in polish
+    assert "#audit-list" in polish
+    assert "grid-template-columns: repeat(2" in polish
     assert "@media (max-width: 560px)" in polish
     assert "@media (min-width: 900px)" in polish
     assert "@media (prefers-reduced-motion: reduce)" in polish

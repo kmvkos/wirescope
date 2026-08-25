@@ -3,7 +3,7 @@ name: tests
 on:
   push:
     branches:
-      - milestone-8-appliance
+      - milestone-*
       - refactor/**
   pull_request:
 
@@ -37,7 +37,7 @@ jobs:
           python -m pip install -e '.[dev]'
 
       - name: Compile Python sources
-        run: python -m compileall -q backend appliance config engine findings inventory jobs parsers persistence protocol_audits providers reports storage tests
+        run: python -m compileall -q backend appliance config engine findings inventory jobs parsers persistence protocol_audits providers reports storage traffic_analysis tests
 
       - name: Run default test suite
         run: pytest -q

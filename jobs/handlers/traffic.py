@@ -8,7 +8,8 @@ from jobs.errors import JobExecutionError
 from jobs.models import ErrorCategory, JobError, JobProgress, RetentionClass
 from jobs.registry import HandlerContext, HandlerResult
 from persistence.models import ArtifactModel
-from traffic_analysis.advanced import AdvancedTrafficAnalyzer, merge_advanced
+from traffic_analysis.advanced import merge_advanced
+from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
 from traffic_analysis.render_v2 import render_markdown, render_text
 
@@ -115,12 +116,34 @@ class TrafficAnalysisHandler:
             cancellation_token=context.cancellation_token,
             progress=progress,
         )
-        advanced = AdvancedTrafficAnalyzer(settings=context.settings).analyze(
-            Path(pcap_path),
-            cancellation_token=context.cancellation_token,
-            progress=progress,
-        )
-        merge_advanced(document, advanced)
+        try:
+            advanced = PortableAdvancedTrafficAnalyzer(settings=context.settings).analyze(
+                Path(pcap_path),
+                cancellation_token=context.cancellation_token,
+                progress=progress,
+            )
+            merge_advanced(document, advanced)
+            document["advanced_diagnostics"] = {"status": "completed"}
+        except JobExecutionError as exc:
+            if context.cancellation_token.cancelled or exc.error.category == ErrorCategory.CANCELLED:
+                raise
+            document["advanced_diagnostics"] = {
+                "status": "unavailable",
+                "error_code": exc.error.code,
+            }
+            document.setdefault("limitations", []).append(
+                "Расширенная TCP/DNS/ARP/ICMP диагностика не была выполнена; базовый анализ PCAP сохранён."
+            )
+            document.setdefault("observations", []).append(
+                {
+                    "severity": "info",
+                    "category": "analysis",
+                    "title": "Расширенная диагностика недоступна",
+                    "fact": f"Компонент завершился с кодом {exc.error.code}.",
+                    "meaning": "Базовая статистика и communications graph сформированы, но часть дополнительных сетевых симптомов не проверена.",
+                    "check": "Проверьте версию/доступность tshark и повторите анализ после устранения причины.",
+                }
+            )
 
         context.report_progress(
             JobProgress(
@@ -185,5 +208,6 @@ class TrafficAnalysisHandler:
                 "traffic_analysis_frame_count": summary.get("frame_count", 0),
                 "traffic_analysis_conversations": summary.get("conversation_count", 0),
                 "traffic_analysis_observations": len(document.get("observations") or []),
+                "advanced_diagnostics_status": (document.get("advanced_diagnostics") or {}).get("status"),
             },
         )

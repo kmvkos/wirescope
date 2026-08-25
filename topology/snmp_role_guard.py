@@ -13,7 +13,7 @@ def guard_snmp_router_roles(topology: dict[str, Any]) -> dict[str, Any]:
     routing metadata records router roles that existed independently of SNMP.
     Extended SNMP may then expose management/interface addresses for both
     routers and ordinary L2 switches. A single management prefix must not turn
-    an L2 switch into a router.
+    an L2 switch into a router or even a router candidate.
     """
     preexisting = {
         str(item.get("node_id"))
@@ -57,9 +57,9 @@ def guard_snmp_router_roles(topology: dict[str, Any]) -> dict[str, Any]:
             node["connected_segments"] = sorted(set(connected))
             continue
 
-        node["roles"] = [value for value in roles if value != "router"]
-        if networks and "router-candidate" not in node["roles"]:
-            node["roles"].append("router-candidate")
+        node["roles"] = [
+            value for value in roles if value not in {"router", "router-candidate"}
+        ]
         node.pop("routing_confidence", None)
 
     return topology

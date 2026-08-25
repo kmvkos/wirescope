@@ -8,8 +8,9 @@ from jobs.errors import JobExecutionError
 from jobs.models import ErrorCategory, JobError, JobProgress, RetentionClass
 from jobs.registry import HandlerContext, HandlerResult
 from persistence.models import ArtifactModel
+from traffic_analysis.advanced import AdvancedTrafficAnalyzer, merge_advanced
 from traffic_analysis.analyzer import TrafficAnalyzer
-from traffic_analysis.render import render_markdown, render_text
+from traffic_analysis.render_v2 import render_markdown, render_text
 
 
 class TrafficAnalysisHandler:
@@ -98,27 +99,34 @@ class TrafficAnalysisHandler:
                 )
             )
 
+        source = {
+            "capture_audit_id": context.audit.id,
+            "capture_job_id": source_capture_job_id,
+            "pcap_artifact_id": pcap_artifact_id,
+            "pcap_sha256": pcap_sha256,
+            "pcap_bytes": pcap_size,
+            "interface": context.audit.interface,
+            "filter": (context.audit.scope or {}).get("filter"),
+        }
         analyzer = TrafficAnalyzer(settings=context.settings)
         document = analyzer.analyze(
             Path(pcap_path),
-            source={
-                "capture_audit_id": context.audit.id,
-                "capture_job_id": source_capture_job_id,
-                "pcap_artifact_id": pcap_artifact_id,
-                "pcap_sha256": pcap_sha256,
-                "pcap_bytes": pcap_size,
-                "interface": context.audit.interface,
-                "filter": (context.audit.scope or {}).get("filter"),
-            },
+            source=source,
             cancellation_token=context.cancellation_token,
             progress=progress,
         )
+        advanced = AdvancedTrafficAnalyzer(settings=context.settings).analyze(
+            Path(pcap_path),
+            cancellation_token=context.cancellation_token,
+            progress=progress,
+        )
+        merge_advanced(document, advanced)
 
         context.report_progress(
             JobProgress(
                 percentage=82,
                 stage="rendering_analysis",
-                message="Формируем понятный текстовый разбор",
+                message="Формируем понятный диагностический разбор",
             )
         )
         text_payload = render_text(document).encode("utf-8")
@@ -154,7 +162,7 @@ class TrafficAnalysisHandler:
             JobProgress(
                 percentage=94,
                 stage="saving_analysis",
-                message="Сохраняем результат анализа и communication graph",
+                message="Сохраняем диагностику и communication graph",
             )
         )
         result_artifact = context.evidence_store.put_json(

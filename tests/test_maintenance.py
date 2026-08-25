@@ -1,5 +1,6 @@
 import os
 
+from backend.snmp_credentials import SnmpCredentialSpool
 from jobs.maintenance import MaintenanceService
 
 
@@ -25,6 +26,11 @@ def test_startup_cleanup_removes_only_stale_runtime_files(
     unrelated.mkdir()
     os.utime(unrelated, (1, 1))
 
+    credential_spool = SnmpCredentialSpool(durable_settings)
+    stale_reference = credential_spool.put({"version": "2c", "community": "temporary-secret"})
+    stale_secret = credential_spool._path(stale_reference)
+    os.utime(stale_secret, (1, 1))
+
     result = MaintenanceService(
         database,
         evidence_store,
@@ -35,5 +41,7 @@ def test_startup_cleanup_removes_only_stale_runtime_files(
         "stale_temporary_files": 1,
         "orphan_files": 1,
         "stale_capture_directories": 1,
+        "stale_snmp_credentials": 1,
     }
     assert unrelated.exists()
+    assert not stale_secret.exists()

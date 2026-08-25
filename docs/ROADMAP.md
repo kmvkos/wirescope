@@ -25,20 +25,20 @@
 
 ## v1.1 — PCAP Traffic Analysis
 
-Статус: **implementation complete; требуется финальная проверка M10.5 на реальных PCAP**.
+Статус: **implementation complete; smoke-test основных сценариев пройден, дополнительные real-PCAP проверки продолжаются**.
 
 Цель: превратить «Прослушивание» из простого сохранения PCAP в самостоятельный инструмент диагностики трафика.
 
 ### M10.1 — детерминированный анализ сохранённого PCAP
 
-Статус: **реализовано / проверяется на реальных захватах**.
+Статус: **реализовано**.
 
 После завершённого или остановленного прослушивания оператор может нажать **«Анализировать PCAP»**.
 
 Анализ выполняется отдельной durable job и не запускает новый сетевой захват.
 Источник истины — уже сохранённый PCAP evidence.
 
-Первая версия анализа выдаёт:
+Анализ выдаёт:
 - длительность, количество кадров и объём;
 - уникальные MAC / IPv4 / IPv6;
 - top talkers по пакетам и байтам;
@@ -70,82 +70,71 @@
 - provenance=`pcap`;
 - confidence=`observed`.
 
-Эти данные являются входом для будущей карты сети, а не отдельной параллельной моделью.
-
 ### M10.3 — расширенная диагностика
 
 Статус: **реализовано**.
 
 Реализовано:
-- средняя интенсивность захвата в packets/s и наблюдаемая полоса;
-- TCP handshake visibility: начатые потоки, наблюдаемый SYN/ACK, потоки без наблюдаемого SYN/ACK;
-- повторные SYN, вычисляемые детерминированно по TCP stream, без зависимости от нестабильного tshark-поля;
-- привязка retransmission / duplicate ACK / out-of-order / zero-window / RST к конкретным парам узлов;
+- packets/s и наблюдаемая полоса;
+- TCP handshake visibility;
+- повторные SYN;
+- привязка TCP health сигналов к конкретным парам;
 - previous/lost segment hints с осторожным объяснением capture/offload/visibility ограничений;
-- DNS latency: average / p50 / p95 / max и наиболее медленные имена;
+- DNS latency average / p50 / p95 / max;
 - разделение обычного DNS и локального `.local` name-discovery;
-- DNS error names и клиенты для NXDOMAIN/SERVFAIL;
-- ARP request/reply статистика и repeated unanswered ARP hints;
-- ICMP / ICMPv6 диагностические/error-типы и основные источники;
+- ARP request/reply и repeated unanswered hints;
+- ICMP / ICMPv6 диагностика;
 - top broadcast/multicast contributors;
-- определение доминирующего обмена и наблюдаемых связей local↔global IP;
-- операторский «Краткий диагноз» с разделением факта, возможного значения и следующей проверки;
+- доминирующий обмен и local↔global IP связи;
+- операторский «Краткий диагноз»;
 - portable tshark compatibility path и graceful fallback.
-
-Принцип: WireScope не объявляет причину доказанной, если PCAP даёт только симптом. Формулировки должны различать факт, гипотезу и рекомендацию проверки.
 
 ### M10.4 — Protocol Intelligence
 
-Статус: **реализовано; продолжается проверка на реальных захватах**.
-
-Цель: объяснять не только объём трафика, но и доступные прикладные метаданные без расшифровки payload.
+Статус: **реализовано**.
 
 Реализовано:
-- динамическое определение поддерживаемых полей установленного `tshark` через `-G fields`;
-- TLS: SNI/server name, version metadata, ALPN и основные пары узлов;
-- HTTP/1.x: Host, методы, коды ответа, 4xx/5xx и основные пары;
-- QUIC: версии и основные пары;
-- SMB/SMB2: команды, NT status и основные пары без экспорта filenames/payload;
-- обычный DNS отдельно от mDNS/LLMNR: клиенты, DNS-серверы, имена, RCODE и наблюдаемые A/AAAA ответы;
-- DHCP: типы сообщений, server identifiers, hostnames и базовая DORA sequence correlation;
-- operator observations для legacy TLS, HTTP 5xx, заметной доли DNS errors, SMB status и нескольких DHCP servers;
-- отдельная секция «Протокольный разбор» в TXT/Markdown;
-- graceful fallback: недоступные protocol fields не ломают базовый PCAP-анализ.
+- динамическое определение поддерживаемых полей `tshark`;
+- TLS: SNI/server name, version metadata, ALPN;
+- HTTP/1.x: Host, методы, коды ответа, 4xx/5xx;
+- QUIC metadata;
+- SMB/SMB2 commands и NT status без filenames/payload;
+- обычный DNS отдельно от mDNS/LLMNR;
+- DHCP message/DORA correlation;
+- operator observations для legacy TLS, HTTP 5xx, DNS errors, SMB status и нескольких DHCP servers;
+- отдельная секция «Протокольный разбор» в TXT/Markdown.
 
 ### M10.5 — TCP RTT и сравнение захватов
 
-Статус: **реализовано; требуется smoke-test на двух реальных захватах**.
+Статус: **реализовано**.
 
 RTT:
-- используется `tcp.analysis.ack_rtt` только если поле реально поддерживается установленным `tshark`;
-- RTT считается только по фактически наблюдаемым ACK timing samples;
+- `tcp.analysis.ack_rtt` используется только при поддержке установленным `tshark`;
 - aggregate average / p50 / p95 / max;
-- статистика по конкретным парам узлов;
-- при недостатке samples WireScope явно пишет, что RTT не оценён;
-- ACK RTT не трактуется как latency приложения и сам по себе не считается доказательством сетевой неисправности.
+- статистика по конкретным парам;
+- отсутствие samples отображается как «RTT не оценён»;
+- ACK RTT не трактуется как latency приложения.
 
 Сравнение двух PCAP-анализов:
-- выполняется по persisted normalized `traffic-analysis`, без повторного чтения сети;
-- объём, длительность и количество communications;
-- новые/исчезнувшие endpoints;
-- новые/исчезнувшие observed communication edges;
+- persisted normalized `traffic-analysis`, без повторного чтения сети;
+- объём, длительность, communications;
+- новые/исчезнувшие endpoints и observed edges;
 - изменение долей протоколов;
-- TCP retransmission/lost/zero-window/RST;
-- DNS error responses;
-- RTT p50/p95, если он измерен в обоих захватах;
-- broadcast/multicast;
+- TCP signals, DNS errors, RTT, broadcast/multicast;
 - новые и исчезнувшие warning-сигналы;
-- текстовое сравнение доступно прямо в web/kiosk UI через выбор другого завершённого PCAP-анализа.
-
-После успешного smoke-test M10/v1.1 считается закрытым.
+- сравнение доступно прямо в web/kiosk UI.
 
 ---
 
 ## v1.2 — Network Topology
 
+Статус: **разработка начата**.
+
 Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
 
 ### M11.1 — логическая карта
+
+Статус: **первый рабочий срез реализуется в ветке `milestone-11-network-topology`**.
 
 Источники:
 - inventory;
@@ -158,31 +147,28 @@ RTT:
 - active discovery;
 - PCAP communications graph.
 
-Узлы карты:
-- WireScope/interface;
-- gateway/router;
-- switch/network-device hints;
-- DHCP/DNS servers;
-- обычные assets;
-- VLAN/subnet logical groups.
+Canonical `network-topology` различает:
+- узлы WireScope/interface, gateway/router, network-device hints, DHCP/DNS servers, assets и внешние endpoints;
+- логические subnet/VLAN groups;
+- связи `default_gateway`, `layer2_neighbor`, `stp_observed`, `dhcp_observed`, `communication`;
+- `confirmed`, `observed`, `inferred` confidence;
+- provenance каждого узла и ребра.
 
-Связи имеют тип и confidence:
-- `confirmed` — LLDP/CDP или другой прямой структурный evidence;
-- `observed` — реальный обмен в PCAP;
-- `inferred` — осторожный вывод по subnet/VLAN/route/ARP данным.
+Принцип: WireScope не угадывает физический hop. LLDP/CDP/default route, PCAP traffic и subnet inference остаются разными типами evidence.
 
-UI обязан показывать provenance связи, например «LLDP», «наблюдаемый трафик», «default route», а не рисовать предположение как физический факт.
+PCAP overlay выбирается оператором **явно**. WireScope не подмешивает «последний capture» автоматически, потому что Deep-аудит и прослушивание могут относиться к разным сегментам/моментам времени.
 
 ### M11.2 — интерактивная визуализация
 
 Web/kiosk:
-- zoom/pan;
+- базовый SVG-граф — часть первого M11-среза;
+- далее zoom/pan;
 - фильтр VLAN/subnet;
-- фильтр типа связи;
+- фильтр типа связи/confidence;
 - клик по asset → адреса, сервисы, vendor, findings;
 - толщина communication edge по объёму трафика;
 - подсветка gateway/DHCP/DNS/network devices;
-- экспорт topology JSON/SVG/PNG, если формат не нарушает appliance/offline требования.
+- экспорт topology JSON/SVG/PNG.
 
 ### M11.3 — расширение физической топологии
 
@@ -197,7 +183,49 @@ WireScope не должен угадывать невидимый L2-комму�
 
 ---
 
-## Дальнейшие идеи после v1.2
+## v1.3 — Global Correlation Analysis
+
+Цель: объединить результаты активного/глубокого аудита, PCAP Traffic Analysis и Network Topology в единый детерминированный аналитический пакет.
+
+Global Analysis не просто склеивает отчёты. Он коррелирует persisted normalized данные и отвечает, например:
+- какой обнаруженный сервис реально использовался в PCAP;
+- относится ли finding к реально наблюдаемому обмену;
+- какие assets существуют в inventory, но не наблюдались в выбранном capture;
+- какие внешние endpoints связаны с конкретными внутренними assets;
+- совпадают ли gateway/DHCP/DNS/topology observations с данными аудита;
+- какие network-health симптомы относятся к важным/уязвимым сервисам;
+- где active и passive evidence расходятся.
+
+Выход:
+- canonical `global-analysis` JSON;
+- русское итоговое заключение;
+- evidence references на audit/finding/traffic/topology сущности;
+- deterministic correlation rules как обязательная offline-база.
+
+Global Analysis должен работать **без внешнего AI**.
+
+---
+
+## v1.4 — AI-assisted Global Analysis
+
+Цель: поверх deterministic `global-analysis` дать опциональное аналитическое заключение внешней или локальной модели.
+
+Архитектура:
+- абстракция `AIProvider`;
+- первым provider может быть OpenAI API;
+- в будущем — локальный/offline provider;
+- API key хранится только backend-side;
+- raw PCAP по умолчанию внешнему provider не отправляется;
+- оператор явно выбирает, какие нормализованные данные разрешено передать;
+- передача внешнему provider — отдельная trust boundary и требует явного подтверждения.
+
+AI получает не сырые несвязанные файлы, а подготовленный пакет: audit report JSON + traffic-analysis JSON + topology JSON + deterministic global correlations.
+
+AI-вывод не создаёт WireScope finding автоматически. Он помечается как аналитическое заключение/гипотеза и должен ссылаться на evidence IDs, на которых основан.
+
+---
+
+## Дальнейшие идеи
 
 Не являются текущими обязательствами:
 - PDF export;
@@ -210,6 +238,4 @@ WireScope не должен угадывать невидимый L2-комму�
 
 ## Текущий следующий шаг
 
-**Smoke-test M10.5 на двух реальных сохранённых PCAP: RTT + сравнение.**
-
-После успешной проверки M10/v1.1 закрывается, и следующий продуктовый этап — **M11.1 Network Topology**, использующий `communications_graph` совместно с inventory, ARP, routes, DHCP, LLDP/CDP, STP и VLAN evidence.
+**M11.1 Network Topology:** проверить canonical topology model и первый SVG-view на реальном Deep-аудите; затем подключить один из сохранённых PCAP-анализов как явный overlay и проверить provenance/confidence связей.

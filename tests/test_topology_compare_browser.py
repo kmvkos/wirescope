@@ -145,6 +145,7 @@ def test_topology_history_ui_renders_changes_and_exports_json():
         select.select_option("audit-old")
         assert not compare.is_disabled()
         compare.click()
+        root.get_by_role("heading", name="Изменения топологии").wait_for()
 
         assert "Изменения топологии" in root.inner_text()
         assert "Узлы +" in root.inner_text()

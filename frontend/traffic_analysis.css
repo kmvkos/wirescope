@@ -1,0 +1,163 @@
+.traffic-analysis-modal[hidden] {
+    display: none !important;
+}
+
+body.traffic-analysis-open {
+    overflow: hidden;
+}
+
+.traffic-analysis-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 28px;
+    background: rgba(1, 8, 16, 0.78);
+    backdrop-filter: blur(14px);
+}
+
+.traffic-analysis-card {
+    width: min(1080px, 96vw);
+    max-height: 92vh;
+    overflow: auto;
+    padding: 24px;
+    border: 1px solid rgba(96, 222, 222, 0.24);
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at 12% 0%, rgba(73, 215, 218, 0.10), transparent 34%),
+        linear-gradient(145deg, rgba(15, 31, 51, 0.98), rgba(5, 15, 28, 0.99));
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+}
+
+.traffic-analysis-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.traffic-analysis-head h2 {
+    margin: 4px 0 0;
+    font-size: clamp(1.45rem, 2.8vw, 2.35rem);
+}
+
+.traffic-analysis-kicker {
+    color: var(--ws-primary, #60dede);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+}
+
+.traffic-analysis-status {
+    display: grid;
+    gap: 6px;
+    padding: 16px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(126, 165, 201, 0.20);
+    border-radius: 16px;
+    background: rgba(16, 37, 61, 0.64);
+}
+
+.traffic-analysis-status > span {
+    color: var(--muted, #9fb0c0);
+}
+
+.traffic-analysis-progress {
+    height: 7px;
+    margin-top: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(108, 141, 174, 0.15);
+}
+
+.traffic-analysis-progress > span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #62dedc, #46bced);
+    transition: width 240ms ease;
+}
+
+.traffic-analysis-report {
+    min-height: 280px;
+    max-height: 58vh;
+    overflow: auto;
+    margin: 16px 0 0;
+    padding: 18px;
+    border: 1px solid rgba(126, 165, 201, 0.18);
+    border-radius: 16px;
+    background: rgba(2, 10, 20, 0.72);
+    color: #dfeaf4;
+    font: 500 0.86rem/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.traffic-analysis-button {
+    flex: 0 0 auto;
+}
+
+#traffic-analysis-actions {
+    align-items: center;
+}
+
+#traffic-analysis-actions a.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+@media (max-width: 560px) {
+    .traffic-analysis-modal {
+        padding: 4px;
+        place-items: stretch;
+    }
+
+    .traffic-analysis-card {
+        width: 100%;
+        max-height: 100vh;
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    .traffic-analysis-head {
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .traffic-analysis-head h2 {
+        font-size: 1.18rem;
+    }
+
+    .traffic-analysis-kicker {
+        font-size: 0.58rem;
+    }
+
+    .traffic-analysis-status {
+        padding: 10px;
+        margin-bottom: 8px;
+    }
+
+    .traffic-analysis-report {
+        min-height: 150px;
+        max-height: 48vh;
+        margin-top: 8px;
+        padding: 10px;
+        font-size: 0.72rem;
+        line-height: 1.4;
+    }
+
+    .session-row .traffic-analysis-button {
+        min-width: 7.4rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .traffic-analysis-progress > span {
+        transition: none;
+    }
+}

@@ -1,16 +1,22 @@
 (() => {
     "use strict";
 
-    let topologyActive = false;
+    let activeView = null;
 
     async function renderSelected() {
-        if (!topologyActive || !window.WireScopeTopology) return;
+        if (!activeView) return;
         const select = document.getElementById("ws-audit-select");
         const body = document.getElementById("ws-insights-body");
         const auditId = select && select.value;
         if (!body || !auditId) return;
         try {
-            await window.WireScopeTopology.render(body, auditId);
+            if (activeView === "topology") {
+                if (!window.WireScopeTopology) return;
+                await window.WireScopeTopology.render(body, auditId);
+            } else if (activeView === "compare") {
+                if (!window.WireScopeTopologyCompare) return;
+                await window.WireScopeTopologyCompare.render(body, auditId);
+            }
         } catch (error) {
             body.replaceChildren();
             const message = document.createElement("p");
@@ -25,32 +31,42 @@
         const auditSelect = document.getElementById("ws-audit-select");
         if (!tabs || !auditSelect || document.getElementById("ws-topology-tab")) return false;
 
-        const button = document.createElement("button");
-        button.id = "ws-topology-tab";
-        button.type = "button";
-        button.className = "secondary";
-        button.textContent = "Топология";
-        tabs.append(button);
+        const topologyButton = document.createElement("button");
+        topologyButton.id = "ws-topology-tab";
+        topologyButton.type = "button";
+        topologyButton.className = "secondary";
+        topologyButton.textContent = "Топология";
 
-        button.addEventListener("click", async (event) => {
+        const compareButton = document.createElement("button");
+        compareButton.id = "ws-topology-compare-tab";
+        compareButton.type = "button";
+        compareButton.className = "secondary";
+        compareButton.textContent = "История topology";
+        tabs.append(topologyButton, compareButton);
+
+        const activate = async (view, button, event) => {
             event.preventDefault();
             event.stopPropagation();
-            topologyActive = true;
+            activeView = view;
             tabs.querySelectorAll("button").forEach((item) => {
                 item.className = item === button ? "primary" : "secondary";
             });
             await renderSelected();
-        });
+        };
+
+        topologyButton.addEventListener("click", (event) => activate("topology", topologyButton, event));
+        compareButton.addEventListener("click", (event) => activate("compare", compareButton, event));
 
         tabs.addEventListener("click", (event) => {
             const target = event.target.closest("button");
-            if (target && target !== button) topologyActive = false;
+            if (target && target !== topologyButton && target !== compareButton) activeView = null;
         });
 
         auditSelect.addEventListener("change", () => {
-            if (!topologyActive) return;
+            if (!activeView) return;
             // The legacy insights handler also reacts to this change. Re-render
-            // after its synchronous tab bookkeeping so topology remains active.
+            // after its synchronous tab bookkeeping so the selected topology
+            // view remains active.
             setTimeout(renderSelected, 0);
         });
         return true;

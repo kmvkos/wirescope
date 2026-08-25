@@ -111,6 +111,43 @@ body.traffic-analysis-open {
     text-decoration: none;
 }
 
+.traffic-analysis-compare {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid rgba(126, 165, 201, 0.18);
+    border-radius: 14px;
+    background: rgba(11, 27, 45, 0.72);
+}
+
+.traffic-analysis-compare[hidden] {
+    display: none !important;
+}
+
+.traffic-analysis-compare label {
+    color: var(--muted, #9fb0c0);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.traffic-analysis-compare-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.traffic-analysis-compare-row select {
+    flex: 1 1 360px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(126, 165, 201, 0.24);
+    border-radius: 10px;
+    background: rgba(3, 13, 24, 0.86);
+    color: #dfeaf4;
+}
+
 @media (max-width: 560px) {
     .traffic-analysis-modal {
         padding: 4px;
@@ -153,6 +190,20 @@ body.traffic-analysis-open {
 
     .session-row .traffic-analysis-button {
         min-width: 7.4rem;
+    }
+
+    .traffic-analysis-compare {
+        padding: 9px;
+    }
+
+    .traffic-analysis-compare-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .traffic-analysis-compare-row select {
+        grid-column: 1 / -1;
+        width: 100%;
     }
 }
 

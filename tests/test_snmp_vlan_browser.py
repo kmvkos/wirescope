@@ -199,9 +199,11 @@ def test_snmp_vlan_focus_renders_evidence_ports_graph_and_json_download():
         assert "1 L3 IF" in panel.locator(".ws-snmp-metric").inner_text()
         selector = panel.locator(".ws-snmp-vlan-explorer select")
         assert selector.count() == 1
-        assert selector.locator("option").count() == 3
-        assert "VLAN 10 · users" in selector.locator("option").nth(1).inner_text()
-        assert "VLAN 20 · servers" in selector.locator("option").nth(2).inner_text()
+        options = selector.locator("option")
+        assert options.count() == 4
+        assert options.nth(1).inner_text() == "VLAN 1"
+        assert "VLAN 10 · users" in options.nth(2).inner_text()
+        assert "VLAN 20 · servers" in options.nth(3).inner_text()
 
         selector.select_option("10")
         assert "VLAN 10:" in panel.locator(".ws-snmp-vlan-explorer .ws-snmp-status").inner_text()

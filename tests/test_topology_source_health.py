@@ -59,6 +59,7 @@ def test_source_health_marks_persisted_but_unused_enrichment_artifact_partial(
         "warnings": [],
         "upstream": {"artifact_ids": [route.id]},
         "snmp_topology": {"artifact_ids": []},
+        "ssh_topology": {"artifact_ids": []},
     }
 
     result = decorate_source_health(services, topology, audit_ids=[audit.id])
@@ -77,6 +78,95 @@ def test_source_health_marks_persisted_but_unused_enrichment_artifact_partial(
         }
     ]
     assert any("Topology неполная" in warning for warning in result["warnings"])
+
+
+def test_source_health_marks_unused_job_backed_ssh_artifact_partial(
+    job_service,
+    evidence_store,
+    database,
+):
+    audit = job_service.create_audit(
+        profile="deep",
+        interface="eth0",
+        scope={},
+        actor="auditor",
+    )
+    ssh_job = job_service.create_job(
+        audit_id=audit.id,
+        job_type="ssh_topology",
+        target="192.0.2.10",
+        parameters={"target": "192.0.2.10"},
+    )
+    ssh = _artifact(
+        evidence_store,
+        audit_id=audit.id,
+        job_id=ssh_job.id,
+        artifact_type="ssh_topology_result",
+        schema_name="ssh-topology-result",
+    )
+    services = SimpleNamespace(database=database)
+    topology = {
+        "summary": {},
+        "warnings": [],
+        "upstream": {"artifact_ids": []},
+        "snmp_topology": {"artifact_ids": []},
+        "ssh_topology": {"artifact_ids": []},
+    }
+
+    result = decorate_source_health(services, topology, audit_ids=[audit.id])
+
+    assert result["partial"] is True
+    assert result["summary"]["source_errors"] == 1
+    assert result["source_errors"] == [
+        {
+            "audit_id": audit.id,
+            "artifact_id": ssh.id,
+            "artifact_type": "ssh_topology_result",
+            "component": "ssh-topology",
+            "code": "artifact_unavailable",
+            "schema_name": "ssh-topology-result",
+            "schema_version": 1,
+        }
+    ]
+
+
+def test_source_health_accepts_used_job_backed_ssh_artifact(
+    job_service,
+    evidence_store,
+    database,
+):
+    audit = job_service.create_audit(
+        profile="deep",
+        interface="eth0",
+        scope={},
+        actor="auditor",
+    )
+    ssh_job = job_service.create_job(
+        audit_id=audit.id,
+        job_type="ssh_topology",
+        target="192.0.2.10",
+        parameters={"target": "192.0.2.10"},
+    )
+    ssh = _artifact(
+        evidence_store,
+        audit_id=audit.id,
+        job_id=ssh_job.id,
+        artifact_type="ssh_topology_result",
+        schema_name="ssh-topology-result",
+    )
+    services = SimpleNamespace(database=database)
+    topology = {
+        "summary": {},
+        "warnings": [],
+        "upstream": {"artifact_ids": []},
+        "snmp_topology": {"artifact_ids": []},
+        "ssh_topology": {"artifact_ids": [ssh.id]},
+    }
+
+    result = decorate_source_health(services, topology, audit_ids=[audit.id])
+
+    assert result["partial"] is False
+    assert result["source_errors"] == []
 
 
 def test_source_health_does_not_guess_about_unused_jobless_snmp_artifact(
@@ -102,6 +192,7 @@ def test_source_health_does_not_guess_about_unused_jobless_snmp_artifact(
         "warnings": [],
         "upstream": {"artifact_ids": []},
         "snmp_topology": {"artifact_ids": []},
+        "ssh_topology": {"artifact_ids": []},
     }
 
     result = decorate_source_health(services, topology, audit_ids=[audit.id])
@@ -134,6 +225,7 @@ def test_source_health_preserves_existing_global_source_errors(
         "warnings": [],
         "upstream": {"artifact_ids": []},
         "snmp_topology": {"artifact_ids": []},
+        "ssh_topology": {"artifact_ids": []},
     }
 
     result = decorate_source_health(services, topology, audit_ids=[audit.id])

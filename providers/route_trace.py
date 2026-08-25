@@ -8,7 +8,7 @@ fail active discovery.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import ipaddress
 import re
 import shutil
@@ -25,6 +25,8 @@ _MAX_TARGETS = 4
 class RouteTraceTarget:
     address: str
     scope_target: str
+    source_address: str | None = None
+    gateway: str | None = None
 
 
 class RouteTraceProvider:
@@ -46,6 +48,7 @@ class RouteTraceProvider:
         cancellation_token: CancellationToken | None = None,
     ) -> dict[str, Any]:
         selected = targets[:_MAX_TARGETS]
+        selected_rows = [asdict(item) for item in selected]
         tool = self.available_tool()
         if tool is None:
             return {
@@ -56,6 +59,7 @@ class RouteTraceProvider:
                 "interface": interface,
                 "max_hops": _MAX_HOPS,
                 "target_limit": _MAX_TARGETS,
+                "targets": selected_rows,
                 "traces": [],
                 "warnings": [
                     "Neither traceroute nor tracepath is installed; routed topology tracing was skipped."
@@ -69,13 +73,18 @@ class RouteTraceProvider:
                 break
             command = self._command(tool, item.address, interface)
             result = self.runner.run(command, cancellation_token=cancellation_token)
+            base = {
+                "target": item.address,
+                "scope_target": item.scope_target,
+                "source_address": item.source_address,
+                "gateway": item.gateway,
+            }
             if result.cancelled:
                 break
             if not result.success:
                 traces.append(
                     {
-                        "target": item.address,
-                        "scope_target": item.scope_target,
+                        **base,
                         "status": "failed",
                         "reached_target": False,
                         "hops": [],
@@ -91,8 +100,7 @@ class RouteTraceProvider:
             reached = any(hop.get("address") == item.address for hop in hops)
             traces.append(
                 {
-                    "target": item.address,
-                    "scope_target": item.scope_target,
+                    **base,
                     "status": "completed",
                     "reached_target": reached,
                     "hops": hops,
@@ -110,6 +118,7 @@ class RouteTraceProvider:
             "interface": interface,
             "max_hops": _MAX_HOPS,
             "target_limit": _MAX_TARGETS,
+            "targets": selected_rows,
             "traces": traces,
             "warnings": warnings,
         }
@@ -188,7 +197,16 @@ def representative_routed_targets(
         if address in seen:
             continue
         seen.add(address)
-        selected.append(RouteTraceTarget(address=address, scope_target=raw_target))
+        selected.append(
+            RouteTraceTarget(
+                address=address,
+                scope_target=raw_target,
+                source_address=(
+                    str(_route_value(route, "source_address", "") or "") or None
+                ),
+                gateway=(str(_route_value(route, "gateway", "") or "") or None),
+            )
+        )
         if len(selected) >= _MAX_TARGETS:
             break
     return selected
@@ -230,7 +248,7 @@ def _parse_tracepath(text: str) -> list[dict[str, Any]]:
     hops: list[dict[str, Any]] = []
     for raw in text.splitlines():
         line = raw.strip()
-        match = re.match(r"^(\d+)[:?]\s+(.+)$", line)
+        match = re.match(r"^(\d+)(?:\?|):\s+(.+)$", line)
         if not match:
             continue
         ttl = int(match.group(1))

@@ -39,6 +39,15 @@ def _base_topology():
         ],
         "edges": [
             {
+                "id": "edge:default",
+                "source": "wirescope:ens37",
+                "target": "asset:gw",
+                "relation": "default_gateway",
+                "layer": "l3",
+                "confidence": "confirmed",
+                "provenance": ["default-route"],
+            },
+            {
                 "id": "edge:gw:a",
                 "source": "wirescope:ens37",
                 "target": "asset:gw",
@@ -98,6 +107,7 @@ def test_routed_topology_rewires_appliance_gateway_edges_to_segments():
     }
     assert all(edge["target"] == "asset:gw" for edge in gateway_edges)
     assert all(not edge["source"].startswith("wirescope:") for edge in gateway_edges)
+    assert not any(edge["relation"] == "default_gateway" for edge in topology["edges"])
 
 
 def test_confirmed_gateway_connecting_two_segments_is_router():

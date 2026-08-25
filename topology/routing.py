@@ -1,8 +1,8 @@
 """Conservative routed-topology correlation for WireScope.
 
-This layer sits after the segment-aware topology builder.  It does not perform
+This layer sits after the segment-aware topology builder. It does not perform
 new network activity and it deliberately does not infer a physical hop from a
-shared subnet alone.  Its job is to turn persisted route/inventory evidence
+shared subnet alone. Its job is to turn persisted route/inventory evidence
 into a clearer L3 graph:
 
     segment -> confirmed gateway/router -> segment
@@ -96,7 +96,7 @@ def decorate_routed_topology(topology: dict[str, Any]) -> dict[str, Any]:
     edges = topology.setdefault("edges", [])
     node_by_id = {str(node.get("id")): node for node in nodes if node.get("id")}
 
-    # Make every retained subnet a first-class L3 node.  The UI may still draw
+    # Make every retained subnet a first-class L3 node. The UI may still draw
     # it as a visual region in general mode, but L3 now has an explicit object
     # to attach a gateway/router to.
     for segment in segments:
@@ -106,17 +106,36 @@ def decorate_routed_topology(topology: dict[str, Any]) -> dict[str, Any]:
             nodes.append(node)
             node_by_id[segment_id] = node
 
+    confirmed_gateway_ids = {
+        str(gateway.get("id"))
+        for segment in segments
+        for gateway in [_gateway_for_segment(topology, segment)]
+        if gateway is not None and gateway.get("id")
+    }
+
     # Remove the old appliance->gateway representation when the same evidence
-    # can be expressed as segment->gateway.  This is a semantic correction,
+    # can be expressed as segment->gateway. This is a semantic correction,
     # not merely a presentation change.
     rewritten: list[dict[str, Any]] = []
     seen_gateway_edges: set[tuple[str, str]] = set()
     for edge in edges:
-        if edge.get("relation") != "segment_gateway":
+        relation = str(edge.get("relation") or "")
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        provenance = set(str(value) for value in (edge.get("provenance") or []))
+
+        if (
+            relation == "default_gateway"
+            and source.startswith("wirescope:")
+            and target in confirmed_gateway_ids
+            and "default-route" in provenance
+        ):
+            continue
+
+        if relation != "segment_gateway":
             rewritten.append(edge)
             continue
         segment_id = str(edge.get("segment_id") or "")
-        target = str(edge.get("target") or "")
         if not segment_id or segment_id not in node_by_id or not target:
             rewritten.append(edge)
             continue
@@ -173,7 +192,7 @@ def decorate_routed_topology(topology: dict[str, Any]) -> dict[str, Any]:
             )
 
     # Multi-segment inventory is useful evidence, but not proof that forwarding
-    # is enabled.  Keep the distinction explicit.  Strong network-device
+    # is enabled. Keep the distinction explicit. Strong network-device
     # evidence upgrades the label to router; otherwise it remains a candidate.
     routers: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
@@ -198,7 +217,7 @@ def decorate_routed_topology(topology: dict[str, Any]) -> dict[str, Any]:
             candidates.append(node)
 
     # A confirmed gateway is a router role even when only one audited segment
-    # is currently visible.  Deduplicate the metadata list by node id.
+    # is currently visible. Deduplicate the metadata list by node id.
     router_by_id = {
         str(node.get("id")): node
         for node in [*routers, *nodes]

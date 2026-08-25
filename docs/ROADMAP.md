@@ -128,7 +128,7 @@ RTT:
 
 ## v1.2 — Network Topology
 
-Статус: **implementation complete для M11.1–M11.3; автоматизированные regression/Chromium/wheel smoke проходят, остаётся live-network validation на реальных topology**.
+Статус: **implementation complete / checkpoint закрыт**. M11.1–M11.3 реализованы, полный regression/Chromium/wheel CI проходит, WireScope VM успешно обновлена до checkpoint и базовый runtime health подтверждён. Live-проверка SNMP/FDB/switch-port/VLAN отложена до появления подходящего managed network testbed и не блокирует переход к v1.3.
 
 Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
 
@@ -165,7 +165,7 @@ PCAP overlay выбирается оператором **явно**. WireScope �
 
 ### M11.2 — интерактивная визуализация
 
-Статус: **реализовано и покрыто Chromium browser smoke; остаётся проверка качества layout на больших реальных topology**.
+Статус: **реализовано; Chromium browser smoke и автоматизированная проверка layout/filters/export проходят**.
 
 Реализовано в web/kiosk:
 - segment-aware SVG layout: каждая подсеть отображается отдельной визуальной областью;
@@ -187,11 +187,9 @@ PCAP overlay выбирается оператором **явно**. WireScope �
 - PNG export из того же текущего SVG;
 - Chromium regression smoke для фильтров, zoom/focus, bounded rendering, findings и SVG/PNG download.
 
-Оставшаяся доводка M11.2:
-- проверить читаемость и распределение узлов на нескольких больших реальных topology;
-- после live smoke внести только подтверждённые layout/UI улучшения, не меняя evidence semantics.
+Дополнительная проверка читаемости на очень больших реальных topology остаётся quality-improvement задачей по мере появления таких данных и не блокирует v1.2.
 
-VLAN-filter не должен назначать устройства VLAN «по догадке». Он будет включён только когда у WireScope есть достаточный node↔VLAN evidence (LLDP/CDP/SNMP/FDB/switch-port mapping); до этого VLAN остаётся наблюдаемым контекстом, а не выдуманной принадлежностью assets.
+VLAN-filter не должен назначать устройства VLAN «по догадке». Он включается только при достаточном node↔VLAN evidence (LLDP/CDP/SNMP/FDB/switch-port mapping); при отсутствии такого evidence VLAN остаётся наблюдаемым контекстом, а не выдуманной принадлежностью assets.
 
 ### M11.3 — расширение физической топологии
 
@@ -213,7 +211,23 @@ VLAN-filter не должен назначать устройства VLAN «п�
 
 WireScope не угадывает невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP/FDB/switch-port или иным evidence, оно отображается только как логическая/предполагаемая связь.
 
-Checkpoint M11.3 проходит полный GitHub Actions pipeline: compileall, pytest, Chromium browser smoke, wheel build и smoke-test установленного wheel.
+### v1.2 live-validation checkpoint
+
+Подтверждено на установленной WireScope VM:
+- upgrade до финального M11.3 checkpoint проходит штатным `packaging/upgrade.sh`;
+- dependencies, systemd units и SQLite migrations применяются успешно;
+- `wirescope-api` и `wirescope-worker` запускаются после upgrade;
+- `dumpcap` privilege path остаётся рабочим;
+- API health/ready/capabilities после upgrade проверены оператором без критических ошибок.
+
+Не проверялось на текущем стенде из-за отсутствия подходящего оборудования/сегмента:
+- реальные SNMP v2c/v3 запросы к управляемому switch/router;
+- реальные FDB/bridge tables и switch-port mapping;
+- node↔VLAN correlation на tagged/multi-VLAN стенде.
+
+Это зафиксировано как **deferred live validation**, а не как незавершённая реализация. Возвращаться к этим сценариям следует при появлении managed switch/router или VLAN testbed; до этого evidence semantics не изменяются на основании догадок.
+
+Финальный M11 checkpoint проходит полный GitHub Actions pipeline: compileall, pytest, Chromium browser smoke, wheel build и smoke-test установленного wheel.
 
 ---
 
@@ -272,4 +286,4 @@ AI-вывод не создаёт WireScope finding автоматически. 
 
 ## Текущий следующий шаг
 
-**M11 live-network validation на WireScope VM:** обновить VM до M11.3 checkpoint, прогнать Deep-аудит и сохранённый PCAP/topology workflow, проверить global map, L2/L3/Traffic, SNMP/upstream evidence, historical topology diff, `partial/source_errors`, findings и SVG/PNG/JSON export на реальной тестовой сети. После подтверждения runtime-поведения — начинать v1.3 Global Correlation Analysis.
+**v1.3 Global Correlation Analysis:** создать отдельную milestone-ветку и начать детерминированный correlation engine поверх persisted inventory/report data, `traffic-analysis` и `network-topology`, без повторного сетевого I/O и без внешнего AI.

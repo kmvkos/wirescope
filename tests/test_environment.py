@@ -47,3 +47,59 @@ def test_get_default_route_returns_none_for_empty_output(monkeypatch):
     monkeypatch.setattr(environment, "run_command", lambda _command: "")
 
     assert environment.get_default_route() is None
+
+
+def test_get_default_routes_keeps_nonpreferred_route_for_second_interface(monkeypatch):
+    payload = [
+        {"dst": "default", "gateway": "192.168.32.2", "dev": "ens38", "metric": 100},
+        {"dst": "default", "gateway": "10.11.11.11", "dev": "ens37", "metric": 600},
+    ]
+    monkeypatch.setattr(
+        environment,
+        "run_command",
+        lambda command: json.dumps(payload)
+        if command == ["ip", "-j", "-4", "route", "show", "default"]
+        else "",
+    )
+
+    assert environment.get_default_routes() == [
+        {
+            "gateway": "192.168.32.2",
+            "interface": "ens38",
+            "source_address": None,
+            "metric": 100,
+            "protocol": None,
+        },
+        {
+            "gateway": "10.11.11.11",
+            "interface": "ens37",
+            "source_address": None,
+            "metric": 600,
+            "protocol": None,
+        },
+    ]
+
+
+def test_systemd_dhcp_lease_is_bound_to_ifindex(tmp_path):
+    sys_class = tmp_path / "sys" / "class" / "net"
+    lease_dir = tmp_path / "run" / "systemd" / "netif" / "leases"
+    (sys_class / "ens37").mkdir(parents=True)
+    (sys_class / "ens37" / "ifindex").write_text("2\n")
+    lease_dir.mkdir(parents=True)
+    (lease_dir / "2").write_text(
+        "ADDRESS=10.11.11.124\n"
+        "ROUTER=10.11.11.11\n"
+        "DNS=10.11.11.11 1.1.1.1\n"
+        "SERVER_ADDRESS=10.11.11.11\n"
+    )
+
+    assert environment.get_systemd_dhcp_leases(lease_dir, sys_class) == [
+        {
+            "interface": "ens37",
+            "address": "10.11.11.124",
+            "routers": ["10.11.11.11"],
+            "dns": ["10.11.11.11", "1.1.1.1"],
+            "server_address": "10.11.11.11",
+            "source": "systemd-networkd-lease",
+        }
+    ]

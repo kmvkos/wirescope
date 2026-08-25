@@ -27,7 +27,7 @@ GET /api/v1/diagnostics/export
 
 `/health` answers only whether the API process is alive. `/ready` checks SQLite, migration state, the worker, and the core `dumpcap`/`tshark` tools.
 
-A missing optional provider such as `ssh-audit` or `smbclient` does not make the whole appliance `not_ready`. `/capabilities` reports the complete feature/tool inventory.
+A missing optional provider such as `ssh-audit`, `openssh-client`, or `smbclient` does not make the whole appliance `not_ready`. `/capabilities` reports the complete feature/tool inventory.
 
 `/diagnostics` is the operational snapshot: version/platform, listener, runtime checks, capabilities, SQLite `quick_check`, disk/evidence usage, retention, and recent operational events. `/diagnostics/export` returns the same safe snapshot as a JSON attachment. These routes are auditor-only.
 
@@ -72,6 +72,24 @@ GET /api/v1/audits/{audit_id}/observations
 
 Inventory remains the normalized source of truth. Device classification (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`) is a confidence-rated hint, not a finding.
 
+## Network Topology
+
+```text
+GET  /api/v1/audits/{audit_id}/topology
+GET  /api/v1/topology/global
+GET  /api/v1/audits/{audit_id}/topology/compare?against={baseline_audit_id}
+POST /api/v1/audits/{audit_id}/topology/snmp
+POST /api/v1/audits/{audit_id}/topology/ssh
+```
+
+`GET .../topology` is assembled from persisted normalized evidence and may accept `traffic_analysis_job_id` for an explicitly selected Traffic Analysis overlay. The response contains the canonical graph, presentation metadata, `coverage`, warnings, and `partial/source_errors` when expected evidence could not be included.
+
+`topology/compare` uses persisted data only and does not start a scanner, traceroute, SNMP, or SSH operation.
+
+SNMP/SSH enrichment operations are mutating auditor-only requests. The management target must be inside the operator-confirmed active scope for the same audit interface. Credentials are handed to the worker through an ephemeral consume-once spool; plaintext secret material is not stored in topology evidence or normal job parameters. SSH additionally requires strict host-key verification and does not accept an arbitrary remote command.
+
+The full evidence/claimability model is documented in [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
+
 ## Jobs and recovery
 
 ```text
@@ -84,6 +102,8 @@ GET  /api/v1/jobs/{job_id}/result
 ```
 
 `retry` is allowed only for `failed`, `interrupted`, and `cancelled` jobs. The historical job remains immutable; WireScope creates a new queued job with the same parameters and links the two through job events.
+
+Credentialed management jobs `snmp_topology` and `ssh_topology` are an exception: they cannot be queued again with an old consume-once `credential_ref`. The operator starts enrichment again and supplies fresh credentials.
 
 Recovery is stage-level. WireScope does not attempt to resume a dead subprocess from an arbitrary internal execution point.
 
@@ -164,7 +184,7 @@ Public routes:
 - `GET /health`, `/status`, `/ready`;
 - `POST /auth/login`, `/auth/logout`.
 
-Other routes require a local session. Normal mutating routes require `auditor`; a `viewer` can read audits, inventory, findings, reports, diffs, and evidence. Operational audit log, diagnostics, and maintenance are auditor-only.
+Other routes require a local session. Normal mutating routes require `auditor`; a `viewer` can read audits, inventory, findings, reports, diffs, topology, and evidence. Operational audit log, diagnostics, and maintenance are auditor-only.
 
 Sessions use an HttpOnly cookie. See [SECURITY_MODEL.md](SECURITY_MODEL.md).
 

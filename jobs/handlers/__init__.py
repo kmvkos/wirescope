@@ -7,6 +7,7 @@ from jobs.handlers.passive import PassiveDiscoveryHandler
 from jobs.handlers.protocol import ProtocolAuditHandler
 from jobs.handlers.report import ReportGenerationHandler
 from jobs.handlers.snmp_topology import SnmpTopologyHandler
+from jobs.handlers.ssh_topology import SshTopologyHandler
 from jobs.handlers.traffic import TrafficAnalysisHandler
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "ProtocolAuditHandler",
     "ReportGenerationHandler",
     "SnmpTopologyHandler",
+    "SshTopologyHandler",
     "TrafficAnalysisHandler",
 ]

@@ -64,8 +64,8 @@ def test_full_audit_delete_is_auditor_only_and_removes_evidence(api_context):
     assert audit_id not in {item["id"] for item in listed.json()["items"]}
 
     events = app.state.audit_log.list_events(action="audit.delete", audit_id=audit_id)
-    assert events["total"] == 1
-    assert events["items"][0]["status_code"] == 200
+    assert events["total"] == 2
+    assert {item["status_code"] for item in events["items"]} == {200, 403}
 
 
 def test_running_or_queued_audit_must_be_stopped_before_delete(api_context):

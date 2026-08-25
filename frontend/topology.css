@@ -1,0 +1,212 @@
+.ws-topology-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.ws-topology-controls select {
+    min-width: min(420px, 72vw);
+}
+
+.ws-topology-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted, #9fb0c0);
+    font-size: 0.86rem;
+}
+
+.ws-topology-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin: 10px 0 14px;
+    color: var(--muted, #9fb0c0);
+    font-size: 0.82rem;
+}
+
+.ws-topology-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ws-topology-legend i {
+    width: 24px;
+    height: 3px;
+    border-radius: 999px;
+    display: inline-block;
+}
+
+.ws-topology-legend-confirmed { background: #65e2d5; }
+.ws-topology-legend-observed { background: #7ab7ff; }
+.ws-topology-legend-inferred {
+    background: repeating-linear-gradient(90deg, #9aaabc 0 5px, transparent 5px 9px);
+}
+
+.ws-topology-meta {
+    display: grid;
+    gap: 8px;
+}
+
+.ws-topology-overlay-note {
+    margin: 0;
+    padding: 9px 11px;
+    border: 1px solid rgba(98, 222, 220, 0.22);
+    border-radius: 12px;
+    background: rgba(98, 222, 220, 0.07);
+}
+
+.ws-topology-canvas {
+    margin: 14px 0;
+    overflow: hidden;
+    border: 1px solid rgba(126, 165, 201, 0.18);
+    border-radius: 18px;
+    background:
+        radial-gradient(circle at 50% 48%, rgba(68, 170, 196, 0.07), transparent 38%),
+        linear-gradient(160deg, rgba(5, 15, 28, 0.96), rgba(10, 24, 40, 0.98));
+}
+
+.ws-topology-svg {
+    display: block;
+    width: 100%;
+    min-height: 480px;
+    max-height: 70vh;
+}
+
+.ws-topology-edge {
+    cursor: pointer;
+    fill: none;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.72;
+}
+
+.ws-topology-confirmed { stroke: #65e2d5; }
+.ws-topology-observed { stroke: #7ab7ff; }
+.ws-topology-inferred {
+    stroke: #91a2b3;
+    stroke-dasharray: 8 7;
+    opacity: 0.46;
+}
+
+.ws-topology-rel-communication { opacity: 0.44; }
+.ws-topology-rel-layer2_neighbor { opacity: 0.94; }
+.ws-topology-rel-default_gateway { opacity: 0.94; }
+
+.ws-topology-node {
+    cursor: pointer;
+    outline: none;
+}
+
+.ws-topology-node circle {
+    fill: rgba(21, 45, 69, 0.97);
+    stroke: rgba(126, 183, 224, 0.62);
+    stroke-width: 2.2px;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 7px 13px rgba(0, 0, 0, 0.34));
+}
+
+.ws-topology-node-wirescope circle {
+    fill: rgba(44, 163, 170, 0.24);
+    stroke: #65e2d5;
+    stroke-width: 3px;
+}
+
+.ws-topology-node-network-device circle,
+.ws-topology-node-asset circle {
+    fill: rgba(19, 45, 72, 0.98);
+}
+
+.ws-topology-node-multicast-group circle {
+    fill: rgba(76, 68, 104, 0.74);
+    stroke: rgba(181, 164, 229, 0.62);
+}
+
+.ws-topology-node text {
+    pointer-events: none;
+    fill: #dce9f4;
+    font-size: 14px;
+    font-weight: 650;
+}
+
+.ws-topology-node .ws-topology-node-badge {
+    fill: #7ce4db;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.ws-topology-node:focus circle,
+.ws-topology-node:hover circle {
+    stroke: #eaf8ff;
+    stroke-width: 3px;
+}
+
+.ws-topology-details {
+    min-height: 68px;
+    padding: 13px 15px;
+    border-top: 1px solid rgba(126, 165, 201, 0.16);
+    background: rgba(5, 16, 29, 0.72);
+}
+
+.ws-topology-details h4 {
+    margin: 0 0 9px;
+}
+
+.ws-topology-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(130px, 0.35fr) 1fr;
+    gap: 5px 13px;
+    font-size: 0.88rem;
+}
+
+.ws-topology-detail-grid strong {
+    color: var(--muted, #9fb0c0);
+}
+
+.ws-topology-service-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ws-topology-service-list span {
+    padding: 4px 7px;
+    border: 1px solid rgba(126, 165, 201, 0.18);
+    border-radius: 8px;
+    background: rgba(20, 43, 66, 0.64);
+    font-size: 0.78rem;
+}
+
+@media (max-width: 560px) {
+    .ws-topology-controls {
+        align-items: stretch;
+    }
+
+    .ws-topology-controls select,
+    .ws-topology-controls button {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .ws-topology-svg {
+        min-height: 330px;
+    }
+
+    .ws-topology-detail-grid {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+
+    .ws-topology-detail-grid strong:not(:first-child) {
+        margin-top: 5px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ws-topology-node circle,
+    .ws-topology-edge {
+        transition: none;
+    }
+}

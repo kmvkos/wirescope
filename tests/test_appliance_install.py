@@ -319,6 +319,7 @@ def test_with_kiosk_skips_already_installed_packages(tmp_path):
             "snmp",
             "ldap-utils",
             "ssh-audit",
+            "openssh-client",
             "traceroute",
         }
     )

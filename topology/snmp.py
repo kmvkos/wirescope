@@ -136,8 +136,8 @@ def _decorate_document(
     stats["devices"] += 1
 
     # ARP evidence can resolve an IP-labelled topology node to a MAC before FDB
-    # correlation.  Unknown ARP entries stay observed topology endpoints rather
-    # than being inserted into the durable inventory.
+    # correlation. Unknown ARP entries stay topology-only and do not become
+    # durable inventory assets.
     aliases = _aliases(nodes)
     for arp in document.get("arp") or []:
         if not isinstance(arp, dict):
@@ -197,17 +197,38 @@ def _decorate_document(
             or (interface or {}).get("description")
             or (f"bridge-port {port}" if port else "unknown")
         )
-        vlan_ids = sorted({int(value) for value in fdb.get("vlan_ids") or [] if isinstance(value, int) or str(value).isdigit()})
+        vlan_ids = sorted(
+            {
+                int(value)
+                for value in fdb.get("vlan_ids") or []
+                if isinstance(value, int) or str(value).isdigit()
+            }
+        )
+        pvid = (interface or {}).get("pvid") if interface else None
+        port_vlans = (interface or {}).get("vlan_ids") if interface else []
+        port_parts = [port_name]
+        if ifindex is not None:
+            port_parts.append(f"ifIndex {ifindex}")
+        if pvid is not None:
+            port_parts.append(f"PVID {pvid}")
+        if vlan_ids:
+            port_parts.append("VLAN " + ",".join(map(str, vlan_ids)))
+        elif port_vlans:
+            port_parts.append("VLANs " + ",".join(map(str, port_vlans)))
+        port_label = " · ".join(port_parts)
         edge_id = f"edge:snmp-fdb:{target}:{mac}:{port}:{','.join(map(str, vlan_ids)) or 'none'}"
         if not any(edge.get("id") == edge_id for edge in edges):
             endpoint = _node(nodes, endpoint_id)
-            segment_ids = sorted(set((switch.get("segment_ids") or []) + ((endpoint or {}).get("segment_ids") or [])))
+            segment_ids = sorted(
+                set((switch.get("segment_ids") or []) + ((endpoint or {}).get("segment_ids") or []))
+            )
             edges.append(
                 {
                     "id": edge_id,
                     "source": switch_id,
                     "target": endpoint_id,
-                    "relation": "switch_port",
+                    "relation": "layer2_neighbor",
+                    "mapping_type": "switch_port",
                     "layer": "l2",
                     "confidence": "observed",
                     "provenance": [str(fdb.get("source") or "snmp-fdb"), "credentialed-snmp"],
@@ -216,8 +237,10 @@ def _decorate_document(
                     "bridge_port": port or None,
                     "ifindex": ifindex,
                     "port_name": port_name,
-                    "port_pvid": (interface or {}).get("pvid") if interface else None,
-                    "port_vlans": (interface or {}).get("vlan_ids") if interface else [],
+                    "port_id": port_label,
+                    "ports": [port_label],
+                    "port_pvid": pvid,
+                    "port_vlans": port_vlans,
                     "vlan_ids": vlan_ids,
                     "mac": mac,
                     "artifact_id": artifact_id,
@@ -265,8 +288,20 @@ def _decorate_document(
             _append_unique(remote.setdefault("roles", []), "network-neighbor")
             _append_unique(remote.setdefault("provenance", []), "snmp-lldp")
             _append_unique(remote.setdefault("snmp_artifact_ids", []), artifact_id)
-        local_port = str(neighbor.get("local_interface_name") or neighbor.get("local_port_id") or neighbor.get("local_port_num") or "")
-        remote_port = str(neighbor.get("remote_port_id") or neighbor.get("remote_port_description") or "")
+        local_port = str(
+            neighbor.get("local_interface_name")
+            or neighbor.get("local_port_id")
+            or neighbor.get("local_port_num")
+            or ""
+        )
+        remote_port = str(
+            neighbor.get("remote_port_id")
+            or neighbor.get("remote_port_description")
+            or ""
+        )
+        port_label = local_port or "unknown"
+        if remote_port:
+            port_label = f"{port_label} ↔ {remote_port}"
         edge_id = f"edge:snmp-lldp:{target}:{_safe_id(local_port)}:{remote_id}:{_safe_id(remote_port)}"
         if not any(edge.get("id") == edge_id for edge in edges):
             edges.append(
@@ -274,13 +309,18 @@ def _decorate_document(
                     "id": edge_id,
                     "source": switch_id,
                     "target": remote_id,
-                    "relation": "snmp_lldp_neighbor",
+                    "relation": "layer2_neighbor",
+                    "mapping_type": "snmp_lldp_neighbor",
                     "layer": "l2",
                     "confidence": "observed",
                     "provenance": ["snmp-lldp", "credentialed-snmp"],
-                    "segment_ids": sorted(set((switch.get("segment_ids") or []) + ((remote or {}).get("segment_ids") or []))),
+                    "segment_ids": sorted(
+                        set((switch.get("segment_ids") or []) + ((remote or {}).get("segment_ids") or []))
+                    ),
                     "local_port": local_port or None,
                     "remote_port": remote_port or None,
+                    "port_id": port_label,
+                    "ports": [value for value in (local_port, remote_port) if value],
                     "remote_chassis_id": neighbor.get("remote_chassis_id"),
                     "remote_system_name": sys_name or None,
                     "artifact_id": artifact_id,

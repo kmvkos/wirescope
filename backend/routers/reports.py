@@ -108,6 +108,59 @@ def get_report(
         raise not_found(exc) from exc
 
 
+@router.delete("/audits/{audit_id}/reports/{report_id}")
+def delete_report(
+    audit_id: str,
+    report_id: str,
+    services: AppServices = Depends(get_services),
+) -> dict:
+    """Delete one generated report, retaining the underlying audit data."""
+    try:
+        services.jobs.get_audit(audit_id)
+        report = services.reports.get(audit_id, report_id)
+
+        # Resolve paths before deleting artifact metadata from SQLite. Missing
+        # artifacts do not block logical report deletion; the report history is
+        # still made consistent and orphan cleanup can handle stray files.
+        artifacts = {}
+        for artifact_id in {
+            report.json_artifact_id,
+            report.html_artifact_id,
+        }:
+            try:
+                artifact = services.jobs.artifact(artifact_id)
+            except EntityNotFound:
+                continue
+            if artifact.audit_id == audit_id:
+                artifacts[artifact_id] = artifact
+
+        _deleted, artifact_ids = services.reports.delete(audit_id, report_id)
+    except EntityNotFound as exc:
+        raise not_found(exc) from exc
+    except ReportNotFound as exc:
+        raise not_found(exc) from exc
+
+    cleanup_pending: list[str] = []
+    for artifact_id in artifact_ids:
+        artifact = artifacts.get(artifact_id)
+        if artifact is None:
+            continue
+        try:
+            services.evidence.path_for(artifact).unlink(missing_ok=True)
+        except OSError:
+            # Logical deletion already succeeded. Keep the response successful;
+            # startup/orphan maintenance may remove the unregistered file later.
+            cleanup_pending.append(artifact_id)
+
+    return {
+        "deleted": True,
+        "audit_id": audit_id,
+        "report_id": report_id,
+        "deleted_artifact_ids": artifact_ids,
+        "file_cleanup_pending": cleanup_pending,
+    }
+
+
 @router.get("/audits/{audit_id}/reports/{report_id}/export")
 def export_report(
     audit_id: str,

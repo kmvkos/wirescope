@@ -1,6 +1,7 @@
 """Logical network topology built from persisted WireScope evidence."""
 
 from topology.builder import TopologySourceError
+from topology.findings import decorate_findings
 from topology.routing import decorate_global_routing_topology, decorate_routed_topology
 from topology.segmented import (
     build_global_topology as _build_global_topology,
@@ -18,7 +19,8 @@ def build_topology(services, audit_id: str, *, traffic_analysis_job_id: str | No
     )
     topology = decorate_routed_topology(topology)
     topology = decorate_upstream_topology(services, audit_id, topology)
-    return decorate_snmp_topology(services, audit_id, topology)
+    topology = decorate_snmp_topology(services, audit_id, topology)
+    return decorate_findings(services, audit_id, topology)
 
 
 def build_global_topology(services, *, limit: int = 100):

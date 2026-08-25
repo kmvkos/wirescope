@@ -54,7 +54,7 @@ def test_modern_html_report_exposes_passive_network_context_without_raw_stdout()
                         "neighbors": [
                             {
                                 "protocol": "LLDP",
-                                "name": "switch-1",
+                                "system_name": "switch-1",
                                 "port_id": "Gi1/0/1",
                                 "native_vlan": 10,
                             }

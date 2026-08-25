@@ -14,6 +14,7 @@ from jobs.service import EntityNotFound
 from jobs.state import InvalidTransition
 from providers.snmp_topology import SnmpCredentialError, sanitize_credential_profile
 from topology import TopologySourceError, build_global_topology, build_topology
+from topology.compare import compare_topologies
 
 
 router = APIRouter()
@@ -59,6 +60,41 @@ def global_topology(
     services: AppServices = Depends(get_services),
 ) -> dict:
     return build_global_topology(services, limit=limit)
+
+
+@router.get("/audits/{audit_id}/topology/compare")
+def compare_audit_topology(
+    audit_id: str,
+    against: str = Query(min_length=1),
+    services: AppServices = Depends(get_services),
+) -> dict:
+    if audit_id == against:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "same_topology",
+                "message": "Choose two different audits for topology comparison",
+            },
+        )
+    try:
+        current = build_topology(services, audit_id)
+        baseline = build_topology(services, against)
+    except EntityNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "not_found", "message": str(exc)},
+        ) from exc
+    except TopologySourceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "topology_source_invalid", "message": str(exc)},
+        ) from exc
+    return compare_topologies(
+        baseline=baseline,
+        current=current,
+        baseline_audit_id=against,
+        current_audit_id=audit_id,
+    )
 
 
 @router.get("/audits/{audit_id}/topology")

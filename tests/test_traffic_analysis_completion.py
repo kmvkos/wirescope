@@ -193,8 +193,8 @@ def test_traffic_comparison_ui_and_cache_bust_are_present(api_context):
     app, _service, _evidence, _environment = api_context
     root = request(app, "GET", "/", as_role=None)
     assert root.status_code == 200
-    assert "traffic_analysis.js?v=20260825-ui10" in root.text
-    assert "traffic_analysis.css?v=20260825-ui10" in root.text
+    assert "traffic_analysis.js?v=20260825-ui11" in root.text
+    assert "traffic_analysis.css?v=20260825-ui11" in root.text
 
     static_js = request(app, "GET", "/static/traffic_analysis.js", as_role=None)
     assert static_js.status_code == 200

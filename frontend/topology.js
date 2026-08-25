@@ -119,6 +119,95 @@
         })[value] || value;
     }
 
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function collectSvgStyles() {
+        const rules = [];
+        Array.from(document.styleSheets || []).forEach((sheet) => {
+            let cssRules;
+            try { cssRules = sheet.cssRules; } catch { return; }
+            Array.from(cssRules || []).forEach((rule) => {
+                const text = String(rule.cssText || "");
+                if (text && !text.includes("url(")) rules.push(text);
+            });
+        });
+        return rules.join("\n");
+    }
+
+    function serializeCurrentSvg(graph) {
+        const source = graph.querySelector(".ws-topology-svg");
+        if (!source) throw new Error("Topology SVG is not rendered yet");
+        const clone = source.cloneNode(true);
+        clone.setAttribute("xmlns", SVG_NS);
+        clone.setAttribute("width", String(VIEWBOX.width));
+        clone.setAttribute("height", String(VIEWBOX.height));
+
+        const styleText = collectSvgStyles();
+        if (styleText) {
+            const styleNode = svg("style");
+            styleNode.textContent = styleText;
+            const defs = clone.querySelector("defs");
+            if (defs) defs.prepend(styleNode);
+            else clone.prepend(styleNode);
+        }
+
+        const computed = window.getComputedStyle(source);
+        const background = computed.backgroundColor && computed.backgroundColor !== "rgba(0, 0, 0, 0)" && computed.backgroundColor !== "transparent"
+            ? computed.backgroundColor
+            : "#ffffff";
+        const backgroundNode = svg("rect", {
+            x: 0,
+            y: 0,
+            width: VIEWBOX.width,
+            height: VIEWBOX.height,
+            fill: background,
+        });
+        const defs = clone.querySelector("defs");
+        clone.insertBefore(backgroundNode, defs ? defs.nextSibling : clone.firstChild);
+        const documentText = new XMLSerializer().serializeToString(clone);
+        return `<?xml version="1.0" encoding="UTF-8"?>\n${documentText}`;
+    }
+
+    async function pngFromSvg(svgText) {
+        const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(svgBlob);
+        try {
+            const image = new Image();
+            const loaded = new Promise((resolve, reject) => {
+                image.onload = resolve;
+                image.onerror = () => reject(new Error("Could not render topology SVG for PNG export"));
+            });
+            image.src = url;
+            await loaded;
+            const canvas = document.createElement("canvas");
+            canvas.width = VIEWBOX.width;
+            canvas.height = VIEWBOX.height;
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("Canvas is unavailable for PNG export");
+            context.drawImage(image, 0, 0, VIEWBOX.width, VIEWBOX.height);
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+            if (!blob) throw new Error("Could not encode topology PNG");
+            return blob;
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    function exportBaseName(mode, auditId) {
+        return mode === "global"
+            ? "wirescope-topology-global"
+            : `wirescope-topology-${String(auditId).slice(0, 8)}`;
+    }
+
     function degrees(topology) {
         const result = new Map();
         (topology.edges || []).forEach((edge) => {
@@ -269,6 +358,7 @@
         target.replaceChildren();
         target.append(el("h4", node.label || node.id));
         const grid = el("div", null, "ws-topology-detail-grid");
+        const findingCount = node.finding_count ?? (node.findings || []).length;
         const rows = [
             ["Тип", nodeKindLabel(node)],
             ["Достоверность", confidenceLabel(node.confidence)],
@@ -280,6 +370,7 @@
             ["MAC", node.mac || "—"],
             ["Vendor", node.vendor || "—"],
             ["OS", node.os_name || "—"],
+            ["Находки", findingCount],
             ["Аудиты", (node.audit_ids || []).map((id) => String(id).slice(0, 8)).join(", ") || "—"],
         ];
         rows.forEach(([key, value]) => grid.append(el("strong", key), el("span", value)));
@@ -291,6 +382,23 @@
             services.slice(0, 30).forEach((service) => {
                 list.append(el("span", `${service.protocol || "?"}/${service.port ?? "?"} ${service.name || service.product || ""}`.trim()));
             });
+            target.append(list);
+        }
+        const findings = node.findings || [];
+        if (findingCount || findings.length) {
+            target.append(el("h4", "Находки"));
+            const list = el("div", null, "ws-topology-service-list");
+            findings.forEach((finding) => {
+                const severity = String(finding.severity || "unknown").toUpperCase();
+                const status = String(finding.status || "unknown");
+                const item = el("span", `${severity} · ${finding.title || finding.rule_id || finding.id || "finding"} · ${status}`);
+                const context = [finding.description, finding.recommendation].filter(Boolean).join("\n");
+                if (context) item.title = context;
+                list.append(item);
+            });
+            if (node.findings_truncated) {
+                list.append(el("span", `Показано ${findings.length} из ${findingCount}. Полный список доступен в разделе находок.`, "muted"));
+            }
             target.append(list);
         }
     }
@@ -746,23 +854,49 @@
         multicast.addEventListener("change", renderCurrent);
         minor.addEventListener("change", renderCurrent);
 
-        const exportButton = el("button", "Скачать topology JSON", "secondary");
-        exportButton.addEventListener("click", () => {
+        const exportActions = el("div", null, "actions ws-topology-export-actions");
+        const exportJson = el("button", "Скачать topology JSON", "secondary");
+        exportJson.type = "button";
+        exportJson.addEventListener("click", () => {
             const raw = selectedRaw();
             const blob = new Blob([JSON.stringify(raw, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = mode.value === "global"
-                ? "wirescope-topology-global.json"
-                : `wirescope-topology-${String(auditId).slice(0, 8)}.json`;
-            document.body.append(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
+            downloadBlob(blob, `${exportBaseName(mode.value, auditId)}.json`);
         });
 
-        body.append(controls, legend, meta, graph, exportButton);
+        const exportSvg = el("button", "Скачать SVG", "secondary");
+        exportSvg.type = "button";
+        exportSvg.addEventListener("click", () => {
+            try {
+                const documentText = serializeCurrentSvg(graph);
+                downloadBlob(
+                    new Blob([documentText], { type: "image/svg+xml;charset=utf-8" }),
+                    `${exportBaseName(mode.value, auditId)}.svg`
+                );
+            } catch (error) {
+                meta.append(el("p", error.message, "error"));
+            }
+        });
+
+        const exportPng = el("button", "Скачать PNG", "secondary");
+        exportPng.type = "button";
+        exportPng.addEventListener("click", async () => {
+            exportPng.disabled = true;
+            const original = exportPng.textContent;
+            exportPng.textContent = "Готовим PNG…";
+            try {
+                const documentText = serializeCurrentSvg(graph);
+                const blob = await pngFromSvg(documentText);
+                downloadBlob(blob, `${exportBaseName(mode.value, auditId)}.png`);
+            } catch (error) {
+                meta.append(el("p", error.message, "error"));
+            } finally {
+                exportPng.disabled = false;
+                exportPng.textContent = original;
+            }
+        });
+        exportActions.append(exportJson, exportSvg, exportPng);
+
+        body.append(controls, legend, meta, graph, exportActions);
         renderCurrent();
     }
 

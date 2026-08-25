@@ -199,7 +199,7 @@ def test_report_job_reproduces_from_persisted_data(
     assert "Почему это важно" in html
     assert "Что рекомендуется сделать" in html
     assert "Пассивное наблюдение" in html
-    assert "VLAN ID считается наблюдаемым только при наличии тега 802.1Q" in html
+    assert "VLAN в кадре виден только при 802.1Q" in html
     assert document["environment"]["capture_interface"] == "eth0"
     assert document["environment"]["had_l3_address"] is True
     assert document["passive"]["vlan_tag_note"].startswith("VLAN в кадре")

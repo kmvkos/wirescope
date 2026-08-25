@@ -128,7 +128,7 @@ RTT:
 
 ## v1.2 — Network Topology
 
-Статус: **активная разработка, M11.1 завершён, основной интерактивный срез M11.2 реализован**.
+Статус: **активная разработка; M11.1 завершён, автоматизируемый срез M11.2 реализован и покрыт browser CI**.
 
 Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
 
@@ -165,11 +165,12 @@ PCAP overlay выбирается оператором **явно**. WireScope �
 
 ### M11.2 — интерактивная визуализация
 
-Статус: **основной интерактивный срез реализован, требуется live UI smoke-test**.
+Статус: **реализовано и покрыто Chromium browser smoke; остаётся проверка качества layout на больших реальных topology**.
 
 Реализовано в web/kiosk:
 - segment-aware SVG layout: каждая подсеть отображается отдельной визуальной областью;
 - общая cross-audit карта сохранённых сетей;
+- global topology явно помечается `partial`, если один из retained audits не удалось построить; пропущенные источники возвращаются в `source_errors`, а оператор получает warning;
 - выбор конкретной подсети;
 - уровни Общая / L2 / L3 / Traffic;
 - фильтр confidence: confirmed / observed / inferred;
@@ -179,14 +180,16 @@ PCAP overlay выбирается оператором **явно**. WireScope �
 - двойной клик/Enter по области подсети для фокусировки;
 - внешние/global IP визуально вынесены в зону `Internet / внешние адреса`;
 - communication edge имеет толщину по объёму и стрелки по наблюдавшимся направлениям PCAP;
-- клик по asset → адреса, сервисы, vendor, OS, provenance/confidence;
+- клик по asset → адреса, сервисы, vendor, OS, provenance/confidence и persisted findings, привязанные по `asset_id`;
 - клик по edge → layer, provenance, segment context, пакеты, байты, протоколы и направление;
-- topology JSON export.
+- topology JSON export;
+- SVG export текущего отображаемого вида карты с сохранением фильтров и viewport transform;
+- PNG export из того же текущего SVG;
+- Chromium regression smoke для фильтров, zoom/focus, bounded rendering, findings и SVG/PNG download.
 
 Оставшаяся доводка M11.2:
-- SVG/PNG export текущего вида карты;
-- findings в карточке asset;
-- улучшения layout после проверки на больших реальных topology.
+- проверить читаемость и распределение узлов на нескольких больших реальных topology;
+- после live smoke внести только подтверждённые layout/UI улучшения, не меняя evidence semantics.
 
 VLAN-filter не должен назначать устройства VLAN «по догадке». Он будет включён только когда у WireScope есть достаточный node↔VLAN evidence (LLDP/CDP/SNMP/FDB/switch-port mapping); до этого VLAN остаётся наблюдаемым контекстом, а не выдуманной принадлежностью assets.
 
@@ -259,4 +262,4 @@ AI-вывод не создаёт WireScope finding автоматически. 
 
 ## Текущий следующий шаг
 
-**M11.2 live smoke-test:** проверить новый segment-aware layout, zoom/pan, L2/L3/Traffic filters, global map и PCAP direction edges на реальной сети; затем довести мелкий UI/export слой и перейти к M11.3 physical-topology evidence.
+**M11.2 live-network validation:** проверить segment-aware layout, zoom/pan, L2/L3/Traffic filters, global map, findings и SVG/PNG export на нескольких реальных сетях/крупных topology; затем внести только подтверждённые layout-улучшения и продолжить M11.3 physical-topology evidence.

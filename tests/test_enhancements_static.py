@@ -19,10 +19,14 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/progress_runtime.js') == 1
     assert page.text.count('/static/report_management.js') == 1
     assert page.text.count('/static/report_management.css') == 1
+    assert page.text.count('/static/audit_management.js') == 1
+    assert page.text.count('/static/audit_management.css') == 1
+    assert page.text.count('/static/traffic_analysis.js') == 1
+    assert page.text.count('/static/traffic_analysis.css') == 1
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui6" in page.text
+    assert "?v=20260825-ui7" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -80,6 +84,22 @@ def test_report_management_is_auditor_only_and_keeps_audit_data():
     assert 'format=markdown' not in script  # format is composed through exportUrl
     assert 'exportUrl(auditId, report.id, "markdown")' in script
     assert ".report-history-item" in css
+    assert "@media (max-width: 560px)" in css
+
+
+def test_traffic_analysis_ui_is_capture_scoped_and_kiosk_responsive():
+    script = (FRONTEND / "traffic_analysis.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "traffic_analysis.css").read_text(encoding="utf-8")
+
+    assert 'const API = "/api/v1"' in script
+    assert '`/captures/${encodeURIComponent(captureJobId)}/analyze`' in script
+    assert 'exportUrl(jobId, "text")' in script
+    assert 'exportUrl(jobId, "markdown")' in script
+    assert 'exportUrl(jobId, "json")' in script
+    assert 'button.dataset.captureJobId' in script
+    assert 'button.onclick =' not in script
+    assert '"Анализировать"' in script
+    assert ".traffic-analysis-modal" in css
     assert "@media (max-width: 560px)" in css
 
 

@@ -405,10 +405,10 @@ def test_worker_registry_and_root_assets_include_snmp_topology(api_context):
     response = request(app, "GET", "/", as_role="viewer")
     assert response.status_code == 200
     body = response.text
-    assert body.count("snmp_topology.css?v=20260825-ui13") == 1
-    assert body.count("snmp_topology.js?v=20260825-ui13") == 1
-    assert body.index("topology.js?v=20260825-ui13") < body.index("snmp_topology.js?v=20260825-ui13")
-    assert body.index("snmp_topology.js?v=20260825-ui13") < body.index("topology_tab.js?v=20260825-ui13")
+    assert body.count("snmp_topology.css?v=20260825-ui14") == 1
+    assert body.count("snmp_topology.js?v=20260825-ui14") == 1
+    assert body.index("topology.js?v=20260825-ui14") < body.index("snmp_topology.js?v=20260825-ui14")
+    assert body.index("snmp_topology.js?v=20260825-ui14") < body.index("topology_tab.js?v=20260825-ui14")
 
 
 def test_snmp_topology_frontend_uses_canonical_api_and_has_kiosk_layout(durable_settings):

@@ -18,7 +18,8 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/enhancements.js') == 1
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
-    assert "?v=20260825-ui2" in page.text
+    assert page.text.count('/static/polish.css') == 1
+    assert "?v=20260825-ui3" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -32,6 +33,18 @@ def test_modern_theme_keeps_kiosk_and_desktop_breakpoints():
     assert "#screen-home > .actions" in theme
     assert ".progress-hud" in theme
     assert ".ws-insights" in theme
+
+
+def test_polish_layer_is_presentation_only_and_responsive():
+    polish = (FRONTEND / "polish.css").read_text(encoding="utf-8")
+
+    assert "h1::before" in polish
+    assert "#new-audit-button::before" in polish
+    assert "@media (max-width: 560px)" in polish
+    assert "@media (min-width: 900px)" in polish
+    assert "@media (prefers-reduced-motion: reduce)" in polish
+    assert "ws-screen-in" in polish
+    assert "url(" not in polish  # no remote fonts/images in the appliance UI
 
 
 def test_upgrade_refreshes_enabled_kiosk_after_frontend_update():

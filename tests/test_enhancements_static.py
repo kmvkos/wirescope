@@ -17,10 +17,12 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.status_code == 200
     assert page.text.count('/static/enhancements.js') == 1
     assert page.text.count('/static/progress_runtime.js') == 1
+    assert page.text.count('/static/report_management.js') == 1
+    assert page.text.count('/static/report_management.css') == 1
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui5" in page.text
+    assert "?v=20260825-ui6" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -63,6 +65,22 @@ def test_long_nmap_stage_is_presented_as_indeterminate_not_fake_percent():
     assert 'findings: "Выводы"' in insights
     assert 'externalNmapStage(item)' in insights
     assert '? "идёт"' in insights
+
+
+def test_report_management_is_auditor_only_and_keeps_audit_data():
+    script = (FRONTEND / "report_management.js").read_text(encoding="utf-8")
+    css = (FRONTEND / "report_management.css").read_text(encoding="utf-8")
+
+    assert 'const API = "/api/v1"' in script
+    assert 'me.role === "auditor"' in script
+    assert 'request(\n                                "DELETE"' in script
+    assert '"История отчётов"' in script
+    assert '"Удалить"' in script
+    assert 'audit, устройства, сервисы, findings и исходные evidence' in script
+    assert 'format=markdown' not in script  # format is composed through exportUrl
+    assert 'exportUrl(auditId, report.id, "markdown")' in script
+    assert ".report-history-item" in css
+    assert "@media (max-width: 560px)" in css
 
 
 def test_upgrade_refreshes_enabled_kiosk_after_frontend_update():

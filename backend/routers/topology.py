@@ -14,7 +14,7 @@ from jobs.service import EntityNotFound
 from jobs.state import InvalidTransition
 from providers.snmp_topology import SnmpCredentialError, sanitize_credential_profile
 from topology import TopologySourceError, build_global_topology, build_topology
-from topology.compare import compare_topologies
+from topology.history import compare_topology_history
 
 
 router = APIRouter()
@@ -89,7 +89,7 @@ def compare_audit_topology(
             status_code=409,
             detail={"code": "topology_source_invalid", "message": str(exc)},
         ) from exc
-    return compare_topologies(
+    return compare_topology_history(
         baseline=baseline,
         current=current,
         baseline_audit_id=against,

@@ -13,7 +13,8 @@ from inventory.service import InventoryService
 from jobs.errors import JobCancelled, JobExecutionError
 from jobs.models import ErrorCategory, JobError, JobProgress, RetentionClass
 from jobs.registry import HandlerContext, HandlerResult
-from providers.snmp_topology import SnmpCredentialError, SnmpTopologyProvider
+from providers.snmp_topology import SnmpCredentialError
+from providers.snmp_topology_extended import ExtendedSnmpTopologyProvider
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ class SnmpTopologyHandler:
             if context.cancellation_token.cancelled:
                 raise JobCancelled("SNMP topology enrichment was cancelled")
 
-            provider = SnmpTopologyProvider(
+            provider = ExtendedSnmpTopologyProvider(
                 settings=_SnmpSettingsProxy(context.settings),
             )
 
@@ -121,6 +122,7 @@ class SnmpTopologyHandler:
                 schema_version=1,
             )
             context.report_progress(JobProgress(percentage=98, stage="snmp_topology_ready", message="SNMP topology evidence готов"))
+            capabilities = document.get("capabilities") or {}
             return HandlerResult(
                 result_reference=artifact.id,
                 summary={
@@ -130,10 +132,13 @@ class SnmpTopologyHandler:
                     "target": target,
                     "status": document.get("status"),
                     "interfaces": len(document.get("interfaces") or []),
+                    "interface_addresses": len(document.get("interface_addresses") or []),
                     "fdb_entries": len(document.get("fdb") or []),
+                    "neighbor_entries": len(document.get("neighbors") or document.get("arp") or []),
                     "arp_entries": len(document.get("arp") or []),
                     "lldp_neighbors": len(document.get("lldp_neighbors") or []),
                     "vlans": len(document.get("vlans") or []),
+                    "capabilities": capabilities,
                 },
             )
         finally:

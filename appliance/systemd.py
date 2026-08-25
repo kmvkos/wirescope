@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 from pathlib import Path
 
 from appliance.paths import InstallPaths, SERVICE_USER, WIRESHARK_GROUP
@@ -58,8 +57,6 @@ def render_api_unit(paths: InstallPaths, *, user_session: bool = False) -> str:
             f"Group={paths.service_group}\n"
             "SupplementaryGroups=wireshark\n"
         )
-        # Prefix optional netctl trees with '-': a missing path (Debian
-        # without NetworkManager) makes systemd fail with 226/NAMESPACE.
         hardening = (
             "PrivateTmp=true\n"
             "ProtectHome=true\n"
@@ -143,11 +140,11 @@ WantedBy={wanted}
 
 
 def render_getty_autologin(user: str = SERVICE_USER) -> str:
-    """Optional tty1 autologin drop-in. The kiosk unit Conflicts getty@tty1."""
+    """Optional tty1 autologin drop-in used when the kiosk is not running."""
 
     return f"""[Service]
-# Fallback if the kiosk is disabled or OnFailure= starts getty@tty1 again.
-# While the kiosk runs it Conflicts=getty@tty1.service and takes the VT.
+# Fallback console when the kiosk is disabled or not started.
+# While the kiosk runs it Conflicts=getty@tty1.service and owns tty1.
 ExecStart=
 ExecStart=-/sbin/agetty --autologin {user} --noclear %I $TERM
 """
@@ -176,10 +173,11 @@ def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str
             "systemd-user-sessions.service"
         )
         wanted = "multi-user.target"
-        conflicts = (
-            "Conflicts=getty@tty1.service\n"
-            "OnFailure=getty@tty1.service\n"
-        )
+        # getty is only a fallback console when the kiosk is not running.
+        # Do not use OnFailure=getty here: systemd enters failed state before
+        # Restart=on-failure is processed, so OnFailure would race the kiosk
+        # restart for tty1 and can cancel the restart transaction.
+        conflicts = "Conflicts=getty@tty1.service\n"
         tty = (
             "PAMName=login\n"
             "TTYPath=/dev/tty1\n"

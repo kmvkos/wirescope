@@ -12,7 +12,8 @@ from traffic_analysis import ANALYZER_VERSION
 from traffic_analysis.advanced import merge_advanced
 from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
-from traffic_analysis.render_v2 import render_markdown, render_text
+from traffic_analysis.insights import enrich_document
+from traffic_analysis.render_v3 import render_markdown, render_text
 
 
 class TrafficAnalysisHandler:
@@ -146,6 +147,15 @@ class TrafficAnalysisHandler:
                     "check": "Проверьте версию/доступность tshark и повторите анализ после устранения причины.",
                 }
             )
+
+        context.report_progress(
+            JobProgress(
+                percentage=78,
+                stage="interpreting_analysis",
+                message="Связываем статистику с диагностическими выводами",
+            )
+        )
+        enrich_document(document)
 
         context.report_progress(
             JobProgress(

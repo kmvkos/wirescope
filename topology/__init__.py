@@ -10,6 +10,7 @@ from topology.snmp_extended import (
     decorate_global_snmp_extended_topology,
     decorate_snmp_extended_topology,
 )
+from topology.snmp_role_guard import guard_snmp_router_roles
 from topology.source_health import decorate_source_health
 from topology.upstream import decorate_global_upstream_topology, decorate_upstream_topology
 
@@ -24,6 +25,7 @@ def build_topology(services, audit_id: str, *, traffic_analysis_job_id: str | No
     topology = decorate_upstream_topology(services, audit_id, topology)
     topology = decorate_snmp_topology(services, audit_id, topology)
     topology = decorate_snmp_extended_topology(services, audit_id, topology)
+    topology = guard_snmp_router_roles(topology)
     topology = decorate_findings(services, audit_id, topology)
     return decorate_source_health(services, topology, audit_ids=[audit_id])
 
@@ -35,6 +37,7 @@ def build_global_topology(services, *, limit: int = 100):
     topology = decorate_global_upstream_topology(services, topology)
     topology = decorate_global_snmp_topology(services, topology)
     topology = decorate_global_snmp_extended_topology(services, topology)
+    topology = guard_snmp_router_roles(topology)
     audit_ids = [
         str(item.get("id"))
         for item in topology.get("audits") or []

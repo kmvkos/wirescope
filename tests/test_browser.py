@@ -59,6 +59,11 @@ def test_kiosk_viewport_shows_login_and_keeps_touch_targets(api_context, tmp_pat
         page.goto(target.as_uri())
         login = page.locator("#screen-login")
         assert login.count() == 1
+
+        # This is an isolated layout smoke: file:// cannot load the application's
+        # absolute /static/*.js URLs, so expose the login screen explicitly and
+        # test the actual DOM/CSS touch geometry without pretending auth boot ran.
+        login.evaluate("node => { node.hidden = false; }")
         button = page.locator("#login-form button.primary")
         box = button.bounding_box()
         assert box is not None

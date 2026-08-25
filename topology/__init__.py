@@ -2,11 +2,9 @@
 
 from topology.builder import TopologySourceError
 from topology.findings import decorate_findings
+from topology.global_view import build_global_topology as _build_global_topology
 from topology.routing import decorate_global_routing_topology, decorate_routed_topology
-from topology.segmented import (
-    build_global_topology as _build_global_topology,
-    build_topology as _build_segmented_topology,
-)
+from topology.segmented import build_topology as _build_segmented_topology
 from topology.snmp import decorate_global_snmp_topology, decorate_snmp_topology
 from topology.upstream import decorate_global_upstream_topology, decorate_upstream_topology
 

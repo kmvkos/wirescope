@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 import shutil
+import time
 from typing import Any
 
 from config.logging import get_logger
@@ -25,6 +26,7 @@ from jobs.models import (
 from jobs.registry import HandlerContext, HandlerResult
 from parsers.nmap import live_targets
 from providers.nmap import NmapCommandPlan, NmapProvider, NmapRun
+from providers.nmap_progress import NmapProgressSnapshot
 
 
 class ActiveDiscoveryHandler:
@@ -141,6 +143,14 @@ class ActiveDiscoveryHandler:
                 ),
             ),
             timeout_seconds=scan_profile.timeout_seconds,
+            progress_callback=self._nmap_live_callback(
+                context,
+                stage="discovering_hosts",
+                start_percentage=15,
+                end_percentage=29,
+                total_hosts=scope.address_count,
+                port_label=None,
+            ),
         )
         runs.append(self._run_metadata(host_run, nmap))
         discovered = 0
@@ -166,45 +176,69 @@ class ActiveDiscoveryHandler:
         )
         capabilities = nmap.capabilities()
         fallbacks = list(host_run.plan.fallbacks)
-        tcp_plan = None
-        udp_plan = None
+        tcp_plan: NmapCommandPlan | None = None
+        tcp_fingerprint_plan: NmapCommandPlan | None = None
+        udp_plan: NmapCommandPlan | None = None
+        open_tcp_ports: list[int] = []
 
         if scan_profile.run_tcp_scan and targets:
             self._ensure_not_cancelled(context)
-            self._progress(
-                context,
-                35,
-                "scanning_tcp",
-                "Scanning TCP services",
-            )
-            tcp_plan = nmap.build_tcp_scan(
-                scope=scope,
-                resolved=resolved,
-                profile=scan_profile,
-                xml_path=runtime_dir / "tcp-scan.xml",
-                target_file=nmap.write_target_file(targets, runtime_dir),
-            )
-            tcp_run = self._execute_plan(
-                context,
-                nmap=nmap,
-                plan=tcp_plan,
-                timeout_seconds=scan_profile.timeout_seconds,
-            )
-            runs.append(self._run_metadata(tcp_run, nmap))
-            fallbacks.extend(tcp_run.plan.fallbacks)
-            if tcp_run.document is not None:
-                inventory.ingest_nmap_document(
-                    audit_id=context.audit.id,
-                    job_id=context.job.id,
-                    document=tcp_run.document,
-                    evidence_reference=tcp_run.xml_artifact_id,
+            if profile == ActiveProfile.DEEP:
+                tcp_plan, tcp_fingerprint_plan, open_tcp_ports = self._run_deep_tcp(
+                    context,
+                    nmap=nmap,
+                    inventory=inventory,
+                    scope=scope,
+                    resolved=resolved,
+                    scan_profile=scan_profile,
+                    runtime_dir=runtime_dir,
+                    targets=targets,
+                    runs=runs,
+                    fallbacks=fallbacks,
                 )
-            self._progress(
-                context,
-                70,
-                "fingerprinting_services",
-                "Fingerprinting services",
-            )
+            else:
+                self._progress(
+                    context,
+                    35,
+                    "scanning_tcp",
+                    "Scanning TCP services",
+                )
+                tcp_plan = nmap.build_tcp_scan(
+                    scope=scope,
+                    resolved=resolved,
+                    profile=scan_profile,
+                    xml_path=runtime_dir / "tcp-scan.xml",
+                    target_file=nmap.write_target_file(targets, runtime_dir),
+                )
+                tcp_run = self._execute_plan(
+                    context,
+                    nmap=nmap,
+                    plan=tcp_plan,
+                    timeout_seconds=scan_profile.timeout_seconds,
+                    progress_callback=self._nmap_live_callback(
+                        context,
+                        stage="scanning_tcp",
+                        start_percentage=35,
+                        end_percentage=69,
+                        total_hosts=len(targets),
+                        port_label="open TCP",
+                    ),
+                )
+                runs.append(self._run_metadata(tcp_run, nmap))
+                fallbacks.extend(tcp_run.plan.fallbacks)
+                if tcp_run.document is not None:
+                    inventory.ingest_nmap_document(
+                        audit_id=context.audit.id,
+                        job_id=context.job.id,
+                        document=tcp_run.document,
+                        evidence_reference=tcp_run.xml_artifact_id,
+                    )
+                self._progress(
+                    context,
+                    70,
+                    "fingerprinting_services",
+                    "Fingerprinting services",
+                )
 
         if scan_profile.run_udp_scan and targets:
             self._ensure_not_cancelled(context)
@@ -227,8 +261,17 @@ class ActiveDiscoveryHandler:
                     nmap=nmap,
                     plan=udp_plan,
                     timeout_seconds=scan_profile.timeout_seconds,
+                    progress_callback=self._nmap_live_callback(
+                        context,
+                        stage="udp_discovery",
+                        start_percentage=82,
+                        end_percentage=89,
+                        total_hosts=len(targets),
+                        port_label="open UDP",
+                    ),
                 )
                 runs.append(self._run_metadata(udp_run, nmap))
+                fallbacks.extend(udp_run.plan.fallbacks)
                 if udp_run.document is not None:
                     inventory.ingest_nmap_document(
                         audit_id=context.audit.id,
@@ -274,13 +317,33 @@ class ActiveDiscoveryHandler:
             "tcp_ports_requested": (
                 tcp_plan.tcp_ports if tcp_plan is not None else None
             ),
+            "tcp_strategy": (
+                "full-sweep-then-fingerprint"
+                if profile == ActiveProfile.DEEP and tcp_plan is not None
+                else "single-pass"
+            ),
+            "tcp_open_ports_discovered": len(open_tcp_ports),
+            "tcp_fingerprint_ports": (
+                tcp_fingerprint_plan.tcp_ports
+                if tcp_fingerprint_plan is not None
+                else None
+            ),
+            "effective_tcp_timing": (
+                tcp_plan.timing if tcp_plan is not None else None
+            ),
             "udp_ports_requested": (
                 udp_plan.udp_ports if udp_plan is not None else None
             ),
             "service_detection": scan_profile.service_detection,
             "version_intensity": scan_profile.version_intensity,
             "os_detection_enabled": bool(
-                tcp_plan.os_detection if tcp_plan is not None else False
+                (
+                    tcp_fingerprint_plan.os_detection
+                    if tcp_fingerprint_plan is not None
+                    else tcp_plan.os_detection
+                )
+                if tcp_plan is not None
+                else False
             ),
             "timing_profile": scan_profile.timing,
             "fallbacks": sorted(set(fallbacks)),
@@ -336,6 +399,116 @@ class ActiveDiscoveryHandler:
                 **summary.model_dump(mode="json"),
             },
         )
+
+    def _run_deep_tcp(
+        self,
+        context: HandlerContext,
+        *,
+        nmap: NmapProvider,
+        inventory: InventoryService,
+        scope: ValidatedScope,
+        resolved: Any,
+        scan_profile: ActiveScanProfile,
+        runtime_dir: Path,
+        targets: list[str],
+        runs: list[dict[str, Any]],
+        fallbacks: list[str],
+    ) -> tuple[NmapCommandPlan, NmapCommandPlan | None, list[int]]:
+        self._progress(
+            context,
+            35,
+            "scanning_tcp",
+            "Deep TCP full-range sweep",
+        )
+        sweep_plan = nmap.build_tcp_sweep(
+            scope=scope,
+            resolved=resolved,
+            profile=scan_profile,
+            xml_path=runtime_dir / "tcp-sweep.xml",
+            target_file=nmap.write_target_file(targets, runtime_dir),
+        )
+        sweep_run = self._execute_plan(
+            context,
+            nmap=nmap,
+            plan=sweep_plan,
+            timeout_seconds=scan_profile.timeout_seconds,
+            progress_callback=self._nmap_live_callback(
+                context,
+                stage="scanning_tcp",
+                start_percentage=35,
+                end_percentage=60,
+                total_hosts=len(targets),
+                port_label="open TCP",
+            ),
+        )
+        runs.append(self._run_metadata(sweep_run, nmap))
+        fallbacks.extend(sweep_run.plan.fallbacks)
+        if sweep_run.document is not None:
+            inventory.ingest_nmap_document(
+                audit_id=context.audit.id,
+                job_id=context.job.id,
+                document=sweep_run.document,
+                evidence_reference=sweep_run.xml_artifact_id,
+            )
+
+        open_ports = nmap.open_tcp_ports(sweep_run.document)
+        fingerprint_targets = nmap.targets_with_open_tcp(sweep_run.document)
+        self._progress(
+            context,
+            61,
+            "tcp_ports_discovered",
+            f"{len(open_ports)} unique open TCP ports discovered",
+        )
+        if not open_ports or not fingerprint_targets:
+            self._progress(
+                context,
+                79,
+                "fingerprinting_services",
+                "No open TCP ports require fingerprinting",
+            )
+            return sweep_plan, None, open_ports
+
+        self._ensure_not_cancelled(context)
+        self._progress(
+            context,
+            62,
+            "fingerprinting_services",
+            f"Fingerprinting {len(open_ports)} open TCP ports",
+        )
+        fingerprint_plan = nmap.build_tcp_fingerprint(
+            scope=scope,
+            resolved=resolved,
+            profile=scan_profile,
+            ports=open_ports,
+            xml_path=runtime_dir / "tcp-fingerprint.xml",
+            target_file=nmap.write_target_file(fingerprint_targets, runtime_dir),
+        )
+        if fingerprint_plan is None:
+            return sweep_plan, None, open_ports
+        fingerprint_run = self._execute_plan(
+            context,
+            nmap=nmap,
+            plan=fingerprint_plan,
+            timeout_seconds=scan_profile.timeout_seconds,
+            progress_callback=self._nmap_live_callback(
+                context,
+                stage="fingerprinting_services",
+                start_percentage=62,
+                end_percentage=79,
+                total_hosts=len(fingerprint_targets),
+                port_label="open TCP",
+            ),
+        )
+        runs.append(self._run_metadata(fingerprint_run, nmap))
+        fallbacks.extend(fingerprint_run.plan.fallbacks)
+        if fingerprint_run.document is not None:
+            inventory.ingest_nmap_document(
+                audit_id=context.audit.id,
+                job_id=context.job.id,
+                document=fingerprint_run.document,
+                evidence_reference=fingerprint_run.xml_artifact_id,
+            )
+        return sweep_plan, fingerprint_plan, open_ports
 
     def _load_scope(
         self,
@@ -393,6 +566,7 @@ class ActiveDiscoveryHandler:
         nmap: NmapProvider,
         plan: NmapCommandPlan,
         timeout_seconds: int,
+        progress_callback: Callable[[NmapProgressSnapshot], None] | None = None,
     ) -> NmapRun:
         self._ensure_not_cancelled(context)
         return nmap.run_plan(
@@ -402,7 +576,82 @@ class ActiveDiscoveryHandler:
             evidence_store=context.evidence_store,
             audit_id=context.audit.id,
             job_id=context.job.id,
+            progress_callback=progress_callback,
         )
+
+    def _nmap_live_callback(
+        self,
+        context: HandlerContext,
+        *,
+        stage: str,
+        start_percentage: int,
+        end_percentage: int,
+        total_hosts: int,
+        port_label: str | None,
+    ) -> Callable[[NmapProgressSnapshot], None]:
+        state: dict[str, Any] = {
+            "last_emit": 0.0,
+            "last_open": -1,
+            "last_percent": None,
+            "last_overall": start_percentage,
+        }
+
+        def report(snapshot: NmapProgressSnapshot) -> None:
+            if context.cancellation_token.cancelled:
+                return
+            now = time.monotonic()
+            percent_changed = (
+                snapshot.percent is not None
+                and snapshot.percent != state["last_percent"]
+            )
+            open_changed = snapshot.open_ports != state["last_open"]
+            if (
+                state["last_emit"]
+                and now - state["last_emit"] < 4.0
+                and not open_changed
+            ):
+                return
+            if not percent_changed and not open_changed and now - state["last_emit"] < 8.0:
+                return
+
+            if snapshot.percent is not None:
+                span = max(0, end_percentage - start_percentage)
+                mapped = start_percentage + int(span * snapshot.percent / 100.0)
+                overall = max(state["last_overall"], min(end_percentage, mapped))
+            else:
+                overall = state["last_overall"]
+            state["last_overall"] = overall
+            state["last_percent"] = snapshot.percent
+            state["last_open"] = snapshot.open_ports
+            state["last_emit"] = now
+
+            parts = ["Nmap live"]
+            if snapshot.percent is not None:
+                parts.append(f"{snapshot.percent:.1f}%")
+            if snapshot.hosts_completed is not None:
+                host_text = str(snapshot.hosts_completed)
+                if total_hosts > 0:
+                    host_text += f"/{total_hosts}"
+                if snapshot.hosts_up is not None:
+                    host_text += f" ({snapshot.hosts_up} up)"
+                parts.append(f"хостов {host_text}")
+            if port_label is not None:
+                parts.append(f"{port_label}: {snapshot.open_ports}")
+            if snapshot.last_open_port is not None and snapshot.last_open_host:
+                parts.append(
+                    f"последний {snapshot.last_open_port} @ {snapshot.last_open_host}"
+                )
+            if snapshot.remaining:
+                parts.append(f"осталось ~{snapshot.remaining}")
+            context.report_progress(
+                JobProgress(
+                    percentage=overall,
+                    stage=stage,
+                    message=" · ".join(parts),
+                )
+            )
+
+        return report
 
     @staticmethod
     def _run_metadata(run: NmapRun, nmap: NmapProvider) -> dict[str, Any]:

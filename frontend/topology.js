@@ -51,7 +51,8 @@
     function roleScore(node) {
         const roles = new Set(node.roles || []);
         if (node.kind === "wirescope") return 1000;
-        if (roles.has("gateway")) return 900;
+        if (roles.has("gateway")) return 950;
+        if (node.kind === "segment" || roles.has("subnet")) return 900;
         if (roles.has("network-neighbor") || roles.has("stp-root")) return 850;
         if (node.kind === "network-device" || roles.has("network-device")) return 800;
         if (roles.has("dhcp-server")) return 700;
@@ -63,6 +64,7 @@
     function nodeKindLabel(node) {
         const roles = new Set(node.roles || []);
         if (node.kind === "wirescope") return "WireScope";
+        if (node.kind === "segment" || roles.has("subnet")) return "Подсеть";
         if (roles.has("gateway")) return "Шлюз";
         if (roles.has("dhcp-server")) return "DHCP";
         if (node.kind === "network-device" || roles.has("network-device") || roles.has("network-neighbor")) return "Сетевое устройство";
@@ -78,6 +80,7 @@
     function relationLabel(value) {
         return ({
             default_gateway: "шлюз по умолчанию",
+            segment_gateway: "шлюз сегмента",
             layer2_neighbor: "L2-сосед",
             stp_observed: "STP-наблюдение",
             dhcp_observed: "DHCP-наблюдение",
@@ -98,7 +101,7 @@
         const degree = degrees(topology);
         const nodes = (topology.nodes || []).filter((node) => showGroups || node.kind !== "multicast-group");
         nodes.sort((a, b) => {
-            const score = (roleScore(b) - roleScore(a));
+            const score = roleScore(b) - roleScore(a);
             if (score) return score;
             return (degree.get(b.id) || 0) - (degree.get(a.id) || 0);
         });
@@ -119,8 +122,8 @@
         core.forEach((node, index) => {
             const angle = -Math.PI * 0.92 + (Math.PI * 1.84 * (index / Math.max(1, core.length)));
             positions.set(node.id, {
-                x: centerX + Math.cos(angle) * 155,
-                y: centerY + Math.sin(angle) * 120,
+                x: centerX + Math.cos(angle) * Math.min(280, 155 + core.length * 12),
+                y: centerY + Math.sin(angle) * Math.min(210, 120 + core.length * 8),
             });
         });
         const rings = [250, 315];
@@ -146,15 +149,14 @@
             ["Достоверность", confidenceLabel(node.confidence)],
             ["Источник", (node.provenance || []).join(", ") || "—"],
             ["Роли", (node.roles || []).join(", ") || "—"],
-            ["Адреса", (node.addresses || []).join(", ") || "—"],
+            ["Адреса", (node.addresses || []).join(", ") || node.network || "—"],
             ["Имена", (node.names || []).join(", ") || "—"],
             ["MAC", node.mac || "—"],
             ["Vendor", node.vendor || "—"],
             ["OS", node.os_name || "—"],
+            ["Аудиты", (node.audit_ids || []).map((id) => String(id).slice(0, 8)).join(", ") || "—"],
         ];
-        rows.forEach(([key, value]) => {
-            grid.append(el("strong", key), el("span", value));
-        });
+        rows.forEach(([key, value]) => grid.append(el("strong", key), el("span", value)));
         target.append(grid);
         const services = node.services || [];
         if (services.length) {
@@ -172,8 +174,10 @@
         target.append(el("h4", relationLabel(edge.relation)));
         const grid = el("div", null, "ws-topology-detail-grid");
         const rows = [
+            ["Уровень", String(edge.layer || "general").toUpperCase()],
             ["Достоверность", confidenceLabel(edge.confidence)],
             ["Источник доказательства", (edge.provenance || []).join(", ") || "—"],
+            ["Сегменты", (edge.segment_ids || []).map((id) => String(id).replace(/^segment:/, "")).join(", ") || "—"],
             ["Пакеты", edge.packets ?? "—"],
             ["Объём", edge.bytes === undefined ? "—" : bytes(edge.bytes)],
             ["Протоколы", (edge.protocols || []).join(", ") || "—"],
@@ -182,6 +186,52 @@
         ];
         rows.forEach(([key, value]) => grid.append(el("strong", key), el("span", value)));
         target.append(grid);
+    }
+
+    function filterTopology(topology, { segmentId = "", layer = "general", showGroups = false } = {}) {
+        let nodes = (topology.nodes || []).slice();
+        let edges = (topology.edges || []).slice();
+
+        if (segmentId) {
+            edges = edges.filter((edge) => (edge.segment_ids || []).includes(segmentId) || edge.segment_id === segmentId);
+            const referenced = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+            nodes = nodes.filter((node) => {
+                if ((node.segment_ids || []).includes(segmentId)) return true;
+                if (node.kind === "wirescope") return true;
+                return referenced.has(node.id);
+            });
+        }
+
+        if (layer !== "general") {
+            edges = edges.filter((edge) => (edge.layer || "general") === layer);
+            const referenced = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+            nodes = nodes.filter((node) => referenced.has(node.id) || (layer === "l3" && node.kind === "wirescope"));
+        }
+
+        if (!showGroups) {
+            const hidden = new Set(nodes.filter((node) => node.kind === "multicast-group").map((node) => node.id));
+            nodes = nodes.filter((node) => !hidden.has(node.id));
+            edges = edges.filter((edge) => !hidden.has(edge.source) && !hidden.has(edge.target));
+        }
+
+        const confidence = {};
+        const layers = {};
+        edges.forEach((edge) => {
+            confidence[edge.confidence || "unknown"] = (confidence[edge.confidence || "unknown"] || 0) + 1;
+            layers[edge.layer || "general"] = (layers[edge.layer || "general"] || 0) + 1;
+        });
+        return {
+            ...topology,
+            nodes,
+            edges,
+            summary: {
+                ...(topology.summary || {}),
+                nodes: nodes.length,
+                edges: edges.length,
+                confidence,
+                layers,
+            },
+        };
     }
 
     function renderGraph(host, topology, showGroups) {
@@ -208,10 +258,7 @@
                 ? Math.min(7, 1.2 + Math.log10(Math.max(1, Number(edge.bytes) || 1)))
                 : 2.1;
             const line = svg("line", {
-                x1: a.x,
-                y1: a.y,
-                x2: b.x,
-                y2: b.y,
+                x1: a.x, y1: a.y, x2: b.x, y2: b.y,
                 class: `ws-topology-edge ws-topology-${edge.confidence || "inferred"} ws-topology-rel-${edge.relation}`,
                 "stroke-width": width,
                 tabindex: "0",
@@ -237,7 +284,10 @@
             const label = svg("text", { y: radius + 18, "text-anchor": "middle" });
             label.textContent = short(node.label, 23);
             const badge = svg("text", { y: 4, "text-anchor": "middle", class: "ws-topology-node-badge" });
-            badge.textContent = node.kind === "wirescope" ? "W" : (node.roles || []).includes("gateway") ? "GW" : (node.kind === "network-device" || (node.roles || []).includes("network-device")) ? "SW" : "●";
+            badge.textContent = node.kind === "wirescope" ? "W"
+                : (node.kind === "segment" || (node.roles || []).includes("subnet")) ? "NET"
+                : (node.roles || []).includes("gateway") ? "GW"
+                : (node.kind === "network-device" || (node.roles || []).includes("network-device")) ? "SW" : "●";
             const title = svg("title");
             title.textContent = `${node.label} · ${nodeKindLabel(node)} · ${confidenceLabel(node.confidence)}`;
             group.append(circle, badge, label, title);
@@ -263,26 +313,69 @@
             return item;
         };
         block.append(
-            metric("Узлы", data.nodes),
-            metric("Связи", data.edges),
+            metric("Подсети", data.segments ?? (topology.segments || []).length),
+            metric("Узлы", data.nodes ?? (topology.nodes || []).length),
+            metric("Связи", data.edges ?? (topology.edges || []).length),
             metric("Подтверждено", confidence.confirmed || 0),
-            metric("Наблюдалось", confidence.observed || 0),
-            metric("Предположительно", confidence.inferred || 0)
+            metric("Наблюдалось", confidence.observed || 0)
         );
         return block;
     }
 
+    function segmentCards(topology) {
+        const segments = topology.segments || [];
+        if (!segments.length) return null;
+        const block = el("div", null, "ws-topology-segments");
+        segments.forEach((segment) => {
+            const card = el("div", null, "ws-topology-segment-card");
+            card.append(el("strong", segment.network || segment.label));
+            const parts = [];
+            if (segment.members) parts.push(`${segment.members.length} узлов`);
+            if (segment.member_count !== undefined) parts.push(`${segment.member_count} узлов`);
+            if (segment.gateways && segment.gateways.length) parts.push(`GW ${segment.gateways.join(", ")}`);
+            if (segment.interfaces && segment.interfaces.length) parts.push(segment.interfaces.join(", "));
+            else if (segment.interface) parts.push(segment.interface);
+            if (segment.scan_count) parts.push(`сканов ${segment.scan_count}`);
+            card.append(el("span", parts.join(" · ") || "сохранённый сегмент", "muted"));
+            block.append(card);
+        });
+        return block;
+    }
+
     async function render(body, auditId) {
-        body.replaceChildren(el("p", "Строим логическую карту из сохранённых данных…"));
-        const base = await request(`/audits/${encodeURIComponent(auditId)}/topology`);
-        const analyses = await request("/traffic-analysis?limit=100");
+        body.replaceChildren(el("p", "Строим segment-aware карту из сохранённых данных…"));
+        const [base, global, analyses] = await Promise.all([
+            request(`/audits/${encodeURIComponent(auditId)}/topology`),
+            request("/topology/global?limit=100"),
+            request("/traffic-analysis?limit=100"),
+        ]);
         body.replaceChildren();
 
         const controls = el("div", null, "ws-topology-controls");
-        const select = el("select");
+        const mode = el("select");
+        [["global", "Общая карта всех сохранённых сетей"], ["audit", "Текущий аудит"]].forEach(([value, label]) => {
+            const option = el("option", label); option.value = value; mode.append(option);
+        });
+
+        const segment = el("select");
+        const allSegments = el("option", "Все подсети текущего аудита");
+        allSegments.value = "";
+        segment.append(allSegments);
+        (base.segments || []).forEach((item) => {
+            const option = el("option", item.network || item.label || item.id);
+            option.value = item.id;
+            segment.append(option);
+        });
+
+        const layer = el("select");
+        [["general", "Общая"], ["l2", "L2 — канальный"], ["l3", "L3 — маршрутизация"], ["traffic", "Traffic — PCAP"]].forEach(([value, label]) => {
+            const option = el("option", label); option.value = value; layer.append(option);
+        });
+
+        const pcap = el("select");
         const none = el("option", "Без PCAP overlay");
         none.value = "";
-        select.append(none);
+        pcap.append(none);
         const candidates = (analyses.items || []).slice().sort((a, b) => {
             const am = a.interface === base.audit.interface ? 1 : 0;
             const bm = b.interface === base.audit.interface ? 1 : 0;
@@ -292,14 +385,21 @@
             const same = item.interface === base.audit.interface;
             const option = el("option", `${same ? "✓ " : "⚠ "}${item.interface || "—"} · ${String(item.capture_job_id || item.job_id).slice(0, 8)} · analyzer v${item.analyzer_version || "?"}`);
             option.value = item.job_id;
-            select.append(option);
+            pcap.append(option);
         });
-        const apply = el("button", "Применить overlay", "secondary");
+
+        const apply = el("button", "Применить PCAP", "secondary");
         const multicastLabel = el("label", null, "ws-topology-check");
         const multicast = document.createElement("input");
         multicast.type = "checkbox";
-        multicastLabel.append(multicast, document.createTextNode(" показывать multicast/broadcast группы"));
-        controls.append(el("span", "PCAP:"), select, apply, multicastLabel);
+        multicastLabel.append(multicast, document.createTextNode(" показывать multicast/broadcast"));
+
+        controls.append(
+            el("span", "Вид:"), mode,
+            el("span", "Подсеть:"), segment,
+            el("span", "Уровень:"), layer,
+            el("span", "PCAP:"), pcap, apply, multicastLabel
+        );
 
         const legend = el("div", null, "ws-topology-legend");
         [["confirmed", "Подтверждено"], ["observed", "Наблюдалось"], ["inferred", "Предположительно"]].forEach(([key, label]) => {
@@ -310,42 +410,75 @@
 
         const meta = el("div", null, "ws-topology-meta");
         const graph = el("div", null, "ws-topology-canvas");
-        let current = base;
+        let currentAudit = base;
+
+        function selectedRaw() {
+            return mode.value === "global" ? global : currentAudit;
+        }
 
         function renderCurrent() {
-            meta.replaceChildren(summary(current));
-            if (current.overlay) {
-                meta.append(el("p", `Overlay: traffic-analysis ${current.overlay.traffic_analysis_job_id.slice(0, 8)} · интерфейс ${current.overlay.interface || "—"} · ${current.overlay.frame_count ?? "—"} кадров.`, "ws-topology-overlay-note"));
-            } else {
-                meta.append(el("p", "Сейчас показана топология только выбранного аудита. PCAP не подмешивается автоматически.", "muted"));
+            const raw = selectedRaw();
+            const view = mode.value === "global"
+                ? filterTopology(raw, { layer: layer.value, showGroups: multicast.checked })
+                : filterTopology(raw, { segmentId: segment.value, layer: layer.value, showGroups: multicast.checked });
+
+            segment.disabled = mode.value === "global";
+            pcap.disabled = mode.value === "global";
+            apply.disabled = mode.value === "global";
+            if (mode.value === "global" && !["general", "l3"].includes(layer.value)) {
+                layer.value = "general";
+                return renderCurrent();
             }
-            (current.warnings || []).forEach((warning) => meta.append(el("p", warning, "warning")));
-            renderGraph(graph, current, multicast.checked);
+
+            meta.replaceChildren(summary(view));
+            const cards = segmentCards(raw);
+            if (cards) meta.append(cards);
+
+            if (mode.value === "global") {
+                meta.append(el("p", "Общая карта объединяет сохранённые подсети разных аудитов. Устройства между аудитами пока не склеиваются по hostname/IP без отдельного подтверждения идентичности.", "muted"));
+            } else if (currentAudit.overlay) {
+                meta.append(el("p", `PCAP overlay: ${currentAudit.overlay.traffic_analysis_job_id.slice(0, 8)} · ${currentAudit.overlay.interface || "—"} · ${currentAudit.overlay.frame_count ?? "—"} кадров.`, "ws-topology-overlay-note"));
+            } else {
+                meta.append(el("p", "Показаны сохранённые данные выбранного аудита. PCAP не подмешивается автоматически.", "muted"));
+            }
+            (raw.warnings || []).forEach((warning) => meta.append(el("p", warning, "warning")));
+            renderGraph(graph, view, multicast.checked);
         }
 
         apply.addEventListener("click", async () => {
             apply.disabled = true;
             apply.textContent = "Строим…";
             try {
-                const query = select.value ? `?traffic_analysis_job_id=${encodeURIComponent(select.value)}` : "";
-                current = await request(`/audits/${encodeURIComponent(auditId)}/topology${query}`);
+                const query = pcap.value ? `?traffic_analysis_job_id=${encodeURIComponent(pcap.value)}` : "";
+                currentAudit = await request(`/audits/${encodeURIComponent(auditId)}/topology${query}`);
+                if (pcap.value) layer.value = "traffic";
                 renderCurrent();
             } catch (error) {
                 meta.append(el("p", error.message, "error"));
             } finally {
-                apply.disabled = false;
-                apply.textContent = "Применить overlay";
+                apply.disabled = mode.value === "global";
+                apply.textContent = "Применить PCAP";
             }
         });
-        multicast.addEventListener("change", () => renderGraph(graph, current, multicast.checked));
+
+        mode.addEventListener("change", () => {
+            layer.value = "general";
+            renderCurrent();
+        });
+        segment.addEventListener("change", renderCurrent);
+        layer.addEventListener("change", renderCurrent);
+        multicast.addEventListener("change", renderCurrent);
 
         const exportButton = el("button", "Скачать topology JSON", "secondary");
         exportButton.addEventListener("click", () => {
-            const blob = new Blob([JSON.stringify(current, null, 2)], { type: "application/json" });
+            const raw = selectedRaw();
+            const blob = new Blob([JSON.stringify(raw, null, 2)], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `wirescope-topology-${String(auditId).slice(0, 8)}.json`;
+            link.download = mode.value === "global"
+                ? "wirescope-topology-global.json"
+                : `wirescope-topology-${String(auditId).slice(0, 8)}.json`;
             document.body.append(link);
             link.click();
             link.remove();

@@ -128,13 +128,13 @@ RTT:
 
 ## v1.2 — Network Topology
 
-Статус: **разработка начата**.
+Статус: **активная разработка, M11.1 завершён, основной интерактивный срез M11.2 реализован**.
 
 Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
 
 ### M11.1 — логическая карта
 
-Статус: **первый рабочий срез реализуется в ветке `milestone-11-network-topology`**.
+Статус: **реализовано и проверено на реальном Deep-аудите + PCAP overlay**.
 
 Источники:
 - inventory;
@@ -149,10 +149,15 @@ RTT:
 
 Canonical `network-topology` различает:
 - узлы WireScope/interface, gateway/router, network-device hints, DHCP/DNS servers, assets и внешние endpoints;
-- логические subnet/VLAN groups;
-- связи `default_gateway`, `layer2_neighbor`, `stp_observed`, `dhcp_observed`, `communication`;
+- отдельные subnet-сегменты;
+- связи `default_gateway`, `segment_gateway`, `layer2_neighbor`, `stp_observed`, `dhcp_observed`, `communication`;
+- уровни `general`, `l2`, `l3`, `traffic`;
 - `confirmed`, `observed`, `inferred` confidence;
 - provenance каждого узла и ребра.
+
+Сегменты привязаны к route context конкретного интерфейса аудита. Host-wide default route другого интерфейса не считается шлюзом просканированной сети.
+
+Есть отдельная глобальная карта retained-аудитов: несколько просканированных подсетей сохраняются как разные сегменты, а подтверждённый общий gateway может связывать их на L3-уровне.
 
 Принцип: WireScope не угадывает физический hop. LLDP/CDP/default route, PCAP traffic и subnet inference остаются разными типами evidence.
 
@@ -160,23 +165,39 @@ PCAP overlay выбирается оператором **явно**. WireScope �
 
 ### M11.2 — интерактивная визуализация
 
-Web/kiosk:
-- базовый SVG-граф — часть первого M11-среза;
-- далее zoom/pan;
-- фильтр VLAN/subnet;
-- фильтр типа связи/confidence;
-- клик по asset → адреса, сервисы, vendor, findings;
-- толщина communication edge по объёму трафика;
-- подсветка gateway/DHCP/DNS/network devices;
-- экспорт topology JSON/SVG/PNG.
+Статус: **основной интерактивный срез реализован, требуется live UI smoke-test**.
+
+Реализовано в web/kiosk:
+- segment-aware SVG layout: каждая подсеть отображается отдельной визуальной областью;
+- общая cross-audit карта сохранённых сетей;
+- выбор конкретной подсети;
+- уровни Общая / L2 / L3 / Traffic;
+- фильтр confidence: confirmed / observed / inferred;
+- отдельное отображение multicast/broadcast;
+- возможность скрывать малозначимые несвязанные узлы на больших картах;
+- zoom колёсом и кнопками, pan drag, команда «Вписать»;
+- двойной клик/Enter по области подсети для фокусировки;
+- внешние/global IP визуально вынесены в зону `Internet / внешние адреса`;
+- communication edge имеет толщину по объёму и стрелки по наблюдавшимся направлениям PCAP;
+- клик по asset → адреса, сервисы, vendor, OS, provenance/confidence;
+- клик по edge → layer, provenance, segment context, пакеты, байты, протоколы и направление;
+- topology JSON export.
+
+Оставшаяся доводка M11.2:
+- SVG/PNG export текущего вида карты;
+- findings в карточке asset;
+- улучшения layout после проверки на больших реальных topology.
+
+VLAN-filter не должен назначать устройства VLAN «по догадке». Он будет включён только когда у WireScope есть достаточный node↔VLAN evidence (LLDP/CDP/SNMP/FDB/switch-port mapping); до этого VLAN остаётся наблюдаемым контекстом, а не выдуманной принадлежностью assets.
 
 ### M11.3 — расширение физической топологии
 
-Не блокирует v1.2:
+Не блокирует базовую v1.2, но повышает точность физической картины:
 - безопасный traceroute/upstream view;
 - read-only SNMP с явно предоставленными оператором credentials;
 - bridge/FDB/ARP tables сетевого оборудования;
 - switch-port mapping;
+- достоверная node↔VLAN correlation;
 - historical topology diff.
 
 WireScope не должен угадывать невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP или иным evidence, оно отображается только как логическая/предполагаемая связь.
@@ -238,4 +259,4 @@ AI-вывод не создаёт WireScope finding автоматически. 
 
 ## Текущий следующий шаг
 
-**M11.1 Network Topology:** проверить canonical topology model и первый SVG-view на реальном Deep-аудите; затем подключить один из сохранённых PCAP-анализов как явный overlay и проверить provenance/confidence связей.
+**M11.2 live smoke-test:** проверить новый segment-aware layout, zoom/pan, L2/L3/Traffic filters, global map и PCAP direction edges на реальной сети; затем довести мелкий UI/export слой и перейти к M11.3 physical-topology evidence.

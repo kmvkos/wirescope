@@ -108,15 +108,22 @@ def decorate_source_health(
     for audit_id in dict.fromkeys(str(value) for value in audit_ids if value):
         for artifact_type, rule in _RULES.items():
             used = _used_artifact_ids(topology, str(rule["used_block"]))
+            deduplicate_target = bool(rule["deduplicate_target"])
             candidates = _candidate_artifacts(
                 services,
                 audit_id,
                 artifact_type,
                 limit=int(rule["limit"]),
-                deduplicate_target=bool(rule["deduplicate_target"]),
+                deduplicate_target=deduplicate_target,
             )
             for artifact in candidates:
                 if artifact.id in used:
+                    continue
+                if deduplicate_target and artifact.job_id is None:
+                    # Old/manual SNMP artifacts can lack a job target. Without
+                    # that target we cannot know whether an unused row is a bad
+                    # source or merely an older duplicate of a newer device
+                    # snapshot, so do not manufacture an error.
                     continue
                 error = {
                     "audit_id": audit_id,

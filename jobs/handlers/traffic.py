@@ -13,7 +13,11 @@ from traffic_analysis.advanced import merge_advanced
 from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
 from traffic_analysis.insights import enrich_document
-from traffic_analysis.render_v3 import render_markdown, render_text
+from traffic_analysis.protocol_intelligence import (
+    ProtocolIntelligenceAnalyzer,
+    merge_protocol_intelligence,
+)
+from traffic_analysis.render_v4 import render_markdown, render_text
 
 
 class TrafficAnalysisHandler:
@@ -119,6 +123,7 @@ class TrafficAnalysisHandler:
             progress=progress,
         )
         document["analyzer_version"] = ANALYZER_VERSION
+
         try:
             advanced = PortableAdvancedTrafficAnalyzer(settings=context.settings).analyze(
                 Path(pcap_path),
@@ -145,6 +150,35 @@ class TrafficAnalysisHandler:
                     "fact": f"Компонент завершился с кодом {exc.error.code}.",
                     "meaning": "Базовая статистика и communications graph сформированы, но часть дополнительных сетевых симптомов не проверена.",
                     "check": "Проверьте версию/доступность tshark и повторите анализ после устранения причины.",
+                }
+            )
+
+        try:
+            protocol_intelligence = ProtocolIntelligenceAnalyzer(settings=context.settings).analyze(
+                Path(pcap_path),
+                cancellation_token=context.cancellation_token,
+                progress=progress,
+            )
+            merge_protocol_intelligence(document, protocol_intelligence)
+            document["protocol_intelligence_status"] = {"status": "completed"}
+        except JobExecutionError as exc:
+            if context.cancellation_token.cancelled or exc.error.category == ErrorCategory.CANCELLED:
+                raise
+            document["protocol_intelligence_status"] = {
+                "status": "unavailable",
+                "error_code": exc.error.code,
+            }
+            document.setdefault("limitations", []).append(
+                "Protocol Intelligence (TLS/HTTP/QUIC/SMB/DNS/DHCP metadata) недоступен; остальные результаты анализа сохранены."
+            )
+            document.setdefault("observations", []).append(
+                {
+                    "severity": "info",
+                    "category": "analysis",
+                    "title": "Протокольный разбор доступен не полностью",
+                    "fact": f"Protocol Intelligence завершился с кодом {exc.error.code}.",
+                    "meaning": "TCP/ARP/traffic-shape диагностика сохранена, но часть прикладных метаданных этого PCAP не была разобрана.",
+                    "check": "Проверьте доступность/версию tshark; анализ можно повторить на сохранённом PCAP после обновления.",
                 }
             )
 
@@ -221,6 +255,7 @@ class TrafficAnalysisHandler:
                 "traffic_analysis_conversations": summary.get("conversation_count", 0),
                 "traffic_analysis_observations": len(document.get("observations") or []),
                 "advanced_diagnostics_status": (document.get("advanced_diagnostics") or {}).get("status"),
+                "protocol_intelligence_status": (document.get("protocol_intelligence_status") or {}).get("status"),
                 "analyzer_version": ANALYZER_VERSION,
             },
         )

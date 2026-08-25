@@ -1,9 +1,9 @@
 """Report persisted topology enrichment artifacts that were silently skipped.
 
-SNMP and route-trace decorators intentionally tolerate a damaged historical
-artifact so one bad file cannot take down the whole topology view.  This layer
-makes that tolerance visible: the map remains usable, but is marked partial and
-identifies the omitted artifact without exposing exception text or file paths.
+Enrichment decorators intentionally tolerate a damaged historical artifact so
+one bad file cannot take down the whole topology view.  This layer makes that
+tolerance visible: the map remains usable, but is marked partial and identifies
+the omitted artifact without exposing exception text, credentials or file paths.
 """
 
 from __future__ import annotations
@@ -26,6 +26,12 @@ _RULES = {
         "component": "snmp-topology",
         "limit": 32,
         "used_block": "snmp_topology",
+        "deduplicate_target": True,
+    },
+    "ssh_topology_result": {
+        "component": "ssh-topology",
+        "limit": 32,
+        "used_block": "ssh_topology",
         "deduplicate_target": True,
     },
 }
@@ -120,10 +126,9 @@ def decorate_source_health(
                 if artifact.id in used:
                     continue
                 if deduplicate_target and artifact.job_id is None:
-                    # Old/manual SNMP artifacts can lack a job target. Without
-                    # that target we cannot know whether an unused row is a bad
-                    # source or merely an older duplicate of a newer device
-                    # snapshot, so do not manufacture an error.
+                    # Legacy/manual credentialed artifacts can lack a durable
+                    # job target.  Without it we cannot tell a damaged source
+                    # from an older duplicate, so do not manufacture an error.
                     continue
                 error = {
                     "audit_id": audit_id,
@@ -152,7 +157,7 @@ def decorate_source_health(
 
     if new_errors:
         warning = (
-            f"Topology неполная: {new_errors} сохранённых SNMP/route-trace artifacts "
+            f"Topology неполная: {new_errors} сохранённых management/route artifacts "
             "не вошли в карту. Подробности доступны в source_errors."
         )
         warnings = topology.setdefault("warnings", [])

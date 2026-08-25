@@ -1,0 +1,64 @@
+.report-history-panel {
+    margin-top: 18px;
+}
+
+.report-history-list {
+    display: grid;
+    gap: 10px;
+}
+
+.report-history-item {
+    padding: 12px 14px;
+    border: 1px solid var(--ws-border, #26384b);
+    border-radius: 12px;
+    background: rgba(13, 27, 43, 0.72);
+}
+
+.report-history-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.report-history-head > span {
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.report-history-actions {
+    margin-top: 0;
+}
+
+.report-history-actions button {
+    min-width: 0;
+}
+
+@media (max-width: 560px) {
+    .report-history-item {
+        padding: 10px;
+    }
+
+    .report-history-head {
+        display: grid;
+        gap: 4px;
+    }
+
+    .report-history-head > span {
+        text-align: left;
+        font-size: 0.78rem;
+    }
+
+    .report-history-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .report-history-actions button {
+        width: 100%;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+}

@@ -4,6 +4,7 @@ from scapy.all import ARP, DNS, DNSQR, DNSRR, Ether, ICMP, IP, TCP, UDP, wrpcap
 
 from config.settings import get_settings
 from traffic_analysis.advanced import FIELDS, AdvancedTrafficAnalyzer, merge_advanced
+from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
 from traffic_analysis.render_v2 import render_markdown, render_text
 
@@ -226,9 +227,10 @@ def test_advanced_analyzer_runs_against_real_tshark(tmp_path: Path):
     wrpcap(str(pcap), packets)
 
     settings = get_settings()
-    result = AdvancedTrafficAnalyzer(settings=settings).analyze(pcap)
+    result = PortableAdvancedTrafficAnalyzer(settings=settings).analyze(pcap)
     assert result["rates"]["frames_per_second"] > 0
     assert result["tcp_connections"]["streams_seen"] >= 1
+    assert result["tcp_connections"]["syn_retransmission_streams"] >= 1
     assert result["dns_latency"]["samples"] >= 1
     assert result["dns_latency"]["max_ms"] >= 190
     assert result["arp_diagnostics"]["request_count"] >= 1

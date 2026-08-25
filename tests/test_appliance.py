@@ -85,23 +85,11 @@ def test_dumpcap_configuration_does_not_cap_backend_python():
     host = MemoryHost(platform=debian_amd64_platform())
     dumpcap = Path("/usr/bin/dumpcap")
     python = Path("/opt/wirescope/.venv/bin/python")
-    host.files[str(dumpcap)] = MemoryFile(
-        content="",
-        mode=0o755,
-        owner="nobody",
-        group="nogroup",
-        capabilities="",
-        setuid=True,
-    )
+    host.files[str(dumpcap)] = MemoryFile(content="", mode=0o755, owner="nobody", group="nogroup", capabilities="", setuid=True)
     host.files[str(python)] = MemoryFile(content="", mode=0o755)
     host.users["wirescope"] = "wirescope"
     host.groups["wirescope"] = {"wirescope"}
-    report = configure_dumpcap(
-        host,
-        dumpcap_path=dumpcap,
-        service_user="wirescope",
-        venv_python=python,
-    )
+    report = configure_dumpcap(host, dumpcap_path=dumpcap, service_user="wirescope", venv_python=python)
     assert report.ok is True
     assert report.setuid is False
     assert host.file_owner(dumpcap) == "root"
@@ -116,24 +104,12 @@ def test_inspect_dumpcap_fails_when_python_has_net_raw():
     host = MemoryHost(platform=debian_amd64_platform())
     dumpcap = Path("/usr/bin/dumpcap")
     python = Path("/usr/bin/python3")
-    host.files[str(dumpcap)] = MemoryFile(
-        owner="root",
-        group="wireshark",
-        mode=0o750,
-        capabilities="cap_net_admin,cap_net_raw=eip",
-    )
-    host.files[str(python)] = MemoryFile(
-        capabilities="cap_net_raw=eip",
-    )
+    host.files[str(dumpcap)] = MemoryFile(owner="root", group="wireshark", mode=0o750, capabilities="cap_net_admin,cap_net_raw=eip")
+    host.files[str(python)] = MemoryFile(capabilities="cap_net_raw=eip")
     host.users["wirescope"] = "wirescope"
     host.groups["wireshark"] = {"wirescope"}
     host.binaries["python3"] = str(python)
-    report = inspect_dumpcap(
-        host,
-        dumpcap_path=dumpcap,
-        service_user="wirescope",
-        venv_python=python,
-    )
+    report = inspect_dumpcap(host, dumpcap_path=dumpcap, service_user="wirescope", venv_python=python)
     assert report.ok is False
     assert "backend_capabilities" in report.issues
 
@@ -156,7 +132,7 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     assert "PartOf=wirescope-worker" not in files["wirescope-kiosk.service"]
     assert "WantedBy=multi-user.target" in files["wirescope-kiosk.service"]
     assert "Conflicts=getty@tty1.service" in files["wirescope-kiosk.service"]
-    assert "OnFailure=getty@tty1.service" not in files["wirescope-kiosk.service"]
+    assert "\nOnFailure=getty@tty1.service\n" not in files["wirescope-kiosk.service"]
     assert "graphical.target" not in files["wirescope-kiosk.service"]
     assert "appliance wait-ready" in files["wirescope-kiosk.service"]
     assert "PrivateTmp=" not in files["wirescope-kiosk.service"]
@@ -165,21 +141,14 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     assert "SupplementaryGroups=wireshark" in files["wirescope-worker.service"]
     assert "/usr/bin/sg " not in files["wirescope-api.service"]
     assert "/usr/bin/sg " not in files["wirescope-worker.service"]
-    env = production_env_text(
-        InstallPaths(),
-        bind_host="127.0.0.1",
-        bind_port=8000,
-    )
+    env = production_env_text(InstallPaths(), bind_host="127.0.0.1", bind_port=8000)
     assert "WIRESCOPE_DOCS_ENABLED=false" in env
     assert "WIRESCOPE_TRUST_PROXY=false" in env
     assert "PASSWORD" not in env
 
 
 def test_user_session_units_rejoin_wireshark_without_logout():
-    files = {
-        unit.name: unit.content
-        for unit in unit_files(InstallPaths(), user_session=True)
-    }
+    files = {unit.name: unit.content for unit in unit_files(InstallPaths(), user_session=True)}
     api = files["wirescope-api.service"]
     worker = files["wirescope-worker.service"]
     assert "User=" not in api

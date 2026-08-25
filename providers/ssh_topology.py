@@ -1,18 +1,17 @@
-"""Read-only topology collection through a tightly bounded SSH command set.
+"""Bounded read-only topology collection through OpenSSH.
 
-The operator cannot provide a remote command.  WireScope invokes only the fixed
-commands below, validates target/user/port separately, requires host-key
-verification and never uses a local shell.  Unsupported commands are recorded
-as unavailable capabilities instead of failing the whole enrichment job.
+Remote commands are fixed in code. Operator input can select only target,
+username, port and authentication material; it can never become a command or a
+local shell fragment. Host-key verification is mandatory.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import json
+from pathlib import Path
 import re
 import shutil
-from pathlib import Path
 from typing import Any, Callable
 
 from config.settings import Settings
@@ -37,7 +36,7 @@ def sanitize_ssh_profile(credentials: dict[str, Any]) -> dict[str, Any]:
         port = int(credentials.get("port") or 22)
     except (TypeError, ValueError) as exc:
         raise SshTopologyCredentialError("SSH port is invalid") from exc
-    if port < 1 or port > 65535:
+    if not 1 <= port <= 65535:
         raise SshTopologyCredentialError("SSH port must be between 1 and 65535")
     authentication = str(credentials.get("authentication") or "private_key")
     if authentication not in {"private_key", "agent"}:
@@ -55,6 +54,15 @@ def sanitize_ssh_profile(credentials: dict[str, Any]) -> dict[str, Any]:
 
 
 class SshTopologyProvider:
+    COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("interfaces", ("ip", "-j", "addr", "show")),
+        ("routes", ("ip", "-j", "route", "show", "table", "main")),
+        ("neighbors", ("ip", "-j", "neigh", "show")),
+        ("fdb", ("bridge", "-j", "fdb", "show")),
+        ("vlans", ("bridge", "-j", "vlan", "show")),
+        ("wifi_devices", ("iw", "dev")),
+    )
+
     def __init__(self, *, settings: Settings, runner: ToolRunner | None = None) -> None:
         self.settings = settings
         self.runner = runner or ToolRunner()
@@ -73,75 +81,56 @@ class SshTopologyProvider:
         target_ip = str(ipaddress.ip_address(target))
         profile = sanitize_ssh_profile(credentials)
         if shutil.which("ssh") is None:
-            return {
-                "schema": "ssh-topology-result",
-                "schema_version": 1,
-                "status": "tool_unavailable",
-                "target": target_ip,
-                "interface": interface,
-                "credential_profile": profile,
-                "interfaces": [],
-                "routes": [],
-                "neighbors": [],
-                "fdb": [],
-                "vlans": [],
-                "wifi_associations": [],
-                "capabilities": {},
-                "warnings": ["OpenSSH client is not installed; SSH topology enrichment was skipped."],
-            }
+            return self._document(
+                target=target_ip,
+                interface=interface,
+                profile=profile,
+                status="tool_unavailable",
+                warnings=["OpenSSH client is not installed; SSH topology enrichment was skipped."],
+            )
 
         collections: dict[str, Any] = {}
         capabilities: dict[str, bool] = {}
         warnings: list[str] = []
-        commands = [
-            ("interfaces", ["ip", "-j", "addr", "show"]),
-            ("routes", ["ip", "-j", "route", "show", "table", "main"]),
-            ("neighbors", ["ip", "-j", "neigh", "show"]),
-            ("fdb", ["bridge", "-j", "fdb", "show"]),
-            ("vlans", ["bridge", "-j", "vlan", "show"]),
-            ("wifi_devices", ["iw", "dev"]),
-        ]
-        for index, (name, remote_args) in enumerate(commands, start=1):
+        for index, (name, remote_args) in enumerate(self.COMMANDS, start=1):
             if cancellation_token is not None and cancellation_token.cancelled:
                 break
             if progress:
-                progress(5 + int(index * 60 / len(commands)), f"SSH read-only: {name}")
+                progress(5 + int(index * 60 / len(self.COMMANDS)), f"SSH read-only: {name}")
             result = self._run(
                 target=target_ip,
                 profile=profile,
                 identity_file=identity_file,
                 known_hosts_file=known_hosts_file,
-                remote_args=remote_args,
+                remote_args=list(remote_args),
                 cancellation_token=cancellation_token,
             )
             capabilities[name] = bool(result.success)
             if not result.success:
+                collections[name] = "" if name == "wifi_devices" else []
                 warnings.append(_command_warning(name, result))
-                collections[name] = [] if name != "wifi_devices" else ""
                 continue
             if len(result.stdout.encode("utf-8", errors="ignore")) > MAX_OUTPUT_BYTES:
-                warnings.append(f"SSH {name} output exceeded the bounded parser limit and was ignored.")
                 capabilities[name] = False
-                collections[name] = [] if name != "wifi_devices" else ""
+                collections[name] = "" if name == "wifi_devices" else []
+                warnings.append(f"SSH {name} output exceeded the bounded parser limit and was ignored.")
                 continue
             if name == "wifi_devices":
                 collections[name] = result.stdout
-            else:
-                parsed = _json_rows(result.stdout)
-                if parsed is None:
-                    capabilities[name] = False
-                    warnings.append(f"SSH {name} returned data in an unsupported format.")
-                    collections[name] = []
-                else:
-                    collections[name] = parsed
+                continue
+            rows = _json_rows(result.stdout)
+            capabilities[name] = rows is not None
+            collections[name] = rows or []
+            if rows is None:
+                warnings.append(f"SSH {name} returned data in an unsupported format.")
 
         wifi_associations: list[dict[str, Any]] = []
-        wifi_interfaces = _wifi_interfaces(str(collections.get("wifi_devices") or ""))
-        for index, wifi_interface in enumerate(wifi_interfaces[:16], start=1):
+        wifi_interfaces = _wifi_interfaces(str(collections.get("wifi_devices") or ""))[:16]
+        for index, wifi_interface in enumerate(wifi_interfaces, start=1):
             if cancellation_token is not None and cancellation_token.cancelled:
                 break
             if progress:
-                progress(68 + int(index * 14 / max(1, len(wifi_interfaces[:16]))), f"SSH Wi-Fi clients: {wifi_interface}")
+                progress(68 + int(index * 14 / max(1, len(wifi_interfaces))), f"SSH Wi-Fi clients: {wifi_interface}")
             result = self._run(
                 target=target_ip,
                 profile=profile,
@@ -162,21 +151,43 @@ class SshTopologyProvider:
         neighbors = _normalize_neighbors(collections.get("neighbors") or [])
         fdb = _normalize_fdb(collections.get("fdb") or [])
         vlans = _normalize_vlans(collections.get("vlans") or [])
-        any_data = any([interfaces, routes, neighbors, fdb, vlans, wifi_associations])
+        any_data = any((interfaces, routes, neighbors, fdb, vlans, wifi_associations))
+        document = self._document(
+            target=target_ip,
+            interface=interface,
+            profile=profile,
+            status="completed" if any_data else "no_data",
+            warnings=_unique(warnings),
+        )
+        document.update(
+            {
+                "interfaces": interfaces,
+                "routes": routes,
+                "neighbors": neighbors,
+                "fdb": fdb,
+                "vlans": vlans,
+                "wifi_associations": wifi_associations,
+                "capabilities": capabilities,
+            }
+        )
+        return document
+
+    @staticmethod
+    def _document(*, target: str, interface: str, profile: dict[str, Any], status: str, warnings: list[str]) -> dict[str, Any]:
         return {
             "schema": "ssh-topology-result",
             "schema_version": 1,
-            "status": "completed" if any_data else "no_data",
-            "target": target_ip,
+            "status": status,
+            "target": target,
             "interface": interface,
             "credential_profile": profile,
-            "interfaces": interfaces,
-            "routes": routes,
-            "neighbors": neighbors,
-            "fdb": fdb,
-            "vlans": vlans,
-            "wifi_associations": wifi_associations,
-            "capabilities": capabilities,
+            "interfaces": [],
+            "routes": [],
+            "neighbors": [],
+            "fdb": [],
+            "vlans": [],
+            "wifi_associations": [],
+            "capabilities": {},
             "collection": {
                 "tool": "ssh",
                 "fixed_command_allowlist": True,
@@ -184,7 +195,7 @@ class SshTopologyProvider:
                 "strict_host_key_checking": True,
                 "write_operations": 0,
             },
-            "warnings": _unique(warnings),
+            "warnings": warnings,
         }
 
     def _run(
@@ -214,7 +225,6 @@ class SshTopologyProvider:
         args.extend([
             "-p", str(profile["port"]),
             f"{profile['username']}@{target}",
-            "--",
             *remote_args,
         ])
         return self.runner.run(
@@ -248,23 +258,14 @@ def _normalize_interfaces(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         addresses = []
         for item in row.get("addr_info") or []:
-            local = item.get("local")
-            prefix = item.get("prefixlen")
+            local, prefix = item.get("local"), item.get("prefixlen")
             if local is None or prefix is None:
                 continue
             try:
-                address = ipaddress.ip_interface(f"{local}/{int(prefix)}")
+                addresses.append(str(ipaddress.ip_interface(f"{local}/{int(prefix)}")))
             except (ValueError, TypeError):
                 continue
-            addresses.append(str(address))
-        result.append({
-            "name": name,
-            "ifindex": row.get("ifindex"),
-            "mac": row.get("address"),
-            "mtu": row.get("mtu"),
-            "state": row.get("operstate"),
-            "addresses": _unique(addresses),
-        })
+        result.append({"name": name, "ifindex": row.get("ifindex"), "mac": row.get("address"), "mtu": row.get("mtu"), "state": row.get("operstate"), "addresses": _unique(addresses)})
     return result
 
 
@@ -274,21 +275,13 @@ def _normalize_routes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         dev = str(row.get("dev") or "")
         if dev and not _INTERFACE_RE.fullmatch(dev):
             continue
-        destination = str(row.get("dst") or "default")
         gateway = row.get("gateway")
         if gateway is not None:
             try:
                 gateway = str(ipaddress.ip_address(str(gateway)))
             except ValueError:
                 gateway = None
-        result.append({
-            "destination": destination,
-            "gateway": gateway,
-            "interface": dev or None,
-            "source_address": row.get("prefsrc") or row.get("src"),
-            "metric": row.get("metric"),
-            "protocol": row.get("protocol"),
-        })
+        result.append({"destination": str(row.get("dst") or "default"), "gateway": gateway, "interface": dev or None, "source_address": row.get("prefsrc") or row.get("src"), "metric": row.get("metric"), "protocol": row.get("protocol")})
     return result
 
 
@@ -302,13 +295,7 @@ def _normalize_neighbors(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         dev = str(row.get("dev") or "")
         if dev and not _INTERFACE_RE.fullmatch(dev):
             continue
-        lladdr = str(row.get("lladdr") or "").lower() or None
-        result.append({
-            "address": address,
-            "mac": lladdr,
-            "interface": dev or None,
-            "state": row.get("state"),
-        })
+        result.append({"address": address, "mac": str(row.get("lladdr") or "").lower() or None, "interface": dev or None, "state": row.get("state")})
     return result
 
 
@@ -319,19 +306,11 @@ def _normalize_fdb(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         dev = str(row.get("dev") or "")
         if not mac or (dev and not _INTERFACE_RE.fullmatch(dev)):
             continue
-        vlan = row.get("vlan")
         try:
-            vlan = int(vlan) if vlan is not None else None
+            vlan = int(row["vlan"]) if row.get("vlan") is not None else None
         except (TypeError, ValueError):
             vlan = None
-        result.append({
-            "mac": mac,
-            "port": dev or None,
-            "vlan_id": vlan,
-            "master": row.get("master"),
-            "state": row.get("state"),
-            "flags": row.get("flags") or [],
-        })
+        result.append({"mac": mac, "port": dev or None, "vlan_id": vlan, "master": row.get("master"), "state": row.get("state"), "flags": row.get("flags") or []})
     return result
 
 
@@ -351,28 +330,20 @@ def _normalize_vlans(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             except (TypeError, ValueError):
                 continue
             flags = {str(flag).lower() for flag in (vlan.get("flags") or [])}
-            if any("untagged" in flag for flag in flags):
-                untagged.append(vlan_id)
-            else:
-                tagged.append(vlan_id)
+            (untagged if any("untagged" in flag for flag in flags) else tagged).append(vlan_id)
             if any("pvid" in flag for flag in flags):
                 pvid = vlan_id
-        result.append({
-            "port": port,
-            "pvid": pvid,
-            "tagged_vlans": sorted(set(tagged)),
-            "untagged_vlans": sorted(set(untagged)),
-        })
+        result.append({"port": port, "pvid": pvid, "tagged_vlans": sorted(set(tagged)), "untagged_vlans": sorted(set(untagged))})
     return result
 
 
 def _wifi_interfaces(text: str) -> list[str]:
     result = []
-    for line in (text or "").splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("Interface "):
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line.startswith("Interface "):
             continue
-        name = stripped.split(None, 1)[1].strip()
+        name = line.split(None, 1)[1].strip()
         if _INTERFACE_RE.fullmatch(name) and name not in result:
             result.append(name)
     return result
@@ -387,10 +358,8 @@ def _parse_station_dump(text: str, interface: str) -> list[dict[str, Any]]:
         if match:
             if current:
                 result.append(current)
-            observed_interface = match.group(2).strip()
-            if not _INTERFACE_RE.fullmatch(observed_interface):
-                observed_interface = interface
-            current = {"mac": match.group(1).lower(), "interface": observed_interface}
+            observed = match.group(2).strip()
+            current = {"mac": match.group(1).lower(), "interface": observed if _INTERFACE_RE.fullmatch(observed) else interface}
             continue
         if current is None or ":" not in line:
             continue
@@ -423,8 +392,4 @@ def _unique(values: list[Any]) -> list[Any]:
     return result
 
 
-__all__ = [
-    "SshTopologyCredentialError",
-    "SshTopologyProvider",
-    "sanitize_ssh_profile",
-]
+__all__ = ["SshTopologyCredentialError", "SshTopologyProvider", "sanitize_ssh_profile"]

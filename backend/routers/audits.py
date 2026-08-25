@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from backend.audit_deletion import AuditBusy, AuditDeletionService
 from backend.dependencies import AppServices, get_services
 from backend.http import (
     audit_response,
@@ -104,6 +105,42 @@ def get_audit(
         return audit_response(services.jobs.get_audit(audit_id))
     except EntityNotFound as exc:
         raise not_found(exc) from exc
+
+
+@router.delete("/audits/{audit_id}")
+def delete_audit(
+    audit_id: str,
+    services: AppServices = Depends(get_services),
+) -> dict:
+    """Delete one inactive audit and all data/evidence owned by it."""
+    try:
+        result = AuditDeletionService(
+            services.database,
+            services.evidence,
+        ).delete(audit_id)
+    except EntityNotFound as exc:
+        raise not_found(exc) from exc
+    except AuditBusy as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "audit_busy",
+                "message": (
+                    "Audit still has queued or running work. "
+                    "Stop it before deletion."
+                ),
+                "active_jobs": exc.active_jobs,
+            },
+        ) from exc
+
+    return {
+        "deleted": True,
+        "audit_id": result.audit_id,
+        "artifact_count": result.artifact_count,
+        "deleted_files": result.deleted_files,
+        "evidence_directory_removed": result.evidence_directory_removed,
+        "file_cleanup_pending": result.file_cleanup_pending,
+    }
 
 
 @router.post(

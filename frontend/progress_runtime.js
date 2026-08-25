@@ -7,14 +7,18 @@
     const EXTERNAL_NMAP_STAGES = new Set([
         "discovering_hosts",
         "scanning_tcp",
+        "fingerprinting_services",
         "udp_discovery",
     ]);
 
     const PHASE_COPY = {
         discovering_hosts: "ищем хосты",
         scanning_tcp: "проверяем TCP-порты",
+        fingerprinting_services: "определяем службы и ОС",
         udp_discovery: "проверяем UDP-порты",
     };
+
+    const STAGE_TIMER_PREFIX = "wirescope.progressStage.";
 
     function normalizeUtcText(value) {
         if (typeof value !== "string") return value;
@@ -56,12 +60,18 @@
         };
     }
 
+    function profileName(job) {
+        return String((((job || {}).parameters || {}).profile) || "").toLowerCase();
+    }
+
     function isExternalNmap(job) {
-        return Boolean(
-            job &&
-            job.status === "running" &&
-            EXTERNAL_NMAP_STAGES.has(String(job.stage || ""))
-        );
+        if (!job || job.status !== "running") return false;
+        const stage = String(job.stage || "");
+        if (!EXTERNAL_NMAP_STAGES.has(stage)) return false;
+        // Standard still briefly uses this stage after its combined Nmap pass
+        // has already returned. Deep uses it for the real second Nmap pass.
+        if (stage === "fingerprinting_services" && profileName(job) !== "deep") return false;
+        return true;
     }
 
     function elapsedFrom(value) {
@@ -72,15 +82,30 @@
         return `${Math.floor(ms / 1000)} с`;
     }
 
+    function stageElapsed(job) {
+        if (!job || !job.id || !job.stage) return "";
+        const key = `${STAGE_TIMER_PREFIX}${job.id}`;
+        let record = null;
+        try {
+            record = JSON.parse(sessionStorage.getItem(key) || "null");
+        } catch {}
+        if (!record || record.stage !== job.stage || !Number.isFinite(Number(record.startedAt))) {
+            record = { stage: job.stage, startedAt: Date.now() };
+            try { sessionStorage.setItem(key, JSON.stringify(record)); } catch {}
+        }
+        if (TERMINAL.has(job.status)) {
+            try { sessionStorage.removeItem(key); } catch {}
+        }
+        const ms = Math.max(0, Date.now() - Number(record.startedAt));
+        if (typeof window.formatElapsed === "function") return window.formatElapsed(ms);
+        return `${Math.floor(ms / 1000)} с`;
+    }
+
     function scopeText(job) {
         const params = (job && job.parameters) || {};
         const scope = Array.isArray(params.scope) ? params.scope : [];
         if (!scope.length) return "";
         return scope.join(", ");
-    }
-
-    function profileName(job) {
-        return String((((job || {}).parameters || {}).profile) || "").toLowerCase();
     }
 
     function detailLine(job) {
@@ -97,6 +122,29 @@
             return "Останавливаем текущее задание…";
         }
 
+        if (stage === "discovering_hosts") {
+            return scope
+                ? `Nmap определяет доступные узлы в ${scope}`
+                : "Nmap определяет доступные узлы";
+        }
+        if (stage === "scanning_tcp") {
+            if (profile === "deep") {
+                return "Nmap проверяет TCP-порты найденных хостов · полный диапазон 1–65535 быстрым sweep";
+            }
+            if (profile === "standard") {
+                return "Nmap: TCP top-1000 по найденным хостам, версии служб и определение ОС (T3)";
+            }
+            return "Nmap проверяет TCP-порты найденных хостов";
+        }
+        if (stage === "fingerprinting_services" && profile === "deep") {
+            return "Nmap определяет версии служб и ОС только на найденных открытых TCP-портах";
+        }
+        if (stage === "udp_discovery") {
+            return profile === "deep"
+                ? "Nmap: расширенный набор UDP-портов с определением версий"
+                : "Nmap: выборочная проверка инфраструктурных UDP-портов (T3)";
+        }
+
         const fixed = {
             queued: "Задание поставлено в очередь и ждёт исполнителя",
             resource_wait: "Ждём освобождения сетевого ресурса",
@@ -110,6 +158,7 @@
             validating_scope: scope ? `Проверяем подтверждённую область: ${scope}` : "Проверяем подтверждённую область сканирования",
             resolving_route: iface ? `Проверяем маршрут к цели через ${iface}` : "Проверяем маршрут к цели",
             hosts_discovered: I18N.jobMessage(job.message),
+            tcp_ports_discovered: "Полный TCP sweep завершён; готовим точное определение найденных служб",
             fingerprinting_services: "Разбираем результаты TCP-сканирования и сохраняем службы",
             correlating_observations: "Сопоставляем пассивные и активные наблюдения",
             persisting_inventory: "Сохраняем итоговый список устройств и служб",
@@ -124,29 +173,32 @@
         };
         if (fixed[stage]) return fixed[stage];
 
-        if (stage === "discovering_hosts") {
-            return scope
-                ? `Nmap определяет доступные узлы в ${scope}`
-                : "Nmap определяет доступные узлы";
-        }
-        if (stage === "scanning_tcp") {
-            if (profile === "deep") {
-                return "Nmap: полный TCP 1–65535 по найденным хостам, версии служб и определение ОС (T3)";
-            }
-            if (profile === "standard") {
-                return "Nmap: TCP top-1000 по найденным хостам, версии служб и определение ОС (T3)";
-            }
-            return "Nmap проверяет TCP-порты найденных хостов";
-        }
-        if (stage === "udp_discovery") {
-            return profile === "deep"
-                ? "Nmap: расширенный набор UDP-портов с определением версий (T3)"
-                : "Nmap: выборочная проверка инфраструктурных UDP-портов (T3)";
-        }
         if (stage.startsWith("auditing_")) {
             return I18N.jobMessage(job.message);
         }
         return I18N.jobMessage(job.message);
+    }
+
+    function liveResultLine(job) {
+        if (!isExternalNmap(job)) return "";
+        const raw = String(job.message || "").trim();
+        if (raw.startsWith("Nmap live")) {
+            return raw.replace(/^Nmap live\s*·?\s*/, "Nmap: ");
+        }
+        return "Nmap: ожидаем первую статистику процесса…";
+    }
+
+    function ensureLiveResultNode() {
+        let node = document.getElementById("progress-live-result");
+        if (node) return node;
+        const message = document.getElementById("progress-message");
+        if (!message) return null;
+        node = document.createElement("div");
+        node.id = "progress-live-result";
+        node.className = "progress-live-result muted";
+        node.setAttribute("aria-live", "polite");
+        message.insertAdjacentElement("afterend", node);
+        return node;
     }
 
     const originalTiming = window.renderProgressTiming;
@@ -156,7 +208,9 @@
             if (!job || TERMINAL.has(job.status)) return;
             const activity = document.getElementById("progress-activity");
             if (!activity) return;
-            const stageTime = elapsedFrom(job.updated_at || job.started_at || job.created_at);
+            const stageTime = isExternalNmap(job)
+                ? stageElapsed(job)
+                : elapsedFrom(job.updated_at || job.started_at || job.created_at);
             const prefix = job.cancel_requested
                 ? "запрошена остановка"
                 : (isExternalNmap(job) ? "внешний процесс Nmap работает" : "этап выполняется");
@@ -171,6 +225,13 @@
 
             const message = document.getElementById("progress-message");
             if (message) message.textContent = detailLine(job);
+
+            const live = ensureLiveResultNode();
+            if (live) {
+                const text = liveResultLine(job);
+                live.textContent = text;
+                live.hidden = !text;
+            }
 
             const stop = document.getElementById("stop-audit-button");
             if (stop && job) {

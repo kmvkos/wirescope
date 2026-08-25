@@ -9,7 +9,7 @@ def test_topology_history_assets_are_versioned_and_ordered(api_context):
 
     assert body.count("topology_compare.css?v=20260825-ui15") == 1
     assert body.count("topology_compare.js?v=20260825-ui15") == 1
-    assert body.count("topology_tab.js?v=20260825-ui14&feature=20260825-ui15") == 1
+    assert body.count("topology_tab.js?v=20260825-ui14&feature=20260826-ui17") == 1
     assert body.index("topology.js?v=20260825-ui14") < body.index("topology_compare.js?v=20260825-ui15")
     assert body.index("topology_compare.js?v=20260825-ui15") < body.index("topology_tab.js?v=20260825-ui14")
 

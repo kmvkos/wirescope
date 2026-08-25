@@ -1,7 +1,7 @@
 """Describe what the persisted topology evidence is sufficient to claim.
 
 This module deliberately does not discover anything and does not score a network
-against an imagined perfect topology.  It answers a narrower auditor question:
+against an imagined perfect topology. It answers a narrower auditor question:
 which classes of statements are supported by the evidence currently retained,
 and which useful sources are missing.
 """
@@ -101,9 +101,9 @@ def decorate_completeness(topology: dict[str, Any]) -> dict[str, Any]:
     if segments:
         l3_evidence.append("confirmed/audit scope")
     if gateway_edges:
-        l3_evidence.append("gateway evidence")
+        l3_evidence.append("interface/DHCP gateway evidence")
     if routed_edges:
-        l3_evidence.append("route/SNMP interface evidence")
+        l3_evidence.append("route/SNMP/SSH interface evidence")
     l3 = _domain(
         status=l3_status,
         title="L3 / маршрутизация",
@@ -137,7 +137,7 @@ def decorate_completeness(topology: dict[str, Any]) -> dict[str, Any]:
         title="L2 / физические связи",
         statement=l2_statement,
         evidence=[
-            *(["LLDP/CDP adjacency"] if direct_l2 else []),
+            *(["LLDP/CDP/Wi-Fi adjacency"] if direct_l2 else []),
             *(["switch-port/FDB mapping"] if switch_ports else []),
             *(["STP observations"] if stp else []),
         ],
@@ -166,15 +166,34 @@ def decorate_completeness(topology: dict[str, Any]) -> dict[str, Any]:
     )
 
     vlan_nodes = [
-        node for node in nodes
+        node
+        for node in nodes
         if node.get("vlan_ids") or node.get("tagged_vlans") or node.get("untagged_vlans") or node.get("pvid")
     ]
-    vlan_edges = [edge for edge in edges if edge.get("vlan_id") is not None or edge.get("vlan_ids")]
+    vlan_edges = [
+        edge
+        for edge in edges
+        if edge.get("vlan_id") is not None
+        or edge.get("vlan_ids")
+        or edge.get("tagged_vlans")
+        or edge.get("untagged_vlans")
+        or edge.get("pvid") is not None
+    ]
     qbridge = any("q-bridge" in value or "qbridge" in value for value in provenance)
+    ssh_bridge_vlan = any(value in provenance for value in {"ssh-bridge-vlan", "ssh-bridge-fdb"}) and any(
+        str(edge.get("mapping_type") or "") == "switch_port"
+        and (
+            edge.get("vlan_ids")
+            or edge.get("tagged_vlans")
+            or edge.get("untagged_vlans")
+            or edge.get("pvid") is not None
+        )
+        for edge in edges
+    )
     passive_vlan = any(value in provenance for value in {"802.1q", "vlan", "qinq"})
-    if qbridge and (vlan_nodes or vlan_edges):
+    if (qbridge or ssh_bridge_vlan) and (vlan_nodes or vlan_edges):
         vlan_status = "sufficient"
-        vlan_statement = "Есть managed-device VLAN membership/PVID evidence для точечной VLAN-корреляции."
+        vlan_statement = "Есть managed-device VLAN membership/PVID/FDB evidence для точечной VLAN-корреляции."
     elif vlan_nodes or vlan_edges or passive_vlan:
         vlan_status = "partial"
         vlan_statement = "VLAN наблюдался, но membership конкретных endpoints подтверждён не полностью."
@@ -187,9 +206,10 @@ def decorate_completeness(topology: dict[str, Any]) -> dict[str, Any]:
         statement=vlan_statement,
         evidence=[
             *(["Q-BRIDGE/FDB/PVID"] if qbridge else []),
+            *(["SSH bridge VLAN/FDB"] if ssh_bridge_vlan else []),
             *(["802.1Q observation"] if passive_vlan else []),
         ],
-        missing=[] if vlan_status == "sufficient" else ["Q-BRIDGE/FDB/PVID or equivalent managed-device evidence"],
+        missing=[] if vlan_status == "sufficient" else ["Q-BRIDGE/FDB/PVID or equivalent read-only managed-device evidence"],
     )
 
     wifi_evidence = any(
@@ -227,10 +247,7 @@ def decorate_completeness(topology: dict[str, Any]) -> dict[str, Any]:
     )
 
     source_partial = bool(topology.get("partial")) or bool(topology.get("source_errors"))
-    structural_status = min(
-        [inventory_status, l3_status],
-        key=lambda value: _STATUS_RANK[value],
-    )
+    structural_status = min([inventory_status, l3_status], key=lambda value: _STATUS_RANK[value])
     if structural_status == "missing" and inventory_status != "missing" and segments:
         structural_status = "partial"
 

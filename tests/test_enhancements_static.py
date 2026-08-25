@@ -29,7 +29,7 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui10" in page.text
+    assert "?v=20260825-ui11" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -111,7 +111,7 @@ def test_traffic_analysis_ui_is_capture_scoped_and_kiosk_responsive():
     assert "@media (max-width: 560px)" in css
 
 
-def test_topology_ui_keeps_overlay_explicit_and_kiosk_responsive():
+def test_topology_ui_has_global_segments_layers_and_explicit_overlay():
     script = (FRONTEND / "topology.js").read_text(encoding="utf-8")
     tab = (FRONTEND / "topology_tab.js").read_text(encoding="utf-8")
     css = (FRONTEND / "topology.css").read_text(encoding="utf-8")
@@ -119,12 +119,18 @@ def test_topology_ui_keeps_overlay_explicit_and_kiosk_responsive():
     assert 'const API = "/api/v1"' in script
     assert '"Без PCAP overlay"' in script
     assert 'traffic_analysis_job_id=' in script
-    assert '"Сейчас показана топология только выбранного аудита. PCAP не подмешивается автоматически."' in script
+    assert '"Общая карта всех сохранённых сетей"' in script
+    assert '"Все подсети текущего аудита"' in script
+    assert '"L2 — канальный"' in script
+    assert '"L3 — маршрутизация"' in script
+    assert '"Traffic — PCAP"' in script
+    assert 'request("/topology/global?limit=100")' in script
     assert '"Топология"' in tab
     assert 'window.WireScopeTopology.render' in tab
     assert '.ws-topology-confirmed' in css
     assert '.ws-topology-observed' in css
     assert '.ws-topology-inferred' in css
+    assert '.ws-topology-segment-card' in css
     assert "@media (max-width: 560px)" in css
 
 

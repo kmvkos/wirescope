@@ -34,11 +34,12 @@ def test_modern_theme_keeps_kiosk_and_desktop_breakpoints():
     assert ".ws-insights" in theme
 
 
-def test_upgrade_refreshes_running_kiosk_after_frontend_update():
+def test_upgrade_refreshes_enabled_kiosk_after_frontend_update():
     root = FRONTEND.parent
     script = (root / "packaging" / "upgrade.sh").read_text(encoding="utf-8")
 
-    assert "systemctl is-active --quiet wirescope-kiosk.service" in script
+    assert "systemctl is-enabled --quiet wirescope-kiosk.service" in script
+    assert "systemctl reset-failed wirescope-kiosk.service" in script
     assert "systemctl restart wirescope-kiosk.service" in script
 
 

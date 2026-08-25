@@ -67,6 +67,54 @@
     font-size: .88rem;
 }
 
+.ws-snmp-vlan-explorer {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0;
+    padding: 14px;
+    border: 1px solid var(--border, rgba(255,255,255,.12));
+    border-radius: 14px;
+}
+
+.ws-snmp-vlan-explorer h4,
+.ws-snmp-vlan-explorer p {
+    margin: 0;
+}
+
+.ws-snmp-vlan-controls select {
+    min-width: 190px;
+}
+
+.ws-snmp-vlan-ports {
+    display: grid;
+    gap: 7px;
+}
+
+.ws-snmp-vlan-port {
+    display: grid;
+    gap: 3px;
+    padding: 8px 10px;
+    border: 1px solid var(--border, rgba(255,255,255,.1));
+    border-radius: 10px;
+    font-size: .82rem;
+}
+
+.ws-snmp-vlan-port span {
+    opacity: .8;
+    overflow-wrap: anywhere;
+}
+
+.ws-snmp-vlan-graph {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.ws-snmp-vlan-svg {
+    min-height: 300px;
+    max-height: 520px;
+}
+
 @media (max-width: 760px) {
     .ws-snmp-heading {
         display: grid;
@@ -94,8 +142,14 @@
         grid-template-columns: 1fr;
     }
 
-    .ws-snmp-form .actions button {
+    .ws-snmp-form .actions button,
+    .ws-snmp-vlan-controls button,
+    .ws-snmp-vlan-controls select {
         width: 100%;
         min-height: 46px;
+    }
+
+    .ws-snmp-vlan-explorer {
+        padding: 10px;
     }
 }

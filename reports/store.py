@@ -3,11 +3,11 @@
 from typing import Any
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from jobs.models import Page
 from persistence.database import Database
-from persistence.models import ReportModel, utc_now
+from persistence.models import ArtifactModel, ReportModel, utc_now
 from reports.models import REPORT_SCHEMA, REPORT_SCHEMA_VERSION, ReportRecord
 
 
@@ -83,6 +83,50 @@ class ReportStore:
             offset=offset,
             total=total,
         )
+
+    def delete(self, audit_id: str, report_id: str) -> tuple[ReportRecord, list[str]]:
+        """Delete one generated report and unreferenced report artifacts.
+
+        Audit/inventory/findings/job history is intentionally retained. Artifact
+        metadata is removed only when no other report references the same
+        artifact id. The caller may then remove the corresponding files from
+        the evidence store using the returned ids.
+        """
+        with self.database.session() as session, session.begin():
+            model = session.get(ReportModel, report_id)
+            if model is None or model.audit_id != audit_id:
+                raise ReportNotFound(f"Report not found: {report_id}")
+
+            record = _record(model)
+            artifact_ids = {
+                value
+                for value in (model.json_artifact_id, model.html_artifact_id)
+                if value
+            }
+            session.delete(model)
+            session.flush()
+
+            deleted_artifact_ids: list[str] = []
+            for artifact_id in sorted(artifact_ids):
+                references = session.scalar(
+                    select(func.count())
+                    .select_from(ReportModel)
+                    .where(
+                        or_(
+                            ReportModel.json_artifact_id == artifact_id,
+                            ReportModel.html_artifact_id == artifact_id,
+                        )
+                    )
+                ) or 0
+                if references:
+                    continue
+                artifact = session.get(ArtifactModel, artifact_id)
+                if artifact is None or artifact.audit_id != audit_id:
+                    continue
+                session.delete(artifact)
+                deleted_artifact_ids.append(artifact_id)
+
+        return record, deleted_artifact_ids
 
 
 def _record(model: ReportModel) -> ReportRecord:

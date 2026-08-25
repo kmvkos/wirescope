@@ -319,6 +319,7 @@ def test_with_kiosk_skips_already_installed_packages(tmp_path):
             "snmp",
             "ldap-utils",
             "ssh-audit",
+            "traceroute",
         }
     )
     config = _config(tmp_path, install_kiosk=True, start_services=False, skip_pip=True)
@@ -497,5 +498,3 @@ def test_user_kiosk_with_console_enables_user_unit(tmp_path):
     assert kiosk_enabled
     assert "wirescope-kiosk.service" in report.started
     assert "wirescope-api.service" in report.started
-
-

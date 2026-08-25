@@ -315,9 +315,11 @@ def test_topology_ui_renders_filters_focus_and_zoom():
         root.locator(".ws-topology-check input[type='checkbox']").first.check()
         assert root.locator(".ws-topology-node-multicast-group").count() == 1
 
-        # Double-clicking a subnet focuses the corresponding select value.
+        # Dispatch the DOM event directly. A pointer-level dblclick on an SVG
+        # group is geometry-dependent in headless Chromium and can land on a
+        # child element even though the application handler is correct.
         first_region = root.locator(".ws-topology-region").first
-        first_region.dblclick()
+        first_region.dispatch_event("dblclick")
         assert selects.nth(1).input_value() == "segment:10.0.0.0/24"
 
         host_a = root.locator(".ws-topology-node").filter(has_text="Host-A")

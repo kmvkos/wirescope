@@ -31,11 +31,14 @@ def test_runtime_treats_naive_iso_timestamps_as_utc():
     assert 'window.parseTime = function parseWireScopeTime(value)' in runtime
 
 
-def test_progress_has_operator_readable_step_details():
+def test_progress_has_operator_readable_step_details_and_live_nmap_line():
     runtime = (FRONTEND / "progress_runtime.js").read_text(encoding="utf-8")
 
-    assert 'Nmap: полный TCP 1–65535' in runtime
+    assert 'полный диапазон 1–65535 быстрым sweep' in runtime
+    assert 'только на найденных открытых TCP-портах' in runtime
     assert 'Nmap: TCP top-1000' in runtime
+    assert 'progress-live-result' in runtime
+    assert 'Nmap: ожидаем первую статистику процесса' in runtime
     assert 'tshark разбирает сохранённые пакеты' in runtime
     assert 'Пассивные датчики анализируют протоколы' in runtime
     assert 'Применяем правила findings' in runtime

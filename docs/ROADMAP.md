@@ -128,7 +128,7 @@ RTT:
 
 ## v1.2 — Network Topology
 
-Статус: **активная разработка; M11.1 завершён, автоматизируемый срез M11.2 реализован и покрыт browser CI**.
+Статус: **implementation complete для M11.1–M11.3; автоматизированные regression/Chromium/wheel smoke проходят, остаётся live-network validation на реальных topology**.
 
 Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
 
@@ -195,15 +195,25 @@ VLAN-filter не должен назначать устройства VLAN «п�
 
 ### M11.3 — расширение физической топологии
 
-Не блокирует базовую v1.2, но повышает точность физической картины:
-- безопасный traceroute/upstream view;
-- read-only SNMP с явно предоставленными оператором credentials;
-- bridge/FDB/ARP tables сетевого оборудования;
-- switch-port mapping;
-- достоверная node↔VLAN correlation;
-- historical topology diff.
+Статус: **реализовано; backend/API/UI покрыты regression tests, включая Chromium browser tests**.
 
-WireScope не должен угадывать невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP или иным evidence, оно отображается только как логическая/предполагаемая связь.
+Реализовано:
+- безопасный traceroute/upstream view поверх явно ограниченного active context;
+- read-only SNMP с явно предоставленными оператором credentials;
+- корреляция ARP/FDB/bridge evidence сетевого оборудования;
+- switch-port mapping без угадывания невидимых L2 hops;
+- node↔VLAN correlation только при достаточном подтверждающем evidence;
+- historical topology diff между retained audits;
+- conservative cross-audit identity: MAC → IP; одинаковый hostname сам по себе не считается доказательством одного устройства;
+- изменение audit-local asset UUID не создаёт ложный `removed + added`, если стабильная identity подтверждена;
+- отдельный API comparison и web/kiosk view **«История topology»** с JSON export;
+- global topology и historical diff наследуют `partial`/`source_errors`, если часть persisted evidence недоступна;
+- source-health проверяет, что сохранённые SNMP/route-trace artifacts действительно вошли в topology; пропуск evidence становится видимым оператору, но один повреждённый исторический artifact не валит всю карту;
+- legacy job-less SNMP не объявляется повреждённым без достаточного target/evidence контекста.
+
+WireScope не угадывает невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP/FDB/switch-port или иным evidence, оно отображается только как логическая/предполагаемая связь.
+
+Checkpoint M11.3 проходит полный GitHub Actions pipeline: compileall, pytest, Chromium browser smoke, wheel build и smoke-test установленного wheel.
 
 ---
 
@@ -262,4 +272,4 @@ AI-вывод не создаёт WireScope finding автоматически. 
 
 ## Текущий следующий шаг
 
-**M11.2 live-network validation:** проверить segment-aware layout, zoom/pan, L2/L3/Traffic filters, global map, findings и SVG/PNG export на нескольких реальных сетях/крупных topology; затем внести только подтверждённые layout-улучшения и продолжить M11.3 physical-topology evidence.
+**M11 live-network validation на WireScope VM:** обновить VM до M11.3 checkpoint, прогнать Deep-аудит и сохранённый PCAP/topology workflow, проверить global map, L2/L3/Traffic, SNMP/upstream evidence, historical topology diff, `partial/source_errors`, findings и SVG/PNG/JSON export на реальной тестовой сети. После подтверждения runtime-поведения — начинать v1.3 Global Correlation Analysis.

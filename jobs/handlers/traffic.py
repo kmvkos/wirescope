@@ -55,6 +55,15 @@ class TrafficAnalysisHandler:
                         component="traffic_analysis",
                     )
                 )
+            if artifact.job_id != source_capture_job_id:
+                raise JobExecutionError(
+                    JobError(
+                        code="pcap_capture_job_mismatch",
+                        category=ErrorCategory.VALIDATION,
+                        message="PCAP artifact does not belong to the source capture job",
+                        component="traffic_analysis",
+                    )
+                )
             if artifact.artifact_type != "packet_capture":
                 raise JobExecutionError(
                     JobError(

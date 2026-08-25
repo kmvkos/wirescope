@@ -13,10 +13,15 @@ fi
 # A later explicit --bind-host still wins.
 "$python" -m appliance install --project-root "$here" --bind-host 0.0.0.0 "$@"
 
-# An already-running kiosk Chromium process keeps the old DOM in memory even
-# after API/static files are upgraded. Refresh it automatically when present.
+# Refresh an installed tty1 kiosk after frontend/backend upgrades. Check
+# enablement rather than activity: a failed kiosk still needs recovery.
+# The kiosk unit Conflicts=getty@tty1.service, so systemd transfers tty1 in
+# the same start transaction. There is intentionally no OnFailure=getty race.
 if command -v systemctl >/dev/null 2>&1; then
-    if systemctl is-active --quiet wirescope-kiosk.service 2>/dev/null; then
-        systemctl restart wirescope-kiosk.service
+    if systemctl is-enabled --quiet wirescope-kiosk.service 2>/dev/null; then
+        systemctl reset-failed wirescope-kiosk.service 2>/dev/null || true
+        if ! systemctl restart wirescope-kiosk.service; then
+            echo "warning: wirescope-kiosk.service failed to restart; API and worker remain available" >&2
+        fi
     fi
 fi

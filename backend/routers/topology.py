@@ -4,10 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import AppServices, get_services
 from jobs.service import EntityNotFound
-from topology import TopologySourceError, build_topology
+from topology import TopologySourceError, build_global_topology, build_topology
 
 
 router = APIRouter()
+
+
+@router.get("/topology/global")
+def global_topology(
+    limit: int = Query(default=100, ge=1, le=100),
+    services: AppServices = Depends(get_services),
+) -> dict:
+    return build_global_topology(services, limit=limit)
 
 
 @router.get("/audits/{audit_id}/topology")

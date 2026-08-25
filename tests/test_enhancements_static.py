@@ -76,7 +76,7 @@ def test_report_management_is_auditor_only_and_keeps_audit_data():
     assert 'request(\n                                "DELETE"' in script
     assert '"История отчётов"' in script
     assert '"Удалить"' in script
-    assert 'audit, устройства, сервисы, findings и исходные evidence' in script
+    assert 'Сам аудит, найденные устройства, сервисы, findings и evidence останутся.' in script
     assert 'format=markdown' not in script  # format is composed through exportUrl
     assert 'exportUrl(auditId, report.id, "markdown")' in script
     assert ".report-history-item" in css

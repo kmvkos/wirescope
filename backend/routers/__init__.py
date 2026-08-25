@@ -12,6 +12,7 @@ from . import (
     protocol,
     reports,
     system,
+    traffic,
 )
 
 
@@ -23,6 +24,7 @@ for router in (
     operations.router,
     audits.router,
     captures.router,
+    traffic.router,
     inventory.router,
     protocol.router,
     findings.router,

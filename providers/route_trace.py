@@ -1,7 +1,7 @@
 """Bounded unprivileged route tracing for confirmed active scope.
 
 The provider intentionally prefers normal user-space traceroute/tracepath
-binaries instead of granting NET_RAW to the WireScope worker.  Missing tools or
+binaries instead of granting NET_RAW to the WireScope worker. Missing tools or
 individual target failures degrade the route-topology evidence; they do not
 fail active discovery.
 """
@@ -132,7 +132,7 @@ class RouteTraceProvider:
                 target,
             ]
         else:
-            # tracepath follows the already validated kernel route.  It has no
+            # tracepath follows the already validated kernel route. It has no
             # portable interface-binding flag across supported distros.
             args = [
                 "-n",
@@ -160,14 +160,16 @@ def representative_routed_targets(
     selected: list[RouteTraceTarget] = []
     seen: set[str] = set()
     for route in resolved_routes:
-        if bool(getattr(route, "directly_connected", False)):
+        directly_connected = bool(_route_value(route, "directly_connected", False))
+        if directly_connected:
             continue
-        raw_target = str(getattr(route, "target", "") or "")
+        raw_target = str(_route_value(route, "target", "") or "")
         if not raw_target:
             continue
+        family = int(_route_value(route, "family", 4) or 4)
         try:
             network = ipaddress.ip_network(
-                raw_target if "/" in raw_target else f"{raw_target}/{32 if getattr(route, 'family', 4) == 4 else 128}",
+                raw_target if "/" in raw_target else f"{raw_target}/{32 if family == 4 else 128}",
                 strict=False,
             )
         except ValueError:
@@ -190,6 +192,12 @@ def representative_routed_targets(
         if len(selected) >= _MAX_TARGETS:
             break
     return selected
+
+
+def _route_value(route: Any, key: str, default: Any = None) -> Any:
+    if isinstance(route, dict):
+        return route.get(key, default)
+    return getattr(route, key, default)
 
 
 def _parse_traceroute(text: str) -> list[dict[str, Any]]:
@@ -227,7 +235,7 @@ def _parse_tracepath(text: str) -> list[dict[str, Any]]:
             continue
         ttl = int(match.group(1))
         rest = match.group(2).strip()
-        if "LOCALHOST" in rest or "pmtu" in rest.lower() and not re.search(r"\bms\b", rest):
+        if "LOCALHOST" in rest or ("pmtu" in rest.lower() and not re.search(r"\bms\b", rest)):
             continue
         if rest.startswith("no reply") or rest.startswith("*"):
             hops.append({"ttl": ttl, "address": None, "rtt_ms": None, "responded": False})

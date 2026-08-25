@@ -128,9 +128,9 @@ RTT:
 
 ## v1.2 — Network Topology
 
-Статус: **M11.1–M11.3 реализованы; финальный topology hardening открыт до live-проверки расширенного SNMP/VLAN на реальном router/switch evidence**.
+Статус: **M11.1–M11.4 implementation complete; полный automated regression зелёный, остаётся live-network validation нового hardening checkpoint**.
 
-Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
+Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи и одновременно показывать оператору, **для каких выводов собранных данных действительно хватает**.
 
 ### M11.1 — логическая карта
 
@@ -195,7 +195,7 @@ VLAN принадлежность назначается только при д�
 
 ### M11.3 — расширение физической и L3-топологии
 
-Статус: **реализовано и покрыто automated regression; требуется финальная live-проверка на реальном SNMP agent**.
+Статус: **реализовано и покрыто automated regression; live management-plane проверка включена в общий M11.4 gate**.
 
 Реализовано:
 - безопасный traceroute/upstream view поверх явно ограниченного active context;
@@ -224,27 +224,63 @@ VLAN принадлежность назначается только при д�
 
 WireScope не должен угадывать невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP/FDB/switch-port или иным evidence, оно отображается только как логическая/предполагаемая связь.
 
+### M11.4 — topology hardening и достаточность evidence
+
+Статус: **implementation complete; automated regression / Chromium / wheel smoke зелёные, требуется live-network validation на WireScope VM**.
+
+Реализовано:
+- отдельный `coverage` / claimability слой: `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, `hypervisor` получают `sufficient / partial / missing` без фиктивного «процента изученности сети»;
+- оператору показывается не только схема, но и какие утверждения подтверждены evidence, какие частичны и какие данные нужно получить дополнительно;
+- canonical topology остаётся полным evidence graph, а structural presentation отделена от raw/traffic observations;
+- infrastructure-first renderer: subnet как структурная область, assets/network devices как основные карточки, Traffic и All evidence вынесены в отдельные представления;
+- directed broadcast конкретной подсети, link-local шум и PCAP-only external endpoints больше не выдаются за обычные инфраструктурные hosts structural map;
+- экспорт полной structural diagram отделён от экспорта текущего viewport;
+- multi-homed environment сохраняет все default routes по interfaces и локальные DHCP lease/router options;
+- gateway выбранного audit interface добавляется только по точному persisted evidence, а не по host-wide default route или шаблону адреса;
+- добавлен optional **read-only SSH topology provider** для Linux/OpenWrt-подобных managed devices;
+- SSH provider имеет фиксированный allowlist `ip/bridge/iw`, strict host-key verification и не принимает произвольную remote command;
+- private key и `known_hosts` передаются через consume-once `0600` runtime spool и не сохраняются в SQLite/topology evidence;
+- queued cancel сразу удаляет SSH/SNMP credential spool, running handler удаляет credentials в `finally`;
+- retry `snmp_topology` / `ssh_topology` со старым `credential_ref` запрещён: новый запуск требует свежих credentials;
+- SSH `ip neigh` используется как IP↔MAC identity evidence, но не превращается в выдуманную физическую линию;
+- SSH FDB может подтверждать switch-port mapping;
+- SSH `iw station dump` может подтверждать AP↔client association;
+- SSH interface/prefix и route data участвуют в L3 topology, но management-discovered subnet остаётся `active_scope=false`;
+- SSH bridge VLAN semantics различает access/trunk/hybrid: endpoint получает VLAN только из точного FDB VLAN либо из однозначного single-VLAN access port;
+- `source_health` охватывает route-trace, SNMP и SSH: job-backed persisted artifact, который должен был войти в topology, не может исчезнуть молча — карта становится `partial` и получает sanitized `source_errors`;
+- добавлены regression tests для SSH scope/role/secret lifecycle, credential cleanup/retry, access-vs-trunk VLAN projection и source-health;
+- модель подробно зафиксирована в `docs/TOPOLOGY_MODEL.md` / `docs/en/TOPOLOGY_MODEL.md` и API docs.
+
+Принцип M11.4: **если данных недостаточно, WireScope должен показать недостаток evidence, а не компенсировать его более смелой эвристикой**.
+
 ### v1.2 live-validation gate
 
-Уже подтверждено на установленной WireScope VM:
-- upgrade предыдущего M11 checkpoint проходит штатным `packaging/upgrade.sh`;
+Уже подтверждено на установленной WireScope VM для предыдущего M11 checkpoint:
+- upgrade проходит штатным `packaging/upgrade.sh`;
 - dependencies, systemd units и SQLite migrations применяются успешно;
 - `wirescope-api` и `wirescope-worker` запускаются после upgrade;
 - `dumpcap` privilege path остаётся рабочим;
 - API health/ready/capabilities после upgrade проверены оператором без критических ошибок.
 
-До финального закрытия topology нужно проверить на реальном SNMP agent:
-- SNMPv3 либо SNMPv2c read-only job до состояния `completed`;
-- L3 router interface addresses/prefixes и построение connected subnet;
-- ARP/ND neighbor-cache projection;
-- если устройство поддерживает BRIDGE/Q-BRIDGE — реальные FDB, VLAN membership и switch-port mapping;
-- если устройство отдаёт LLDP — реальный neighbor/chassis/management-address correlation;
-- отсутствие ложной router/VLAN classification;
-- отображение VLAN focus и JSON export на фактически полученном evidence.
+Для M11.4 нужен **новый Deep audit**, потому что старые audits не содержат нового persisted multi-interface default-route/DHCP lease evidence.
 
-Если конкретный router/switch не реализует отдельный стандартный MIB subtree, это само по себе не ошибка WireScope: capability должен остаться false/empty, а карта строится из реально доступных источников. Vendor-specific MIB support добавляется только после подтверждения необходимости на живом устройстве и не должен подменять стандартные MIB догадками.
+До финального закрытия v1.2 проверить на live VM:
+- upgrade до M11.4 checkpoint и сохранность retained audits;
+- новый Deep audit на выбранном интерфейсе и confirmed scope;
+- structural map: subnet regions, assets/network devices, отсутствие directed-broadcast/link-local/PCAP внешнего шума в основном представлении;
+- `coverage`: корректные `sufficient/partial/missing`, рекомендации и отсутствие ложного «данных достаточно»;
+- interface-specific gateway: при наличии DHCP/default-route evidence gateway должен относиться именно к выбранному audit interface;
+- L2/L3/Traffic/All evidence переключения и явный PCAP overlay;
+- findings/details, zoom/pan/fit, JSON/SVG/PNG exports;
+- historical topology diff между retained audits;
+- read-only SNMP enrichment на доступном router/switch: interface/prefix, ARP/ND, а при поддержке BRIDGE/Q-BRIDGE/LLDP — FDB/VLAN/switch-port/LLDP;
+- либо read-only SSH enrichment на подходящем Linux/OpenWrt managed device: route/neigh/FDB/VLAN/Wi-Fi evidence с dedicated read-only account и проверенным host key;
+- отсутствие ложной router/VLAN/L2 classification;
+- `partial/source_errors` остаются fail-visible при недоступном persisted source.
 
-После этого ставится финальный v1.2 topology checkpoint. Только затем начинается v1.3.
+Если конкретный router/switch не реализует отдельный стандартный MIB subtree или read-only SSH account не имеет доступа к конкретной allow-listed команде, это само по себе не ошибка WireScope: capability должен остаться false/empty, а карта строится из реально доступных источников.
+
+После успешной live-проверки ставится финальный v1.2 topology checkpoint. Только затем начинается v1.3.
 
 ---
 
@@ -303,4 +339,4 @@ AI-вывод не создаёт WireScope finding автоматически. 
 
 ## Текущий следующий шаг
 
-**M11 final live SNMP/VLAN validation:** обновить WireScope VM до нового topology checkpoint, запустить read-only SNMP enrichment для management IP реального роутера, проверить IP-MIB interface/prefix и ARP/ND evidence; при наличии BRIDGE/Q-BRIDGE/LLDP дополнительно проверить FDB, switch-port и VLAN focus. Исправлять только подтверждённые live-agent interoperability проблемы. После зелёной live-проверки закрыть v1.2 и переходить к v1.3 Global Correlation Analysis.
+**M11.4 live-network validation:** обновить WireScope VM до hardening checkpoint, выполнить новый Deep audit и проверить structural map + `coverage` + interface-specific gateway. Затем, если доступен management device, выполнить read-only SNMP или SSH enrichment и проверить реальные L2/L3/VLAN/Wi-Fi evidence. Исправлять только подтверждённые live interoperability/UX проблемы. После зелёной live-проверки закрыть v1.2 и переходить к v1.3 Global Correlation Analysis.

@@ -41,7 +41,9 @@ class NmapProgressParser:
     """Thread-safe stateful parser for Nmap stdout/stderr chunks."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        # feed() can produce a snapshot while holding the state lock, therefore
+        # the lock must be re-entrant. stdout/stderr are drained concurrently.
+        self._lock = threading.RLock()
         self._buffers = {"stdout": "", "stderr": ""}
         self._percent: float | None = None
         self._phase: str | None = None
@@ -126,13 +128,14 @@ class NmapProgressParser:
         return self.snapshot() if changed else None
 
     def snapshot(self) -> NmapProgressSnapshot:
-        return NmapProgressSnapshot(
-            percent=self._percent,
-            phase=self._phase,
-            hosts_completed=self._hosts_completed,
-            hosts_up=self._hosts_up,
-            open_ports=len(self._open),
-            last_open_port=self._last_open_port,
-            last_open_host=self._last_open_host,
-            remaining=self._remaining,
-        )
+        with self._lock:
+            return NmapProgressSnapshot(
+                percent=self._percent,
+                phase=self._phase,
+                hosts_completed=self._hosts_completed,
+                hosts_up=self._hosts_up,
+                open_ports=len(self._open),
+                last_open_port=self._last_open_port,
+                last_open_host=self._last_open_host,
+                remaining=self._remaining,
+            )

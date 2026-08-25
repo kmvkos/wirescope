@@ -19,6 +19,7 @@ from jobs.handlers import (
     ProtocolAuditHandler,
     ReportGenerationHandler,
     SnmpTopologyHandler,
+    SshTopologyHandler,
     TrafficAnalysisHandler,
 )
 from jobs.maintenance import MaintenanceService
@@ -269,6 +270,7 @@ def build_registry() -> HandlerRegistry:
     registry.register("traffic_analysis", TrafficAnalysisHandler())
     registry.register("active_discovery", ActiveDiscoveryHandler())
     registry.register("snmp_topology", SnmpTopologyHandler())
+    registry.register("ssh_topology", SshTopologyHandler())
     registry.register("protocol_audit", ProtocolAuditHandler())
     registry.register("findings_evaluation", FindingsEvaluationHandler())
     registry.register("report_generation", ReportGenerationHandler())

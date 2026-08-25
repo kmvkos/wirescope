@@ -42,6 +42,7 @@ class ToolCommand(BaseModel):
     stdout_path: Path | None = None
     environment: dict[str, str] = Field(default_factory=dict, exclude=True)
     sensitive_arg_indexes: set[int] = Field(default_factory=set)
+    on_stdout: Any = Field(default=None, exclude=True)
     on_stderr: Any = Field(default=None, exclude=True)
 
     @property
@@ -152,25 +153,38 @@ class ToolRunner:
             deadline = started_monotonic + command.timeout_seconds
             timed_out = False
             cancelled = False
+            stream_stdout = command.on_stdout is not None and stdout_handle is None
             stream_stderr = command.on_stderr is not None
+            stdout_chunks: list[str] = []
             stderr_chunks: list[str] = []
+            stdout_thread: threading.Thread | None = None
             stderr_thread: threading.Thread | None = None
 
+            if stream_stdout:
+                stdout_thread = threading.Thread(
+                    target=self._drain_stream,
+                    args=(process.stdout, command.on_stdout, stdout_chunks),
+                    daemon=True,
+                    name=f"stdout-{command.tool}",
+                )
+                stdout_thread.start()
             if stream_stderr:
                 stderr_thread = threading.Thread(
-                    target=self._drain_stderr,
-                    args=(process, command.on_stderr, stderr_chunks),
+                    target=self._drain_stream,
+                    args=(process.stderr, command.on_stderr, stderr_chunks),
                     daemon=True,
                     name=f"stderr-{command.tool}",
                 )
                 stderr_thread.start()
 
+            streaming = stream_stdout or stream_stderr
             while True:
                 if cancellation_token and cancellation_token.cancelled:
                     cancelled = True
                     stdout, stderr = self._terminate(
                         process,
                         stdout_handle,
+                        stdout_owned=stream_stdout,
                         stderr_owned=stream_stderr,
                     )
                     break
@@ -181,14 +195,17 @@ class ToolRunner:
                     stdout, stderr = self._terminate(
                         process,
                         stdout_handle,
+                        stdout_owned=stream_stdout,
                         stderr_owned=stream_stderr,
                     )
                     break
 
-                if stream_stderr:
+                if streaming:
                     if process.poll() is not None:
-                        stdout = self._read_stdout(process, stdout_handle)
-                        stderr = ""
+                        stdout = (
+                            "" if stream_stdout else self._read_stdout(process, stdout_handle)
+                        )
+                        stderr = "" if stream_stderr else self._read_stderr(process)
                         break
                     time.sleep(min(0.2, remaining))
                     continue
@@ -201,6 +218,9 @@ class ToolRunner:
                 except subprocess.TimeoutExpired:
                     continue
 
+            if stdout_thread is not None:
+                stdout_thread.join(timeout=2)
+                stdout = "".join(stdout_chunks)
             if stderr_thread is not None:
                 stderr_thread.join(timeout=2)
                 stderr = "".join(stderr_chunks)
@@ -259,6 +279,7 @@ class ToolRunner:
         process: subprocess.Popen[str],
         stdout_handle: TextIO | None,
         *,
+        stdout_owned: bool = False,
         stderr_owned: bool = False,
     ) -> tuple[str, str]:
         try:
@@ -266,7 +287,7 @@ class ToolRunner:
         except (ProcessLookupError, PermissionError):
             process.terminate()
 
-        if stderr_owned:
+        if stdout_owned or stderr_owned:
             try:
                 process.wait(timeout=2)
             except subprocess.TimeoutExpired:
@@ -275,7 +296,10 @@ class ToolRunner:
                 except (ProcessLookupError, PermissionError):
                     process.kill()
                 process.wait(timeout=2)
-            return self._read_stdout(process, stdout_handle), ""
+            return (
+                "" if stdout_owned else self._read_stdout(process, stdout_handle),
+                "" if stderr_owned else self._read_stderr(process),
+            )
 
         try:
             stdout, stderr = process.communicate(timeout=2)
@@ -304,12 +328,20 @@ class ToolRunner:
             return ""
 
     @staticmethod
-    def _drain_stderr(
-        process: subprocess.Popen[str],
+    def _read_stderr(process: subprocess.Popen[str]) -> str:
+        if process.stderr is None:
+            return ""
+        try:
+            return process.stderr.read() or ""
+        except (OSError, ValueError):
+            return ""
+
+    @staticmethod
+    def _drain_stream(
+        stream: TextIO | None,
         callback: Any,
         chunks: list[str],
     ) -> None:
-        stream = process.stderr
         if stream is None:
             return
         while True:

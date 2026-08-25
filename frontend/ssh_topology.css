@@ -1,0 +1,14 @@
+.ws-ssh-topology-panel { margin: 12px 0; }
+.ws-ssh-heading { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+.ws-ssh-heading h3 { margin:0 0 6px; }
+.ws-ssh-metrics { display:flex; gap:8px; flex-wrap:wrap; }
+.ws-ssh-metric { min-width:82px; padding:8px 10px; border:1px solid rgba(91,135,169,.34); border-radius:10px; background:rgba(13,34,52,.72); }
+.ws-ssh-metric strong,.ws-ssh-metric span { display:block; }
+.ws-ssh-metric span { margin-top:3px; font-size:.76rem; opacity:.78; }
+.ws-ssh-form { display:grid; grid-template-columns:repeat(3,minmax(150px,1fr)); gap:10px; margin-top:12px; }
+.ws-ssh-field { display:flex; flex-direction:column; gap:5px; }
+.ws-ssh-field textarea { min-height:78px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.82rem; }
+.ws-ssh-form .hint,.ws-ssh-form .ws-ssh-status { grid-column:1/-1; }
+.ws-ssh-form button { align-self:end; }
+.ws-ssh-status { margin:0; }
+@media(max-width:900px){.ws-ssh-form{grid-template-columns:1fr}.ws-ssh-form .hint,.ws-ssh-form .ws-ssh-status{grid-column:1}}

@@ -18,6 +18,7 @@ from jobs.handlers import (
     PassiveDiscoveryHandler,
     ProtocolAuditHandler,
     ReportGenerationHandler,
+    TrafficAnalysisHandler,
 )
 from jobs.maintenance import MaintenanceService
 from jobs.models import AuditRecord, ErrorCategory, JobError, JobRecord
@@ -174,6 +175,7 @@ class JobWorker:
                 "worker_id": self.worker_id,
             },
         )
+
     def run_forever(self, stop_event: threading.Event) -> None:
         self.startup()
         while not stop_event.is_set():
@@ -263,6 +265,7 @@ def build_registry() -> HandlerRegistry:
     registry = HandlerRegistry()
     registry.register("passive_discovery", PassiveDiscoveryHandler())
     registry.register("packet_capture", PacketCaptureHandler())
+    registry.register("traffic_analysis", TrafficAnalysisHandler())
     registry.register("active_discovery", ActiveDiscoveryHandler())
     registry.register("protocol_audit", ProtocolAuditHandler())
     registry.register("findings_evaluation", FindingsEvaluationHandler())

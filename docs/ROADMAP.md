@@ -128,7 +128,7 @@ RTT:
 
 ## v1.2 — Network Topology
 
-Статус: **implementation complete / checkpoint закрыт**. M11.1–M11.3 реализованы, полный regression/Chromium/wheel CI проходит, WireScope VM успешно обновлена до checkpoint и базовый runtime health подтверждён. Live-проверка SNMP/FDB/switch-port/VLAN отложена до появления подходящего managed network testbed и не блокирует переход к v1.3.
+Статус: **M11.1–M11.3 реализованы; финальный topology hardening открыт до live-проверки расширенного SNMP/VLAN на реальном router/switch evidence**.
 
 Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи.
 
@@ -185,22 +185,35 @@ PCAP overlay выбирается оператором **явно**. WireScope �
 - topology JSON export;
 - SVG export текущего отображаемого вида карты с сохранением фильтров и viewport transform;
 - PNG export из того же текущего SVG;
-- Chromium regression smoke для фильтров, zoom/focus, bounded rendering, findings и SVG/PNG download.
+- отдельный **VLAN-фокус** по evidence-backed VLAN membership с port mode/PVID/tagged/untagged и VLAN JSON export;
+- отдельная VLAN-specific SVG-карта без назначения endpoint в VLAN «по догадке»;
+- Chromium regression smoke для фильтров, zoom/focus, bounded rendering, findings, SVG/PNG и VLAN focus/download.
 
-Дополнительная проверка читаемости на очень больших реальных topology остаётся quality-improvement задачей по мере появления таких данных и не блокирует v1.2.
+Дополнительная проверка читаемости на очень больших реальных topology остаётся quality-improvement задачей по мере появления таких данных и не блокирует базовую семантику topology.
 
-VLAN-filter не должен назначать устройства VLAN «по догадке». Он включается только при достаточном node↔VLAN evidence (LLDP/CDP/SNMP/FDB/switch-port mapping); при отсутствии такого evidence VLAN остаётся наблюдаемым контекстом, а не выдуманной принадлежностью assets.
+VLAN принадлежность назначается только при достаточном node↔VLAN evidence. Q-BRIDGE/FDB/PVID различаются: access/trunk/hybrid классифицируется только из наблюдаемых membership bitmaps, а multi-VLAN trunk/hybrid не заставляет WireScope выбрать один VLAN для endpoint.
 
-### M11.3 — расширение физической топологии
+### M11.3 — расширение физической и L3-топологии
 
-Статус: **реализовано; backend/API/UI покрыты regression tests, включая Chromium browser tests**.
+Статус: **реализовано и покрыто automated regression; требуется финальная live-проверка на реальном SNMP agent**.
 
 Реализовано:
 - безопасный traceroute/upstream view поверх явно ограниченного active context;
 - read-only SNMP с явно предоставленными оператором credentials;
+- базовые IF-MIB / BRIDGE-MIB / Q-BRIDGE-MIB / LLDP-MIB evidence;
+- RFC1213 IPv4 interface address/netmask fallback;
+- RFC4293 IP-MIB IPv4/IPv6 interface addresses и connected prefixes;
+- современный IPv4 ARP / IPv6 ND neighbor cache через `ipNetToPhysicalTable`;
+- `ifType` и `ifPhysAddress` для более точной модели интерфейса;
+- LLDP remote management addresses для консервативной корреляции соседей;
+- отдельные `network-interface` nodes и L3 `routed_interface` edges;
+- SNMP-observed connected subnet создаётся как topology evidence с `active_scope=false`: обнаруженная через SNMP сеть **не становится разрешением на сканирование**;
 - корреляция ARP/FDB/bridge evidence сетевого оборудования;
 - switch-port mapping без угадывания невидимых L2 hops;
-- node↔VLAN correlation только при достаточном подтверждающем evidence;
+- Q-BRIDGE port membership с отдельными `tagged_vlans`, `untagged_vlans`, PVID и `access/trunk/hybrid/unknown`;
+- классический FDB без VLAN ID может получить VLAN только из однозначного access-port membership evidence;
+- multi-VLAN trunk/hybrid не назначает endpoint один произвольный VLAN;
+- SNMP management IP сам по себе не делает L2 switch роутером; router role требует подтверждённого gateway evidence или нескольких distinct connected L3 prefixes;
 - historical topology diff между retained audits;
 - conservative cross-audit identity: MAC → IP; одинаковый hostname сам по себе не считается доказательством одного устройства;
 - изменение audit-local asset UUID не создаёт ложный `removed + added`, если стабильная identity подтверждена;
@@ -209,25 +222,29 @@ VLAN-filter не должен назначать устройства VLAN «п�
 - source-health проверяет, что сохранённые SNMP/route-trace artifacts действительно вошли в topology; пропуск evidence становится видимым оператору, но один повреждённый исторический artifact не валит всю карту;
 - legacy job-less SNMP не объявляется повреждённым без достаточного target/evidence контекста.
 
-WireScope не угадывает невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP/FDB/switch-port или иным evidence, оно отображается только как логическая/предполагаемая связь.
+WireScope не должен угадывать невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP/FDB/switch-port или иным evidence, оно отображается только как логическая/предполагаемая связь.
 
-### v1.2 live-validation checkpoint
+### v1.2 live-validation gate
 
-Подтверждено на установленной WireScope VM:
-- upgrade до финального M11.3 checkpoint проходит штатным `packaging/upgrade.sh`;
+Уже подтверждено на установленной WireScope VM:
+- upgrade предыдущего M11 checkpoint проходит штатным `packaging/upgrade.sh`;
 - dependencies, systemd units и SQLite migrations применяются успешно;
 - `wirescope-api` и `wirescope-worker` запускаются после upgrade;
 - `dumpcap` privilege path остаётся рабочим;
 - API health/ready/capabilities после upgrade проверены оператором без критических ошибок.
 
-Не проверялось на текущем стенде из-за отсутствия подходящего оборудования/сегмента:
-- реальные SNMP v2c/v3 запросы к управляемому switch/router;
-- реальные FDB/bridge tables и switch-port mapping;
-- node↔VLAN correlation на tagged/multi-VLAN стенде.
+До финального закрытия topology нужно проверить на реальном SNMP agent:
+- SNMPv3 либо SNMPv2c read-only job до состояния `completed`;
+- L3 router interface addresses/prefixes и построение connected subnet;
+- ARP/ND neighbor-cache projection;
+- если устройство поддерживает BRIDGE/Q-BRIDGE — реальные FDB, VLAN membership и switch-port mapping;
+- если устройство отдаёт LLDP — реальный neighbor/chassis/management-address correlation;
+- отсутствие ложной router/VLAN classification;
+- отображение VLAN focus и JSON export на фактически полученном evidence.
 
-Это зафиксировано как **deferred live validation**, а не как незавершённая реализация. Возвращаться к этим сценариям следует при появлении managed switch/router или VLAN testbed; до этого evidence semantics не изменяются на основании догадок.
+Если конкретный router/switch не реализует отдельный стандартный MIB subtree, это само по себе не ошибка WireScope: capability должен остаться false/empty, а карта строится из реально доступных источников. Vendor-specific MIB support добавляется только после подтверждения необходимости на живом устройстве и не должен подменять стандартные MIB догадками.
 
-Финальный M11 checkpoint проходит полный GitHub Actions pipeline: compileall, pytest, Chromium browser smoke, wheel build и smoke-test установленного wheel.
+После этого ставится финальный v1.2 topology checkpoint. Только затем начинается v1.3.
 
 ---
 
@@ -286,4 +303,4 @@ AI-вывод не создаёт WireScope finding автоматически. 
 
 ## Текущий следующий шаг
 
-**v1.3 Global Correlation Analysis:** создать отдельную milestone-ветку и начать детерминированный correlation engine поверх persisted inventory/report data, `traffic-analysis` и `network-topology`, без повторного сетевого I/O и без внешнего AI.
+**M11 final live SNMP/VLAN validation:** обновить WireScope VM до нового topology checkpoint, запустить read-only SNMP enrichment для management IP реального роутера, проверить IP-MIB interface/prefix и ARP/ND evidence; при наличии BRIDGE/Q-BRIDGE/LLDP дополнительно проверить FDB, switch-port и VLAN focus. Исправлять только подтверждённые live-agent interoperability проблемы. После зелёной live-проверки закрыть v1.2 и переходить к v1.3 Global Correlation Analysis.

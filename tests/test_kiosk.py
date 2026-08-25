@@ -192,7 +192,7 @@ def test_system_kiosk_unit_starts_on_tty1_after_api():
     assert "After=wirescope-api.service getty@tty1.service systemd-user-sessions.service" in kiosk
     assert "WantedBy=multi-user.target" in kiosk
     assert "Conflicts=getty@tty1.service" in kiosk
-    assert "OnFailure=getty@tty1.service" in kiosk
+    assert "OnFailure=getty@tty1.service" not in kiosk
     assert "TTYPath=/dev/tty1" in kiosk
     assert "PAMName=login" in kiosk
     assert "graphical.target" not in kiosk

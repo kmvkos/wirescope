@@ -31,7 +31,6 @@ APT_NONINTERACTIVE_OPTIONS: tuple[str, ...] = (
 
 FORBIDDEN_DEFAULT_PACKAGES = frozenset({"nuclei", "nikto", "nuclei-templates"})
 
-# role -> family -> candidate package names in preference order
 _REQUIRED: dict[str, dict[str, tuple[str, ...]]] = {
     "python3": {
         "debian": ("python3",),
@@ -141,10 +140,13 @@ _OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
         "rhel": ("ssh-audit",),
         "suse": ("ssh-audit",),
     },
+    "openssh-client": {
+        "debian": ("openssh-client",),
+        "rhel": ("openssh-clients",),
+        "suse": ("openssh",),
+    },
 }
 
-# Optional local operator console. Not a GNOME/XFCE/KDE desktop; skip if missing.
-# VMware: Xorg + vmware driver. Elsewhere: Cage, else xinit + Chromium --kiosk.
 _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
     "cage": {
         "debian": ("cage",),

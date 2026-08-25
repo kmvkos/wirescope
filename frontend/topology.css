@@ -7,7 +7,8 @@
 }
 
 .ws-topology-controls select {
-    min-width: min(420px, 72vw);
+    min-width: min(220px, 72vw);
+    flex: 1 1 190px;
 }
 
 .ws-topology-check {
@@ -49,6 +50,29 @@
 .ws-topology-meta {
     display: grid;
     gap: 8px;
+}
+
+.ws-topology-segments {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 8px;
+}
+
+.ws-topology-segment-card {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid rgba(101, 226, 213, 0.18);
+    border-radius: 12px;
+    background: rgba(15, 35, 54, 0.68);
+}
+
+.ws-topology-segment-card strong {
+    color: #dffcf9;
+}
+
+.ws-topology-segment-card span {
+    font-size: 0.8rem;
 }
 
 .ws-topology-overlay-note {
@@ -93,7 +117,8 @@
 
 .ws-topology-rel-communication { opacity: 0.44; }
 .ws-topology-rel-layer2_neighbor { opacity: 0.94; }
-.ws-topology-rel-default_gateway { opacity: 0.94; }
+.ws-topology-rel-default_gateway,
+.ws-topology-rel-segment_gateway { opacity: 0.94; }
 
 .ws-topology-node {
     cursor: pointer;
@@ -110,6 +135,12 @@
 
 .ws-topology-node-wirescope circle {
     fill: rgba(44, 163, 170, 0.24);
+    stroke: #65e2d5;
+    stroke-width: 3px;
+}
+
+.ws-topology-node-segment circle {
+    fill: rgba(32, 113, 134, 0.34);
     stroke: #65e2d5;
     stroke-width: 3px;
 }

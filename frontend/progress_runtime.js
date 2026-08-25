@@ -16,6 +16,12 @@
         udp_discovery: "Nmap проверяет выбранные UDP-порты",
     };
 
+    const PHASE_COPY = {
+        discovering_hosts: "ищем хосты",
+        scanning_tcp: "проверяем TCP-порты",
+        udp_discovery: "проверяем UDP-порты",
+    };
+
     function isExternalNmap(job) {
         return Boolean(
             job &&
@@ -52,9 +58,11 @@
             originalProgress(job, jobs);
             if (!isExternalNmap(job)) return;
 
+            const phase = document.getElementById("progress-stage");
             const ring = document.getElementById("progress-ring");
             const arc = document.getElementById("progress-ring-value");
             const label = document.getElementById("progress-ring-label");
+            if (phase) phase.textContent = PHASE_COPY[job.stage] || "активное сканирование";
             if (ring) {
                 ring.classList.add("indeterminate");
                 ring.setAttribute("aria-busy", "true");

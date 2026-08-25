@@ -12,16 +12,25 @@ import urllib.request
 from urllib.parse import urlparse
 
 
-def health_url(host: str | None = None, port: int | None = None) -> str:
+def health_url(
+    host: str | None = None,
+    port: int | None = None,
+    *,
+    tls: bool | None = None,
+) -> str:
     bind_host = host or os.getenv("WIRESCOPE_BIND_HOST", "127.0.0.1")
     if bind_host in {"0.0.0.0", "::"}:
         bind_host = "127.0.0.1"
     bind_port = port if port is not None else int(os.getenv("WIRESCOPE_BIND_PORT", "8000"))
-    tls = bool(
-        os.getenv("WIRESCOPE_TLS_CERTFILE", "").strip()
-        and os.getenv("WIRESCOPE_TLS_KEYFILE", "").strip()
+    tls_enabled = (
+        bool(
+            os.getenv("WIRESCOPE_TLS_CERTFILE", "").strip()
+            and os.getenv("WIRESCOPE_TLS_KEYFILE", "").strip()
+        )
+        if tls is None
+        else tls
     )
-    scheme = "https" if tls else "http"
+    scheme = "https" if tls_enabled else "http"
     return f"{scheme}://{bind_host}:{bind_port}/api/health"
 
 
@@ -36,7 +45,9 @@ def _ssl_context(url: str) -> ssl.SSLContext | None:
     return context
 
 
-def wait_ready(*, url: str, timeout_seconds: float = 60.0, interval: float = 0.25) -> None:
+def wait_ready(*, url: str, timeout_seconds: float = 60.0, interval: float = 0.25) -> bool:
+    """Return True once the health endpoint answers 2xx; fail on timeout."""
+
     deadline = time.monotonic() + timeout_seconds
     last_error = "not contacted"
     context = _ssl_context(url)
@@ -44,7 +55,7 @@ def wait_ready(*, url: str, timeout_seconds: float = 60.0, interval: float = 0.2
         try:
             with urllib.request.urlopen(url, timeout=2, context=context) as response:
                 if 200 <= response.status < 300:
-                    return
+                    return True
                 last_error = f"HTTP {response.status}"
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_error = str(exc)

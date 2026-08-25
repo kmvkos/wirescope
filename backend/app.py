@@ -192,6 +192,7 @@ def create_app(
                 f'<link rel="stylesheet" href="/static/modern.css?v={_UI_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/polish.css?v={_UI_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/report_management.css?v={_UI_ASSET_VERSION}">\n'
+                f'<link rel="stylesheet" href="/static/audit_management.css?v={_UI_ASSET_VERSION}">\n'
                 "</head>"
             ),
         )
@@ -205,6 +206,7 @@ def create_app(
             "</body>",
             (
                 f'<script src="/static/report_management.js?v={_UI_ASSET_VERSION}"></script>\n'
+                f'<script src="/static/audit_management.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/operations.js?v={_UI_ASSET_VERSION}"></script>\n'
                 "</body>"
             ),

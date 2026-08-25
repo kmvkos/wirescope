@@ -4,6 +4,7 @@ from topology.builder import TopologySourceError
 from topology.completeness import decorate_completeness
 from topology.findings import decorate_findings
 from topology.global_view import build_global_topology as _build_global_topology
+from topology.interface_gateway import decorate_interface_gateway
 from topology.presentation import decorate_presentation
 from topology.routing import decorate_global_routing_topology, decorate_routed_topology
 from topology.segmented import build_topology as _build_segmented_topology
@@ -28,6 +29,7 @@ def build_topology(services, audit_id: str, *, traffic_analysis_job_id: str | No
         audit_id,
         traffic_analysis_job_id=traffic_analysis_job_id,
     )
+    topology = decorate_interface_gateway(services, audit_id, topology)
     topology = decorate_routed_topology(topology)
     topology = decorate_upstream_topology(services, audit_id, topology)
     topology = decorate_snmp_topology(services, audit_id, topology)

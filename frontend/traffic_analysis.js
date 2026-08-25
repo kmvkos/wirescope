@@ -218,10 +218,11 @@
         const button = document.createElement("button");
         button.type = "button";
         button.className = "secondary traffic-analysis-button";
+        button.dataset.captureJobId = String(captureJobId);
         button.textContent = "Анализировать";
         button.addEventListener("click", (event) => {
             event.stopPropagation();
-            analyzeCapture(captureJobId);
+            analyzeCapture(String(button.dataset.captureJobId || ""));
         });
         return button;
     }
@@ -264,11 +265,19 @@
         const me = await currentUser();
         if (!me || me.role !== "auditor") return;
         let session;
-        try { session = await request("GET", `/captures/${encodeURIComponent(captureJobId)}`); } catch { return; }
+        try {
+            session = await request("GET", `/captures/${encodeURIComponent(captureJobId)}`);
+        } catch {
+            return;
+        }
         let button = document.getElementById("listen-analyze-button");
         if (!session.pcap_url || !TERMINAL.has(session.status)) {
             if (button) button.hidden = true;
             return;
+        }
+        if (button && button.dataset.captureJobId !== captureJobId) {
+            button.remove();
+            button = null;
         }
         if (!button) {
             button = analysisButton(captureJobId);
@@ -277,10 +286,6 @@
             parent.append(button);
         }
         button.hidden = false;
-        button.onclick = (event) => {
-            event.stopPropagation();
-            analyzeCapture(captureJobId);
-        };
     }
 
     function boot() {

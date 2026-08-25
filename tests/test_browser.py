@@ -36,7 +36,6 @@ def _playwright_chromium():
 
 
 def test_kiosk_viewport_shows_login_and_keeps_touch_targets(api_context, tmp_path):
-    playwright = pytest.importorskip("playwright.sync_api")
     html = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
     page_source = html.read_text(encoding="utf-8")
     assert all(f'data-screen="{name}"' in page_source for name in FRONTEND_SCREENS)
@@ -47,12 +46,14 @@ def test_kiosk_viewport_shows_login_and_keeps_touch_targets(api_context, tmp_pat
         app, _service, _evidence, _environment = api_context
         document = http_request(app, "GET", "/", auth=False).text
         css = http_request(app, "GET", "/static/style.css", auth=False).text
+
+        # The application cache-busts stylesheet URLs. Inline the baseline CSS
+        # instead of rewriting a literal href so this smoke remains valid across
+        # UI asset-version changes and does not depend on file:// static paths.
+        document = document.replace("</head>", f"<style>{css}</style>\n</head>", 1)
         target = tmp_path / "index.html"
-        target.write_text(
-            document.replace('href="/static/style.css"', f"href='{(tmp_path / 'style.css').as_uri()}'"),
-            encoding="utf-8",
-        )
-        (tmp_path / "style.css").write_text(css, encoding="utf-8")
+        target.write_text(document, encoding="utf-8")
+
         page.goto(target.as_uri())
         login = page.locator("#screen-login")
         assert login.count() == 1

@@ -38,6 +38,10 @@ class RecoveryService:
                     f"Only failed, interrupted, or cancelled jobs can be retried; "
                     f"job is {source_status.value}"
                 )
+            if source.type == "snmp_topology":
+                raise RetryNotAllowed(
+                    "SNMP topology jobs require fresh credentials; launch SNMP topology enrichment again from the topology screen"
+                )
 
             active = session.scalar(
                 select(JobModel.id)

@@ -33,7 +33,7 @@ def test_single_management_prefix_does_not_turn_l2_switch_into_router():
     result = guard_snmp_router_roles(topology)
     roles = result["nodes"][0]["roles"]
     assert "router" not in roles
-    assert "router-candidate" in roles
+    assert "router-candidate" not in roles
 
 
 def test_two_distinct_connected_prefixes_are_observed_router_evidence():

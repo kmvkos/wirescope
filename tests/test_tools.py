@@ -150,3 +150,21 @@ def test_tool_runner_streams_stderr_chunks(tmp_path):
     assert result.success is True
     assert "Packets captured: 3" in "".join(chunks)
     assert "Packets captured: 3" in result.stderr
+
+
+def test_tool_runner_streams_stdout_chunks():
+    chunks = []
+    result = ToolRunner().run(
+        ToolCommand(
+            tool=sys.executable,
+            args=[
+                "-c",
+                "import sys; sys.stdout.write('Discovered open port 443/tcp\\n'); sys.stdout.flush()",
+            ],
+            on_stdout=chunks.append,
+        )
+    )
+
+    assert result.success is True
+    assert "Discovered open port 443/tcp" in "".join(chunks)
+    assert "Discovered open port 443/tcp" in result.stdout

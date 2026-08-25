@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
+from typing import Any
 import uuid
 
 from pydantic import BaseModel, Field
@@ -16,8 +17,9 @@ from engine.routes import ResolvedScope
 from engine.scope import ValidatedScope
 from jobs.errors import JobCancelled, JobExecutionError
 from jobs.models import ErrorCategory, JobError, RetentionClass
-from parsers.nmap import NmapParseError, NmapScanDocument, parse_nmap_xml
+from parsers.nmap import NmapParseError, NmapScanDocument, live_targets, parse_nmap_xml
 from providers.nmap_progress import NmapProgressParser, NmapProgressSnapshot
+from providers.route_trace import RouteTraceProvider, representative_routed_targets
 from providers.tools import (
     CancellationToken,
     ToolCommand,
@@ -54,6 +56,7 @@ class NmapCommandPlan(BaseModel):
     privileged: bool
     skip_host_discovery: bool = False
     fallbacks: list[str] = Field(default_factory=list)
+    route_trace_routes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @dataclass
@@ -150,6 +153,13 @@ class NmapProvider:
                 str(target_file),
             ]
         )
+        route_trace_routes = []
+        if profile.name.value in {"standard", "deep"}:
+            route_trace_routes = [
+                route.model_dump(mode="json")
+                for route in resolved.routes
+                if not route.directly_connected
+            ]
         return NmapCommandPlan(
             args=args,
             xml_path=str(xml_path),
@@ -160,6 +170,7 @@ class NmapProvider:
             timing=profile.timing,
             privileged=capabilities.privileged,
             fallbacks=fallbacks,
+            route_trace_routes=route_trace_routes,
         )
 
     def build_tcp_scan(
@@ -564,6 +575,14 @@ class NmapProvider:
                 )
                 artifact_id = artifact.id
                 sha256 = artifact.sha256
+                self._persist_route_trace_if_needed(
+                    plan=plan,
+                    document=document,
+                    evidence_store=evidence_store,
+                    audit_id=audit_id,
+                    job_id=job_id,
+                    cancellation_token=cancellation_token,
+                )
             xml_path.unlink(missing_ok=True)
         return NmapRun(
             plan=plan,
@@ -571,6 +590,40 @@ class NmapProvider:
             document=document,
             xml_artifact_id=artifact_id,
             xml_sha256=sha256,
+        )
+
+    def _persist_route_trace_if_needed(
+        self,
+        *,
+        plan: NmapCommandPlan,
+        document: NmapScanDocument,
+        evidence_store: EvidenceStore,
+        audit_id: str,
+        job_id: str | None,
+        cancellation_token: CancellationToken | None,
+    ) -> None:
+        if plan.scan_kind != "host_discovery" or not plan.route_trace_routes:
+            return
+        targets = representative_routed_targets(
+            live_addresses=live_targets(document),
+            resolved_routes=plan.route_trace_routes,
+        )
+        if not targets:
+            return
+        interface = str(plan.route_trace_routes[0].get("interface") or "")
+        result = RouteTraceProvider(runner=self.runner).trace_many(
+            targets,
+            interface=interface,
+            cancellation_token=cancellation_token,
+        )
+        evidence_store.put_json(
+            audit_id=audit_id,
+            job_id=job_id,
+            artifact_type="route_trace_result",
+            document=result,
+            retention_class=RetentionClass.AUDIT,
+            schema_name="route-trace-result",
+            schema_version=1,
         )
 
     def write_target_file(

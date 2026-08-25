@@ -4,6 +4,7 @@ Documentation=file:///opt/wirescope/docs/INSTALLATION.md
 After=wirescope-api.service getty@tty1.service systemd-user-sessions.service
 Wants=wirescope-api.service
 Conflicts=getty@tty1.service
+# OnFailure=getty@tty1.service is intentionally omitted: it races Restart=on-failure for tty1.
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

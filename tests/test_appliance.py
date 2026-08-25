@@ -156,7 +156,7 @@ def test_systemd_units_have_no_secrets_and_keep_worker_uncapped():
     assert "PartOf=wirescope-worker" not in files["wirescope-kiosk.service"]
     assert "WantedBy=multi-user.target" in files["wirescope-kiosk.service"]
     assert "Conflicts=getty@tty1.service" in files["wirescope-kiosk.service"]
-    assert "OnFailure=getty@tty1.service" in files["wirescope-kiosk.service"]
+    assert "OnFailure=getty@tty1.service" not in files["wirescope-kiosk.service"]
     assert "graphical.target" not in files["wirescope-kiosk.service"]
     assert "appliance wait-ready" in files["wirescope-kiosk.service"]
     assert "PrivateTmp=" not in files["wirescope-kiosk.service"]

@@ -168,6 +168,8 @@ def operational_action(method: str, path: str) -> str | None:
         return "network.change"
     if path == "/api/audits" and method == "POST":
         return "audit.create"
+    if method == "DELETE" and re.fullmatch(r"/api/audits/[^/]+", path):
+        return "audit.delete"
     if path.startswith("/api/captures") and method == "POST":
         return "capture.change"
     if path.endswith("/retry") and path.startswith("/api/jobs/") and method == "POST":

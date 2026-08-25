@@ -8,6 +8,7 @@ from jobs.errors import JobExecutionError
 from jobs.models import ErrorCategory, JobError, JobProgress, RetentionClass
 from jobs.registry import HandlerContext, HandlerResult
 from persistence.models import ArtifactModel
+from traffic_analysis import ANALYZER_VERSION
 from traffic_analysis.advanced import merge_advanced
 from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
@@ -116,6 +117,7 @@ class TrafficAnalysisHandler:
             cancellation_token=context.cancellation_token,
             progress=progress,
         )
+        document["analyzer_version"] = ANALYZER_VERSION
         try:
             advanced = PortableAdvancedTrafficAnalyzer(settings=context.settings).analyze(
                 Path(pcap_path),
@@ -209,5 +211,6 @@ class TrafficAnalysisHandler:
                 "traffic_analysis_conversations": summary.get("conversation_count", 0),
                 "traffic_analysis_observations": len(document.get("observations") or []),
                 "advanced_diagnostics_status": (document.get("advanced_diagnostics") or {}).get("status"),
+                "analyzer_version": ANALYZER_VERSION,
             },
         )

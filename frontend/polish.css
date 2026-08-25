@@ -1,0 +1,350 @@
+/* WireScope visual polish layer.
+   Presentation only: no DOM/API contract changes, no external fonts/assets. */
+
+:root {
+    --ws-glow: rgba(94, 234, 212, .22);
+    --ws-glow-blue: rgba(56, 189, 248, .18);
+    --ws-glass: rgba(12, 24, 41, .76);
+    --ws-glass-strong: rgba(15, 30, 50, .93);
+    --ws-hairline: rgba(255, 255, 255, .055);
+}
+
+body::before,
+body::after {
+    content: "";
+    position: fixed;
+    pointer-events: none;
+    z-index: -1;
+    border-radius: 999px;
+    filter: blur(1px);
+}
+body::before {
+    width: 34vw;
+    height: 34vw;
+    min-width: 260px;
+    min-height: 260px;
+    left: -12vw;
+    top: 24vh;
+    background: radial-gradient(circle, rgba(45, 212, 191, .075), transparent 68%);
+}
+body::after {
+    width: 38vw;
+    height: 38vw;
+    min-width: 280px;
+    min-height: 280px;
+    right: -15vw;
+    bottom: -12vh;
+    background: radial-gradient(circle, rgba(56, 189, 248, .07), transparent 68%);
+}
+
+.app > header {
+    position: relative;
+    overflow: hidden;
+}
+.app > header::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(94,234,212,.48), rgba(56,189,248,.34), transparent);
+}
+
+h1 {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+h1::before {
+    content: "W";
+    width: 30px;
+    height: 30px;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 9px;
+    color: #04231f;
+    font-size: 15px;
+    font-weight: 900;
+    letter-spacing: -.08em;
+    background:
+        linear-gradient(145deg, rgba(255,255,255,.55), transparent 38%),
+        linear-gradient(135deg, #5eead4, #38bdf8);
+    box-shadow: 0 8px 24px rgba(45,212,191,.18), inset 0 0 0 1px rgba(255,255,255,.42);
+}
+
+.screen {
+    animation: ws-screen-in .22s ease-out both;
+}
+@keyframes ws-screen-in {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.screen > h2 {
+    position: relative;
+    padding-left: 12px;
+}
+.screen > h2::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .16em;
+    bottom: .16em;
+    width: 3px;
+    border-radius: 99px;
+    background: linear-gradient(180deg, var(--ws-primary), var(--ws-primary-2));
+    box-shadow: 0 0 16px var(--ws-glow);
+}
+
+.card,
+.item,
+.choice,
+.list-item,
+.stats-readout,
+details.advanced,
+.progress-hud {
+    position: relative;
+    overflow: hidden;
+}
+.card::before,
+.item::before,
+.choice::before,
+.list-item::before,
+.stats-readout::before,
+.progress-hud::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(120deg, rgba(255,255,255,.035), transparent 34%, transparent 72%, rgba(94,234,212,.018));
+}
+
+.card:hover,
+.item:hover,
+.list-item:hover {
+    border-color: rgba(148, 163, 184, .29);
+}
+
+.primary,
+.secondary,
+.danger,
+.icon-button,
+.choice {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+.primary::after,
+.secondary::after,
+.danger::after,
+.choice::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0;
+    background: linear-gradient(110deg, transparent 10%, rgba(255,255,255,.12), transparent 62%);
+    transform: translateX(-65%);
+    transition: opacity .2s ease, transform .38s ease;
+}
+.primary:hover::after,
+.secondary:hover::after,
+.danger:hover::after,
+.choice:hover::after {
+    opacity: 1;
+    transform: translateX(48%);
+}
+
+.primary {
+    text-shadow: 0 1px 0 rgba(255,255,255,.18);
+}
+.primary:focus-visible,
+.secondary:focus-visible,
+.danger:focus-visible,
+.icon-button:focus-visible,
+.choice:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(56,189,248,.18), 0 0 0 1px rgba(125,211,252,.9) inset;
+}
+
+#new-audit-button,
+#listen-button,
+#network-button,
+#password-button {
+    gap: 8px;
+}
+#new-audit-button::before { content: "+"; font-size: 20px; font-weight: 500; line-height: 1; }
+#listen-button::before { content: "◉"; font-size: 13px; color: var(--ws-primary); }
+#network-button::before { content: "⌁"; font-size: 18px; color: var(--ws-primary-2); }
+#password-button::before { content: "◇"; font-size: 14px; color: #c4b5fd; }
+
+#screen-home > .actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.choice-list {
+    gap: 9px;
+}
+.choice {
+    text-align: left;
+    padding: 13px 14px;
+}
+.choice strong {
+    letter-spacing: -.01em;
+}
+.choice.selected::after {
+    opacity: 1;
+    transform: none;
+    background: radial-gradient(500px 110px at 0 0, rgba(94,234,212,.12), transparent 60%);
+}
+
+.status.online::before {
+    animation: ws-online-pulse 2.2s ease-in-out infinite;
+}
+@keyframes ws-online-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(110,231,168,.08); }
+    50% { box-shadow: 0 0 0 7px rgba(110,231,168,.025), 0 0 13px rgba(110,231,168,.28); }
+}
+
+#screen-login form {
+    position: relative;
+    overflow: hidden;
+}
+#screen-login form::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--ws-primary), var(--ws-primary-2), transparent);
+}
+#screen-login form::after {
+    content: "LOCAL OPERATOR";
+    display: block;
+    margin-top: 13px;
+    color: rgba(158,172,192,.55);
+    font: 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+    letter-spacing: .16em;
+    text-align: center;
+}
+
+input,
+textarea,
+select {
+    caret-color: var(--ws-primary);
+}
+input::placeholder,
+textarea::placeholder { color: #64748b; opacity: .75; }
+
+.progress-hud {
+    background:
+        radial-gradient(260px 160px at 10% 0%, rgba(94,234,212,.09), transparent 70%),
+        linear-gradient(135deg, rgba(23,40,65,.96), rgba(14,29,49,.95));
+}
+.progress-ring-value {
+    filter: drop-shadow(0 0 5px rgba(94,234,212,.46));
+}
+.stage {
+    font-weight: 800;
+    letter-spacing: -.015em;
+}
+
+.job-list li,
+.event-list li {
+    transition: border-color .16s ease, background .16s ease, transform .12s ease;
+}
+.job-list li:hover,
+.event-list li:hover {
+    transform: translateX(2px);
+    border-color: rgba(94,234,212,.22);
+}
+
+.callout {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+.error,
+.warning,
+.callout {
+    backdrop-filter: blur(8px);
+}
+
+.modal {
+    animation: ws-modal-bg .16s ease both;
+}
+.dialog {
+    animation: ws-dialog-in .2s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes ws-modal-bg { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ws-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+
+.ws-insights,
+.ws-operations-panel {
+    backdrop-filter: blur(18px);
+}
+.ws-metric {
+    transition: transform .14s ease, border-color .16s ease;
+}
+.ws-metric:hover {
+    transform: translateY(-2px);
+    border-color: rgba(94,234,212,.22) !important;
+}
+.ws-table tbody tr {
+    transition: background .14s ease;
+}
+.ws-table tbody tr:hover { background: rgba(94,234,212,.035); }
+
+/* Kiosk: preserve usable density at 480x320 while still feeling polished. */
+@media (max-width: 560px) {
+    body::before,
+    body::after { opacity: .65; }
+    h1::before { width: 27px; height: 27px; border-radius: 8px; font-size: 14px; }
+    .screen { animation-duration: .16s; }
+    .screen > h2 { padding-left: 10px; }
+    #screen-home > .actions button { min-height: 48px; }
+    .choice { padding: 11px 12px; }
+    .card, .item, .list-item { box-shadow: 0 6px 18px rgba(0,0,0,.15); }
+}
+
+/* Desktop/browser: more spacious, dashboard-like presentation. */
+@media (min-width: 900px) {
+    body {
+        background:
+            radial-gradient(1100px 620px at 8% -12%, rgba(56,189,248,.17), transparent 64%),
+            radial-gradient(900px 540px at 98% 3%, rgba(94,234,212,.11), transparent 62%),
+            linear-gradient(145deg, #06101d 0%, #091524 44%, #07111f 100%);
+    }
+    .app > header {
+        border: 1px solid var(--ws-hairline);
+        border-radius: 17px;
+        padding: 13px 16px;
+        background: linear-gradient(135deg, rgba(14,29,49,.78), rgba(8,18,32,.64));
+        box-shadow: 0 18px 50px rgba(0,0,0,.17);
+    }
+    .screen > h2 { font-size: 30px; }
+    .card,
+    .item,
+    .choice,
+    .list-item,
+    .progress-hud {
+        box-shadow: 0 12px 34px rgba(0,0,0,.16);
+    }
+    #screen-login form {
+        padding: 24px;
+        border-radius: 22px;
+        box-shadow: 0 26px 80px rgba(0,0,0,.32);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .screen,
+    .dialog,
+    .modal,
+    .status.online::before { animation: none !important; }
+    .primary::after,
+    .secondary::after,
+    .danger::after,
+    .choice::after { transition: none !important; }
+}

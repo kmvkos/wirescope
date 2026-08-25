@@ -180,6 +180,8 @@ def operational_action(method: str, path: str) -> str | None:
         return "findings.generate"
     if path.endswith("/reports") and method == "POST":
         return "report.generate"
+    if "/reports/" in path and path.startswith("/api/audits/") and method == "DELETE":
+        return "report.delete"
     if path.startswith("/api/maintenance/") and method == "POST":
         return "maintenance.cleanup"
     if path.startswith("/api/audits/") and method == "POST":

@@ -26,6 +26,7 @@ def decorate_ssh_management(services, audit_id: str, topology: dict[str, Any]) -
         "port_links": stats["port_links"],
         "wifi_links": stats["wifi_links"],
         "connected_segments": stats["connected_segments"],
+        "vlan_ports": stats["vlan_ports"],
         "artifact_ids": artifact_ids,
         "provenance": ["credentialed-ssh-readonly"] if artifact_ids else [],
     }
@@ -50,6 +51,7 @@ def decorate_global_ssh_management(services, topology: dict[str, Any]) -> dict[s
         "port_links": stats["port_links"],
         "wifi_links": stats["wifi_links"],
         "connected_segments": stats["connected_segments"],
+        "vlan_ports": stats["vlan_ports"],
         "artifact_ids": sorted(set(artifact_ids)),
         "provenance": ["credentialed-ssh-readonly"] if artifact_ids else [],
     }
@@ -203,6 +205,12 @@ def _decorate_document(topology: dict[str, Any], document: dict[str, Any], artif
         stats["neighbors"] += 1
         aliases = _aliases(nodes)
 
+    vlan_ports = _vlan_port_map(document.get("vlans") or [])
+    if vlan_ports:
+        device["ssh_vlan_ports"] = [vlan_ports[name] for name in sorted(vlan_ports)]
+        _append(device, "provenance", "ssh-bridge-vlan")
+        stats["vlan_ports"] += len(vlan_ports)
+
     aliases = _aliases(nodes)
     for fdb in document.get("fdb") or []:
         if not isinstance(fdb, dict):
@@ -214,10 +222,31 @@ def _decorate_document(topology: dict[str, Any], document: dict[str, Any], artif
         endpoint_id = aliases["mac"].get(mac)
         if endpoint_id is None or endpoint_id == device_id:
             continue
-        vlan_id = fdb.get("vlan_id") if isinstance(fdb.get("vlan_id"), int) else None
-        edge_id = f"edge:ssh-fdb:{target}:{mac}:{_safe(port)}:{vlan_id or 'none'}"
+
+        port_vlan = vlan_ports.get(port) or {
+            "port": port,
+            "pvid": None,
+            "tagged_vlans": [],
+            "untagged_vlans": [],
+            "port_mode": "unknown",
+        }
+        exact_vlan = fdb.get("vlan_id") if isinstance(fdb.get("vlan_id"), int) else None
+        effective_vlan = exact_vlan
+        vlan_source = "fdb" if exact_vlan is not None else None
+        if effective_vlan is None and port_vlan["port_mode"] == "access":
+            candidates = set(port_vlan["untagged_vlans"])
+            if port_vlan["pvid"] is not None:
+                candidates.add(port_vlan["pvid"])
+            if len(candidates) == 1:
+                effective_vlan = next(iter(candidates))
+                vlan_source = "unambiguous_access_port"
+
+        edge_id = f"edge:ssh-fdb:{target}:{mac}:{_safe(port)}:{effective_vlan if effective_vlan is not None else 'none'}"
         if not any(edge.get("id") == edge_id for edge in edges):
             endpoint = _node(nodes, endpoint_id) or {}
+            provenance = ["ssh-bridge-fdb", "credentialed-ssh-readonly"]
+            if vlan_source == "unambiguous_access_port":
+                provenance.append("ssh-bridge-vlan")
             edges.append({
                 "id": edge_id,
                 "source": device_id,
@@ -226,24 +255,29 @@ def _decorate_document(topology: dict[str, Any], document: dict[str, Any], artif
                 "mapping_type": "switch_port",
                 "layer": "l2",
                 "confidence": "observed",
-                "provenance": ["ssh-bridge-fdb", "credentialed-ssh-readonly"],
+                "provenance": provenance,
                 "segment_ids": sorted(set((device.get("segment_ids") or []) + (endpoint.get("segment_ids") or []))),
                 "port_name": port,
                 "port_id": port,
-                "vlan_ids": [vlan_id] if vlan_id is not None else [],
+                "port_mode": port_vlan["port_mode"],
+                "pvid": port_vlan["pvid"],
+                "tagged_vlans": port_vlan["tagged_vlans"],
+                "untagged_vlans": port_vlan["untagged_vlans"],
+                "vlan_ids": [effective_vlan] if effective_vlan is not None else [],
+                "vlan_source": vlan_source,
                 "mac": mac,
                 "artifact_id": artifact_id,
             })
             stats["port_links"] += 1
-        if vlan_id is not None:
+
+        # Endpoint VLAN membership is asserted only by an exact FDB VLAN or by
+        # an unambiguous single-VLAN access port.  A trunk/hybrid never forces
+        # one arbitrary VLAN onto the endpoint.
+        if effective_vlan is not None:
             endpoint = _node(nodes, endpoint_id)
             if endpoint is not None:
-                _append(endpoint, "vlan_ids", vlan_id)
-                _append(endpoint, "provenance", "ssh-bridge-fdb")
-
-    if document.get("vlans"):
-        device["ssh_vlan_ports"] = document.get("vlans")
-        _append(device, "provenance", "ssh-bridge-vlan")
+                _append(endpoint, "vlan_ids", effective_vlan)
+                _append(endpoint, "provenance", "ssh-bridge-fdb" if exact_vlan is not None else "ssh-bridge-vlan")
 
     aliases = _aliases(nodes)
     for association in document.get("wifi_associations") or []:
@@ -334,6 +368,38 @@ def _decorate_document(topology: dict[str, Any], document: dict[str, Any], artif
             _append(topology, "warnings", str(warning))
 
 
+def _vlan_port_map(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        port = str(row.get("port") or "")
+        if not port:
+            continue
+        tagged = sorted({value for value in (row.get("tagged_vlans") or []) if isinstance(value, int)})
+        untagged = sorted({value for value in (row.get("untagged_vlans") or []) if isinstance(value, int)})
+        pvid = row.get("pvid") if isinstance(row.get("pvid"), int) else None
+        members = set(tagged) | set(untagged)
+        if pvid is not None:
+            members.add(pvid)
+        if len(members) == 1:
+            mode = "access"
+        elif len(members) > 1 and len(untagged) <= 1:
+            mode = "trunk"
+        elif len(members) > 1:
+            mode = "hybrid"
+        else:
+            mode = "unknown"
+        result[port] = {
+            "port": port,
+            "pvid": pvid,
+            "tagged_vlans": tagged,
+            "untagged_vlans": untagged,
+            "port_mode": mode,
+        }
+    return result
+
+
 def _ensure_segment(topology: dict[str, Any], network: str, *, interface: str, provenance: str) -> dict[str, Any]:
     segments = topology.setdefault("segments", [])
     segment_id = f"segment:{network}"
@@ -392,7 +458,7 @@ def _norm_ip(value: Any) -> str | None:
         return None
 
 
-def _norm_interface(value: Any) -> ipaddress._BaseNetwork | ipaddress._BaseAddress | None:
+def _norm_interface(value: Any):
     try:
         return ipaddress.ip_interface(str(value or ""))
     except ValueError:

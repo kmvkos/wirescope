@@ -6,6 +6,7 @@ import shutil
 from sqlalchemy import delete, select
 
 from backend.snmp_credentials import SnmpCredentialSpool
+from backend.ssh_credentials import SshCredentialSpool
 from config.settings import Settings
 from jobs.models import JobStatus
 from persistence.database import Database
@@ -34,6 +35,11 @@ class MaintenanceService:
                 self._cleanup_stale_capture_directories()
             ),
             "stale_snmp_credentials": SnmpCredentialSpool(
+                self.settings
+            ).cleanup_stale(
+                max_age_seconds=self.settings.temp_file_max_age_seconds,
+            ),
+            "stale_ssh_topology_credentials": SshCredentialSpool(
                 self.settings
             ).cleanup_stale(
                 max_age_seconds=self.settings.temp_file_max_age_seconds,

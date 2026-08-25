@@ -27,7 +27,7 @@ from reports.store import ReportStore
 from storage.evidence import EvidenceStore
 
 
-_UI_ASSET_VERSION = "20260825-ui12"
+_UI_ASSET_VERSION = "20260825-ui13"
 
 
 def create_app(
@@ -195,6 +195,7 @@ def create_app(
                 f'<link rel="stylesheet" href="/static/audit_management.css?v={_UI_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/traffic_analysis.css?v={_UI_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/topology.css?v={_UI_ASSET_VERSION}">\n'
+                f'<link rel="stylesheet" href="/static/snmp_topology.css?v={_UI_ASSET_VERSION}">\n'
                 "</head>"
             ),
         )
@@ -211,6 +212,7 @@ def create_app(
                 f'<script src="/static/audit_management.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/traffic_analysis.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology.js?v={_UI_ASSET_VERSION}"></script>\n'
+                f'<script src="/static/snmp_topology.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_tab.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/operations.js?v={_UI_ASSET_VERSION}"></script>\n'
                 "</body>"

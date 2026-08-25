@@ -26,7 +26,7 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui7" in page.text
+    assert "?v=20260825-ui8" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 

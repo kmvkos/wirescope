@@ -27,7 +27,7 @@ GET /api/v1/diagnostics/export
 
 `/health` отвечает только на вопрос «API-процесс жив?». `/ready` проверяет SQLite, актуальность миграций, worker и обязательные для базовой работы `dumpcap`/`tshark`.
 
-Отсутствие optional provider, например `ssh-audit` или `smbclient`, не делает весь appliance `not_ready`. Полный список возможностей и обнаруженных бинарников возвращает `/capabilities`.
+Отсутствие optional provider, например `ssh-audit`, `openssh-client` или `smbclient`, не делает весь appliance `not_ready`. Полный список возможностей и обнаруженных бинарников возвращает `/capabilities`.
 
 `/diagnostics` — расширенный снимок для эксплуатации. В нём есть версия/платформа, listener, runtime checks, capabilities, SQLite `quick_check`, disk/evidence usage, retention и последние operational events. `/diagnostics/export` отдаёт тот же безопасный снимок JSON-файлом. Эти endpoints доступны только `auditor`.
 
@@ -72,6 +72,24 @@ GET /api/v1/audits/{audit_id}/observations
 
 Inventory остаётся нормализованным source of truth. Device classification (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`) — это hint с confidence и источниками сигнала, а не finding.
 
+## Network Topology
+
+```text
+GET  /api/v1/audits/{audit_id}/topology
+GET  /api/v1/topology/global
+GET  /api/v1/audits/{audit_id}/topology/compare?against={baseline_audit_id}
+POST /api/v1/audits/{audit_id}/topology/snmp
+POST /api/v1/audits/{audit_id}/topology/ssh
+```
+
+`GET .../topology` строится из persisted normalized evidence и может принимать `traffic_analysis_job_id` для явно выбранного Traffic Analysis overlay. Ответ содержит canonical graph, presentation metadata, `coverage`, warnings и `partial/source_errors`, если часть ожидаемого evidence недоступна.
+
+`topology/compare` использует только сохранённые данные и не запускает scanner, traceroute, SNMP или SSH.
+
+SNMP/SSH enrichment — mutating auditor-only operations. Management target должен находиться внутри operator-confirmed active scope того же audit interface. Credentials передаются worker через ephemeral consume-once spool; plaintext secret material не записывается в topology evidence или обычные job parameters. SSH дополнительно требует strict host-key verification и не принимает произвольную remote-команду.
+
+Полная модель evidence/claimability описана в [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
+
 ## Jobs и recovery
 
 ```text
@@ -84,6 +102,8 @@ GET  /api/v1/jobs/{job_id}/result
 ```
 
 `retry` разрешён только для `failed`, `interrupted` и `cancelled` jobs. Историческая job остаётся неизменной; WireScope создаёт новую queued job с теми же параметрами и связывает обе записи через job events.
+
+Исключение — credentialed management jobs `snmp_topology` и `ssh_topology`: их нельзя повторно поставить в очередь со старым consume-once `credential_ref`. Оператор запускает enrichment заново и предоставляет свежие credentials.
 
 Это stage-level recovery. WireScope не пытается продолжить умерший subprocess с внутренней точки выполнения.
 
@@ -164,7 +184,7 @@ Cleanup использует явный двухшаговый контракт:
 - `GET /health`, `/status`, `/ready`;
 - `POST /auth/login`, `/auth/logout`.
 
-Остальные routes требуют локальную session. Обычные mutating endpoints требуют роль `auditor`; `viewer` может читать audits, inventory, findings, reports, diff и evidence. Operational audit log, diagnostics и maintenance доступны только auditor.
+Остальные routes требуют локальную session. Обычные mutating endpoints требуют роль `auditor`; `viewer` может читать audits, inventory, findings, reports, diff, topology и evidence. Operational audit log, diagnostics и maintenance доступны только auditor.
 
 Сессия хранится в HttpOnly cookie. Подробнее: [SECURITY_MODEL.md](SECURITY_MODEL.md).
 

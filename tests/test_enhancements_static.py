@@ -29,7 +29,7 @@ def test_operator_insights_assets_are_loaded_by_root_page(api_context):
     assert page.text.count('/static/operations.js') == 1
     assert page.text.count('/static/modern.css') == 1
     assert page.text.count('/static/polish.css') == 1
-    assert "?v=20260825-ui9" in page.text
+    assert "?v=20260825-ui10" in page.text
     assert page.headers["cache-control"] == "no-store, max-age=0"
 
 
@@ -59,15 +59,20 @@ def test_polish_layer_is_presentation_only_and_responsive():
     assert "url(" not in polish  # no remote fonts/images in the appliance UI
 
 
-def test_long_nmap_stage_is_presented_as_indeterminate_not_fake_percent():
+def test_long_nmap_stage_shows_live_results_without_fake_overall_percent():
     runtime = (FRONTEND / "progress_runtime.js").read_text(encoding="utf-8")
     insights = (FRONTEND / "enhancements.js").read_text(encoding="utf-8")
 
     assert '"discovering_hosts"' in runtime
     assert '"scanning_tcp"' in runtime
+    assert '"fingerprinting_services"' in runtime
     assert '"udp_discovery"' in runtime
     assert 'label.textContent = "…"' in runtime
     assert 'meta.textContent = "идёт"' in runtime
+    assert 'progress-live-result' in runtime
+    assert 'raw.startsWith("Nmap live")' in runtime
+    assert 'Nmap проверяет TCP-порты найденных хостов' in runtime
+    assert 'только на найденных открытых TCP-портах' in runtime
     assert 'discovery: "Поиск устройств"' in insights
     assert 'findings: "Выводы"' in insights
     assert 'externalNmapStage(item)' in insights

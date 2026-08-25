@@ -18,6 +18,10 @@ _TOOL_SPECS = (
     ("dns_audit", "dig", "dig_binary", False),
     ("smb_audit", "smbclient", "smbclient_binary", False),
     ("snmp_audit", "snmpget", "snmpget_binary", False),
+    # Net-SNMP ships snmpbulkwalk together with snmpget.  Keep it optional and
+    # separate so diagnostics can explain why protocol SNMP probing works while
+    # topology enrichment does not.
+    ("snmp_topology", "snmpbulkwalk", None, False),
     ("ldap_audit", "ldapsearch", "ldapsearch_binary", False),
 )
 
@@ -25,7 +29,7 @@ _TOOL_SPECS = (
 def capability_inventory(settings: Settings) -> dict[str, Any]:
     tools: list[dict[str, Any]] = []
     for capability, label, setting_name, required in _TOOL_SPECS:
-        configured = str(getattr(settings, setting_name))
+        configured = str(getattr(settings, setting_name)) if setting_name else label
         resolved = shutil.which(configured)
         tools.append(
             {

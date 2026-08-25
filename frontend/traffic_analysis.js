@@ -80,6 +80,14 @@
                     <a id="traffic-analysis-json" class="button secondary" href="#">JSON</a>
                     <button id="traffic-analysis-stop" type="button" class="danger" hidden>Стоп</button>
                 </div>
+                <div id="traffic-analysis-compare" class="traffic-analysis-compare" hidden>
+                    <label for="traffic-analysis-compare-select">Сравнить с другим PCAP-анализом</label>
+                    <div class="traffic-analysis-compare-row">
+                        <select id="traffic-analysis-compare-select"></select>
+                        <button id="traffic-analysis-compare-run" type="button" class="secondary">Сравнить</button>
+                        <button id="traffic-analysis-compare-back" type="button" class="secondary" hidden>Вернуться к отчёту</button>
+                    </div>
+                </div>
                 <pre id="traffic-analysis-report" class="traffic-analysis-report">Запускаем анализ…</pre>
             </section>
         `;
@@ -98,6 +106,12 @@
             } catch (error) {
                 showError(`Не удалось остановить анализ: ${error.message}`);
             }
+        });
+        document.getElementById("traffic-analysis-compare-run").addEventListener("click", runComparison);
+        document.getElementById("traffic-analysis-compare-back").addEventListener("click", async () => {
+            if (!activeAnalysisJobId) return;
+            document.getElementById("traffic-analysis-compare-back").hidden = true;
+            await showCompleted(activeAnalysisJobId, false);
         });
         return modal;
     }
@@ -122,6 +136,7 @@
         document.body.classList.add("traffic-analysis-open");
         showError("");
         document.getElementById("traffic-analysis-actions").hidden = true;
+        document.getElementById("traffic-analysis-compare").hidden = true;
         document.getElementById("traffic-analysis-report").textContent = "Запускаем анализ сохранённого PCAP…";
         document.getElementById("traffic-analysis-progress-fill").style.width = "0%";
     }
@@ -150,7 +165,66 @@
         stop.textContent = "Стоп";
     }
 
-    async function showCompleted(jobId) {
+    function analysisLabel(item) {
+        const date = item.created_at ? new Date(item.created_at).toLocaleString() : "без даты";
+        const iface = item.interface || "interface —";
+        return `${date} · ${iface} · ${String(item.job_id || "").slice(0, 8)}`;
+    }
+
+    async function prepareComparison(jobId) {
+        const box = document.getElementById("traffic-analysis-compare");
+        const select = document.getElementById("traffic-analysis-compare-select");
+        const back = document.getElementById("traffic-analysis-compare-back");
+        box.hidden = true;
+        back.hidden = true;
+        select.innerHTML = "";
+        try {
+            const page = await request("GET", "/traffic-analysis?limit=50");
+            const alternatives = ((page && page.items) || []).filter((item) => item.job_id && item.job_id !== jobId);
+            if (!alternatives.length) return;
+            alternatives.forEach((item) => {
+                const option = document.createElement("option");
+                option.value = String(item.job_id);
+                option.textContent = analysisLabel(item);
+                select.append(option);
+            });
+            box.hidden = false;
+        } catch {
+            box.hidden = true;
+        }
+    }
+
+    async function runComparison() {
+        if (!activeAnalysisJobId) return;
+        const select = document.getElementById("traffic-analysis-compare-select");
+        const against = String(select.value || "");
+        if (!against) return;
+        const button = document.getElementById("traffic-analysis-compare-run");
+        const back = document.getElementById("traffic-analysis-compare-back");
+        const report = document.getElementById("traffic-analysis-report");
+        button.disabled = true;
+        showError("");
+        try {
+            const response = await fetch(
+                `${API}/jobs/${encodeURIComponent(activeAnalysisJobId)}/traffic-analysis/compare?against=${encodeURIComponent(against)}&format=text`,
+                { credentials: "same-origin", headers: { "Accept": "text/plain" } }
+            );
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || `HTTP ${response.status}`);
+            }
+            report.textContent = await response.text();
+            document.getElementById("traffic-analysis-state").textContent = "Сравнение PCAP готово";
+            document.getElementById("traffic-analysis-message").textContent = "Baseline → текущий анализ";
+            back.hidden = false;
+        } catch (error) {
+            showError(`Не удалось сравнить анализы: ${error.message}`);
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async function showCompleted(jobId, refreshComparison = true) {
         const report = document.getElementById("traffic-analysis-report");
         const actions = document.getElementById("traffic-analysis-actions");
         const txt = document.getElementById("traffic-analysis-txt");
@@ -160,6 +234,8 @@
         md.href = exportUrl(jobId, "markdown");
         json.href = exportUrl(jobId, "json");
         actions.hidden = false;
+        document.getElementById("traffic-analysis-state").textContent = "Анализ готов";
+        document.getElementById("traffic-analysis-message").textContent = "Результат сформирован из сохранённого PCAP";
         try {
             const response = await fetch(exportUrl(jobId, "text"), {
                 credentials: "same-origin",
@@ -170,6 +246,7 @@
         } catch (error) {
             report.textContent = `Анализ завершён, но текстовое представление не загрузилось: ${error.message}`;
         }
+        if (refreshComparison) await prepareComparison(jobId);
     }
 
     async function pollAnalysis(jobId) {

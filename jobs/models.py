@@ -1,10 +1,31 @@
 """Typed durable job domain contracts."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _as_utc(value: Any) -> Any:
+    """SQLite may return timezone-aware columns as naive UTC datetimes.
+
+    Persisted WireScope timestamps are UTC. Re-attaching UTC at the domain
+    boundary makes API JSON unambiguous (``Z``/``+00:00``) instead of letting
+    browsers interpret a naive UTC clock value as local time.
+    """
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    return value
+
+
+class UtcModel(BaseModel):
+    @field_validator("*", mode="before")
+    @classmethod
+    def normalize_datetime_fields(cls, value: Any) -> Any:
+        return _as_utc(value)
 
 
 class AuditStatus(str, Enum):
@@ -52,7 +73,7 @@ class RetentionClass(str, Enum):
     REPORT = "report"
 
 
-class JobError(BaseModel):
+class JobError(UtcModel):
     code: str
     category: ErrorCategory
     message: str
@@ -61,13 +82,13 @@ class JobError(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-class JobProgress(BaseModel):
+class JobProgress(UtcModel):
     percentage: int = Field(ge=0, le=100)
     stage: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=512)
 
 
-class AuditRecord(BaseModel):
+class AuditRecord(UtcModel):
     id: str
     created_at: datetime
     started_at: datetime | None
@@ -82,7 +103,7 @@ class AuditRecord(BaseModel):
     error: dict[str, Any] | None
 
 
-class JobRecord(BaseModel):
+class JobRecord(UtcModel):
     id: str
     audit_id: str
     type: str
@@ -110,7 +131,7 @@ class JobRecord(BaseModel):
         return self.result_reference is not None
 
 
-class JobEventRecord(BaseModel):
+class JobEventRecord(UtcModel):
     id: int
     audit_id: str
     job_id: str
@@ -122,7 +143,7 @@ class JobEventRecord(BaseModel):
     details: dict[str, Any]
 
 
-class ArtifactRecord(BaseModel):
+class ArtifactRecord(UtcModel):
     id: str
     audit_id: str
     job_id: str | None

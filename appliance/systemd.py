@@ -177,7 +177,11 @@ def render_kiosk_unit(paths: InstallPaths, *, user_session: bool = False) -> str
         # Do not use OnFailure=getty here: systemd enters failed state before
         # Restart=on-failure is processed, so OnFailure would race the kiosk
         # restart for tty1 and can cancel the restart transaction.
-        conflicts = "Conflicts=getty@tty1.service\n"
+        conflicts = (
+            "Conflicts=getty@tty1.service\n"
+            "# OnFailure=getty@tty1.service is intentionally omitted: "
+            "it races Restart=on-failure for tty1.\n"
+        )
         tty = (
             "PAMName=login\n"
             "TTYPath=/dev/tty1\n"

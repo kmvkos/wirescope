@@ -45,8 +45,13 @@ def _ssl_context(url: str) -> ssl.SSLContext | None:
     return context
 
 
-def wait_ready(*, url: str, timeout_seconds: float = 60.0, interval: float = 0.25) -> bool:
-    """Return True once the health endpoint answers 2xx; fail on timeout."""
+def wait_ready(url: str, timeout_seconds: float = 60.0, interval: float = 0.25) -> bool:
+    """Return True once the health endpoint answers 2xx; fail on timeout.
+
+    ``url`` intentionally accepts both positional and keyword calls because the
+    appliance CLI and the standalone ``python -m appliance.wait`` entrypoint
+    share this helper.
+    """
 
     deadline = time.monotonic() + timeout_seconds
     last_error = "not contacted"

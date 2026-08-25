@@ -140,7 +140,7 @@ def test_topology_warns_when_operator_overlays_another_interface():
     assert any("ens99" in warning and "ens37" in warning for warning in topology["warnings"])
 
 
-def test_topology_api_returns_base_map_for_empty_audit(api_context):
+def test_topology_api_returns_segment_aware_base_map_for_empty_audit(api_context):
     app, service, _evidence, _environment = api_context
     audit = service.create_audit(
         profile="deep",
@@ -153,9 +153,20 @@ def test_topology_api_returns_base_map_for_empty_audit(api_context):
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["schema"] == "network-topology"
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
+    assert data["model"] == "segment-aware"
     assert data["audit"]["id"] == audit.id
     assert any(node["kind"] == "wirescope" for node in data["nodes"])
+    assert "layers" in data
+
+
+def test_global_topology_api_exists(api_context):
+    app, _service, _evidence, _environment = api_context
+    response = request(app, "GET", "/api/v1/topology/global", as_role="viewer")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["schema"] == "network-topology-global"
+    assert data["model"] == "cross-audit-segments"
 
 
 def test_topology_api_rejects_unknown_overlay(api_context):

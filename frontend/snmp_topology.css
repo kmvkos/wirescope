@@ -1,0 +1,101 @@
+.ws-snmp-topology-panel {
+    margin: 0 0 18px;
+    padding: 18px;
+    border-radius: 18px;
+}
+
+.ws-snmp-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 14px;
+}
+
+.ws-snmp-heading h3 {
+    margin: 0 0 4px;
+}
+
+.ws-snmp-heading p {
+    margin: 0;
+}
+
+.ws-snmp-metric {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    border: 1px solid var(--border, rgba(255,255,255,.12));
+    border-radius: 999px;
+    font-size: .82rem;
+    white-space: nowrap;
+}
+
+.ws-snmp-form {
+    display: grid;
+    gap: 12px;
+}
+
+.ws-snmp-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ws-snmp-core {
+    grid-template-columns: minmax(180px, 2fr) minmax(150px, 1fr);
+}
+
+.ws-snmp-field {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+}
+
+.ws-snmp-field > span {
+    font-size: .78rem;
+    opacity: .78;
+}
+
+.ws-snmp-field input,
+.ws-snmp-field select {
+    width: 100%;
+    min-width: 0;
+}
+
+.ws-snmp-status {
+    min-height: 1.3em;
+    margin: 0;
+    font-size: .88rem;
+}
+
+@media (max-width: 760px) {
+    .ws-snmp-heading {
+        display: grid;
+    }
+
+    .ws-snmp-metric {
+        width: fit-content;
+        white-space: normal;
+    }
+
+    .ws-snmp-fields,
+    .ws-snmp-core {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .ws-snmp-topology-panel {
+        padding: 13px;
+        border-radius: 15px;
+    }
+
+    .ws-snmp-fields,
+    .ws-snmp-core {
+        grid-template-columns: 1fr;
+    }
+
+    .ws-snmp-form .actions button {
+        width: 100%;
+        min-height: 46px;
+    }
+}

@@ -4,7 +4,7 @@
 
 WireScope is a local modular monolith for network inventory, diagnostics, and auditing. API, worker, SQLite, evidence storage, and the browser UI form one Linux appliance without Redis, Celery, or internal network microservices.
 
-The main design rule is **persist facts first, interpret them afterwards**. Packet sensors, Nmap, and protocol providers create observations/evidence. Assessment, classification, and findings logic operate on those persisted facts.
+The main design rule is **persist facts first, interpret them afterwards**. Packet sensors, Nmap, protocol providers, and management-plane providers create observations/evidence. Inventory, topology, assessment, classification, findings, and reports operate on those persisted facts.
 
 ## High-level layout
 
@@ -14,14 +14,11 @@ browser / kiosk
       ▼
 FastAPI /api/v1
       │
-      ├── routers
-      │    ├── auth / system / network / scope
-      │    ├── audits / jobs / captures
-      │    ├── inventory / protocol / findings / reports
-      │    ├── insights
-      │    └── operations
-      │
-      ├── domain / lifecycle services
+      ├── auth / network / scope
+      ├── audits / jobs / captures
+      ├── inventory / protocol / findings / reports
+      ├── traffic analysis / topology
+      ├── diagnostics / lifecycle / audit log
       │
       ├──────── SQLite WAL
       │
@@ -33,44 +30,51 @@ FastAPI /api/v1
                     ├── packet capture
                     ├── active discovery
                     ├── protocol audits
+                    ├── traffic analysis
+                    ├── SNMP/SSH topology enrichment
                     ├── findings evaluation
                     └── report generation
 ```
 
-API and worker are separate processes. The browser/kiosk is a client of durable state; restarting Chromium does not alter job lifecycle.
+API and worker are separate processes. The browser/kiosk is a durable API client; restarting Chromium does not alter job lifecycle.
 
 ## Backend composition
 
-`backend/app.py` is the composition root. It constructs `AppServices`, mounts routers, installs operational middleware, and serves the frontend.
+`backend/app.py` is the composition root. It constructs `AppServices`, mounts routers, installs middleware, and serves the frontend.
 
-The canonical API is `/api/v1/...`. `/api/...` remains a hidden compatibility alias using the same handlers, models, authorization, and scope checks.
+The canonical HTTP API is:
+
+```text
+/api/v1/...
+```
+
+`/api/...` remains a compatibility alias using the same handlers, models, authorization, and scope checks.
 
 ## Router layout
 
+Major domain routers live under `backend/routers/`:
+
 ```text
-backend/routers/
-├── auth.py
-├── system.py
-├── insights.py
-├── operations.py
-├── audits.py
-├── captures.py
-├── inventory.py
-├── protocol.py
-├── findings.py
-├── reports.py
-└── jobs.py
+auth.py
+system.py
+operations.py
+audits.py
+captures.py
+inventory.py
+protocol.py
+findings.py
+reports.py
+jobs.py
+topology.py
 ```
 
-`insights.py` provides read-only views such as capabilities, profiles, dashboard, correlations, diff, and audit-scoped evidence.
-
-`operations.py` exposes the appliance lifecycle surface: diagnostics, operational audit log, retention/cleanup, and durable job retry.
+`topology.py` exposes read-only canonical/global/history topology and auditor-only SNMP/SSH management enrichment.
 
 ## Environment, interfaces, and scope
 
-`engine/environment.py` discovers host state. `engine/interfaces.py` validates interfaces. `engine/routes.py` verifies the actual route/source for active targets. `engine/network.py` and `netctl` handle controlled host-network changes.
+`engine/environment.py` collects Linux host state, including interface context, routes, and available DHCP lease hints. `engine/interfaces.py` discovers and validates interfaces. `engine/routes.py` verifies route/source for active targets. `engine/network.py` and `netctl` handle controlled host-network changes.
 
-Observed network data and authorized scan scope remain separate:
+Observed network data and authorized scan scope always remain separate:
 
 ```text
 passive/environment evidence
@@ -83,8 +87,10 @@ immutable confirmed scope
         ↓
 worker revalidation
         ↓
-Nmap provider
+active provider
 ```
+
+A passively observed ARP host, DHCP server, LLDP neighbour, VLAN tag, or SNMP-discovered subnet never becomes an automatically authorized active target.
 
 ## Passive pipeline
 
@@ -102,7 +108,87 @@ in-process sensors
 assessment + inventory observations
 ```
 
-A PCAP is decoded once; sensors do not spawn one tshark process per protocol.
+A PCAP is decoded once; sensors do not spawn one `tshark` process per protocol.
+
+## Traffic Analysis
+
+A retained PCAP can be analyzed by a separate durable job without starting another capture.
+
+The `traffic-analysis` result contains diagnostics and a normalized communications graph. That graph can be explicitly attached to Network Topology through `traffic_analysis_job_id`; the latest PCAP is never mixed automatically.
+
+## Network Topology
+
+Topology is a backend domain over persisted evidence, not frontend state.
+
+```text
+persisted inventory / environment / passive / management / traffic
+                         ↓
+                 canonical topology
+                         ↓
+              coverage / claimability
+                         ↓
+       structural · L2 · L3 · Traffic · all evidence
+```
+
+Modules under `topology/` cover canonical graph assembly, upstream/route projection, SNMP projection, read-only SSH management projection, source health, coverage/claimability, structural presentation metadata, global retained-audit topology, and historical comparison.
+
+### Canonical graph and presentation
+
+Canonical topology retains the full evidence graph. Structural presentation does not rewrite the source of truth; it may hide or group directed broadcasts, link-local noise, and PCAP-only external endpoints so the main screen remains an infrastructure-oriented diagram.
+
+This provides both an operator-friendly map and complete JSON/evidence views.
+
+### Evidence sufficiency
+
+`coverage` is not a percentage of the real network discovered. It reports whether retained evidence supports claims about inventory, L3, L2, traffic, VLAN, Wi-Fi, and hypervisor context.
+
+Statuses are:
+
+```text
+sufficient
+partial
+missing
+```
+
+`missing` means “WireScope cannot prove this class of relationship,” not “the relationship does not exist.”
+
+### L3 and multi-homed hosts
+
+The gateway of the selected audit interface comes only from interface-specific persisted evidence:
+
+- per-interface default route;
+- DHCP router option;
+- management-plane evidence;
+- bounded route trace.
+
+A host-wide default route on another NIC is not projected into the selected audit network. Addresses such as `.1`, `.254`, or `.11` are never guessed.
+
+### Management-plane enrichment
+
+SNMP and SSH are optional active management sources and require operator-confirmed scope.
+
+SNMP consumes standard IF/IP/BRIDGE/Q-BRIDGE/LLDP MIBs when the target exposes them.
+
+The SSH provider targets Linux/OpenWrt-like devices and is not a generic remote shell. Remote commands are fixed to an `ip/bridge/iw` allowlist, strict host-key verification is mandatory, and no arbitrary operator command field exists.
+
+SNMP/SSH credentials use a consume-once runtime spool and are not persisted as plaintext topology evidence.
+
+A subnet learned through management evidence remains `active_scope=false`.
+
+### Source health
+
+If an expected job-backed route/SNMP/SSH artifact cannot be included, topology can remain readable while becoming explicitly partial:
+
+```json
+{
+  "partial": true,
+  "source_errors": []
+}
+```
+
+Errors are sanitized: credentials, filesystem paths, and raw exception text are not exposed.
+
+See [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md) for the full model.
 
 ## Jobs, persistence, and recovery
 
@@ -116,112 +202,77 @@ queued → running → completed
    └─────────────→ cancelled
 ```
 
-`JobService` owns state transitions. The worker claims jobs atomically. Resource locks and worker heartbeat live in SQLite.
+`JobService` owns transitions. The worker claims jobs atomically. Resource locks and heartbeat live in SQLite.
 
-If a process restart interrupts a running job, recovery marks it `interrupted` and releases stale locks. A terminal job is never rewritten back to queued. Explicit retry creates a new durable job using the same parameters:
+After restart, running jobs become `interrupted` and stale locks are released. Explicit retry creates a new durable job without rewriting the source history.
 
-```text
-failed/interrupted/cancelled job
-        │ operator retry
-        ▼
-new queued job
-```
+Credentialed `snmp_topology` and `ssh_topology` jobs are an exception to generic retry: old consume-once credential references are never reused; the operator starts enrichment again with fresh credentials.
 
-Source/replacement linkage is preserved in job events. This is stage-level recovery, not reconstruction of a dead subprocess.
-
-SQLite is the system of record for audits, jobs/events, scopes, inventory, observations, findings, users/sessions, reports, operational events, and artifact metadata. Connections use WAL, foreign keys, a busy timeout, and short transactions.
-
-## Operational audit log
-
-`backend/audit_log.py` stores append-only operational events separately from job events.
-
-Middleware records significant mutating HTTP operations after execution with actor/role, normalized API path, HTTP status, client IP, and audit id when available.
-
-Request bodies, passwords, cookies/session tokens, and provider output are never copied into the operational table.
-
-Logging failure does not turn an otherwise successful operator action into an outage; database and migration health are independently visible through diagnostics.
+SQLite is the system of record for audits, jobs/events, scopes, inventory, observations, findings, reports, users/sessions, operational events, and artifact metadata. Connections use WAL, foreign keys, busy timeout, and short transactions.
 
 ## Evidence store and retention
 
-PCAP, Nmap XML, protocol raw output, passive-result JSON, and generated reports live in the filesystem evidence store rather than relational BLOBs.
+PCAP, Nmap XML, protocol raw output, management results, and generated reports live in the filesystem evidence store while metadata lives in SQLite.
 
-Artifacts are written atomically and registered with UUID, size, and SHA-256. Canonical access is audit-scoped:
+Artifacts are written atomically and registered with UUID, size, and SHA-256. Clients never select filesystem paths directly.
+
+Canonical access is audit-scoped:
 
 ```text
 GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 ```
 
-`backend/lifecycle.py` separates normalized history from large raw artifacts. Inventory/findings/reports are not automatically deleted. Aged PCAP/Nmap XML/protocol output becomes a cleanup candidate and is removed only after explicit confirmation.
-
-Cleanup removes both the file and artifact metadata row. Preview mode changes nothing.
+Aged raw artifacts are removed only through explicit retention/cleanup. Normalized inventory/findings/reports are not automatically deleted.
 
 ## Inventory, correlation, and classification
 
-Identity correlation remains conservative: exact MAC, then exact IP; conflicts are preserved instead of silently merging assets. Hostnames remain provenance/signals rather than sufficient merge evidence.
+Identity correlation remains conservative:
 
-Device classification combines OS hints, vendor data, services/ports, and naming sources and stores a confidence-rated hint with explainable signals.
+1. exact MAC;
+2. exact IP;
+3. conflicts are preserved rather than hidden by aggressive merge.
 
-## Active scan profiles
+Hostname is additional signal/provenance, not sufficient identity evidence.
 
-Active profiles live in `config/active_profiles.json` and are loaded by `engine/active_profiles.py`.
+Device classification (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`) remains an explainable hint rather than a finding.
 
-```text
-GET /api/v1/scan-profiles
-```
+## Findings and reports
 
-Profiles define timing, TCP/UDP coverage, service/version detection, OS detection, and timeout. Clients cannot submit arbitrary Nmap argv.
+The findings engine consumes normalized observations/inventory and applies versioned rules to create findings with severity, confidence, rationale, recommendation, and evidence links.
+
+Report generation never contacts the network. `audit-report v1` JSON is canonical; HTML and Markdown are rendered from it.
+
+## Operational audit log
+
+Operational events are separate from job events. Stored fields include actor/role, action, normalized path, HTTP status, client IP, and audit id.
+
+Request bodies, passwords, session tokens/cookies, and provider stdout are not copied into the operational log.
 
 ## Capabilities, readiness, and diagnostics
 
-`backend/capabilities.py` builds runtime tool inventory. Core readiness requires SQLite/migrations, worker, and the base packet-capture tools; optional providers may be unavailable without making the entire appliance `not_ready`.
+`backend/capabilities.py` separates core readiness from optional providers.
+
+Core readiness requires SQLite/migrations, a healthy worker, and base packet-capture tools. Missing SNMP/SSH or another optional provider does not make the whole appliance `not_ready`.
 
 ```text
 GET /api/v1/capabilities
 GET /api/v1/diagnostics
+GET /api/v1/ready
 ```
-
-Diagnostics adds SQLite `quick_check`, disk/evidence usage, retention, platform/runtime checks, and recent operational events.
-
-## Dashboard and diff
-
-Dashboard derives state from persisted jobs, inventory, and findings:
-
-```text
-GET /api/v1/audits/{audit_id}/dashboard
-```
-
-Pipeline:
-
-```text
-passive → discovery → protocol → findings → report
-```
-
-Audit diff is also computed from persisted state:
-
-```text
-GET /api/v1/audits/{new_id}/diff?against={old_id}
-```
-
-## Findings and reports
-
-The findings engine consumes normalized observations/inventory and creates confidence-rated findings with evidence links. Report generation never contacts the network. `audit-report v1` JSON is canonical; self-contained HTML and Markdown are rendered from it.
 
 ## Frontend
 
-The primary wizard remains in `frontend/app.js`. Additional operator functionality is isolated:
+The frontend remains framework-free. The primary wizard lives in `frontend/app.js`; additional functionality is split into domain-specific modules.
 
-```text
-frontend/enhancements.js   dashboard / diff / evidence / Markdown
-frontend/operations.js     diagnostics / retention / retry / audit log
-```
+Topology UI uses a base renderer plus hardening/presentation extensions. Browser state is presentation-only; the source of truth remains backend/SQLite/evidence.
 
-This lets operator views evolve without rewriting the primary audit workflow.
+Root HTML uses cache-busting asset versions so kiosk Chromium does not keep stale topology JS/CSS after upgrade.
 
 ## Backup and restore
 
-`appliance/backup.py` uses the SQLite backup API so a consistent snapshot can be produced from a WAL database. Evidence can be copied with the database.
+`appliance/backup.py` uses the SQLite backup API to produce consistent snapshots from a WAL database. Evidence can be copied with the database.
 
-Restore verifies the backup with `PRAGMA integrity_check` before replacing the working database; evidence is restored separately.
+Restore validates the backup using `PRAGMA integrity_check` before replacing the working database.
 
 ## Privilege boundary
 
@@ -235,24 +286,26 @@ root:wireshark 0750
 cap_net_admin,cap_net_raw=eip
 ```
 
-The Python backend does not receive packet-capture capabilities, and WireScope does not elevate Nmap itself.
+The Python backend does not receive packet-capture capabilities. WireScope does not elevate Nmap itself. SNMP/SSH management providers also run in the worker without turning the API into a root process.
 
 ## Deployment
 
-Application settings, argparse, installer, and upgrade entrypoints default to:
+The normal appliance listens on:
 
 ```text
 0.0.0.0:8000
 ```
 
-The local kiosk still opens `http://127.0.0.1:8000/`. Loopback-only deployment remains an explicit option.
+The local kiosk opens `http://127.0.0.1:8000/`. Loopback-only deployment remains explicit.
 
-## CI and release boundary
+## CI and current boundary
 
-GitHub Actions on Python 3.11 installs the project, compiles Python sources, and runs the default `pytest` suite. Live-network/browser/platform checks remain opt-in where necessary.
+GitHub Actions on Python 3.11 run compileall, the default pytest suite, Chromium regression, wheel build, and installed-wheel smoke outside the source tree.
 
-The first-version finish line is defined by [RELEASE_READINESS.md](RELEASE_READINESS.md), not by the absence of new feature ideas. After green CI, the last mandatory gate is a smoke test on an actually upgraded appliance.
+Network Topology v1.2 passed live smoke on an upgraded WireScope VM. SNMP/SSH vendor-specific interoperability remains additional operational validation as managed devices become available; missing management evidence must remain visible as `missing/partial`, never replaced by guesses.
 
-## Post-1.0 work
+The next major subsystem is **v1.3 Global Correlation Analysis**: deterministic correlation of persisted inventory/findings/Traffic Analysis/Network Topology without new network I/O.
 
-Useful but non-blocking work includes PDF export, more protocol modules, topology/CVE enrichment, scheduled audits, deeper cross-audit identity history, further frontend decomposition, removing the `/api/*` compatibility alias, and a broader distro/architecture CI matrix.
+## Later work
+
+Non-blocking future work includes PDF export, more protocol modules, CVE enrichment, scheduled audits, cross-site topology history, hypervisor-specific topology providers, vendor-specific management adapters, further frontend decomposition, removal of the `/api/*` compatibility alias, and a broader distro/architecture/tshark CI matrix.

@@ -2,7 +2,7 @@
 
 [Русский](../GUI_MODEL.md) · **English**
 
-The GUI is the normal operator interface. A regular audit does not require shell access: audit creation, passive capture, scope confirmation, active discovery, protocol audits, findings, evidence, reports, and first-line appliance diagnostics are available from the browser.
+The GUI is the normal operator interface. A regular audit does not require shell access: audit creation, passive capture, scope confirmation, active discovery, protocol audits, findings, evidence, reports, Traffic Analysis, Network Topology, and first-line appliance diagnostics are available from the browser.
 
 The frontend is a client of durable API state. Closing a tab, reloading the page, or restarting the kiosk does not cancel worker jobs.
 
@@ -14,47 +14,17 @@ The local kiosk opens:
 http://127.0.0.1:8000/
 ```
 
-A normal appliance installation listens on `0.0.0.0:8000`, so a remote operator may open the GUI through any configured WireScope interface address.
+A normal appliance installation listens on `0.0.0.0:8000`, so a remote operator can open the GUI through any configured WireScope interface address.
 
 ## Frontend and visual layer
 
-The frontend intentionally remains build-free:
+The frontend intentionally remains build-free. The primary wizard lives in `frontend/app.js`; additional functions are split into dedicated modules.
 
-```text
-frontend/
-├── index.html
-├── app.js
-├── i18n.js
-├── style.css          # compatibility/base layout
-├── modern.css         # current responsive presentation layer
-├── enhancements.js
-├── enhancements.css
-└── operations.js
-```
+Topology uses dedicated presentation modules over the canonical API. The browser is not the source of truth: topology, jobs, inventory, findings, and evidence are derived from backend/SQLite/evidence state.
 
-`app.js` contains the primary wizard. `enhancements.js` adds dashboard/diff/evidence/Markdown functionality. `operations.js` separately adds lifecycle controls for auditors.
+The root page uses `Cache-Control: no-store`, and CSS/JS URLs carry version query strings. This is especially important for the topology renderer so Chromium does not keep stale JS/CSS after upgrade.
 
-`modern.css` is loaded after the base stylesheet and changes presentation without replacing the established DOM ids, API contracts, or durable audit workflow.
-
-### Responsive behavior
-
-The same frontend supports two practical modes:
-
-- small kiosk/touch display — large touch targets, compact cards, vertical scrolling, low visual noise;
-- laptop/desktop browser — wider work area, denser grids, and more context on screen.
-
-Primary breakpoints are:
-
-```text
-≤560 px     kiosk / small touchscreen
-≥900 px     desktop / laptop browser
-```
-
-### Frontend refresh after upgrade
-
-The root page is served with `Cache-Control: no-store`. CSS/JS URLs also receive a version query string so Chromium does not silently keep stale frontend assets after an appliance update.
-
-After a successful `packaging/upgrade.sh`, an active `wirescope-kiosk.service` is restarted automatically. API/worker jobs remain durable and are not cancelled by this browser restart.
+`packaging/upgrade.sh` restarts the kiosk browser after a successful upgrade when kiosk mode is enabled; API/worker jobs remain durable.
 
 ## Main audit flow
 
@@ -75,34 +45,18 @@ confirmation
   ↓
 passive → discovery → protocol → findings → report
   ↓
-summary / inventory / evidence / report
+summary / inventory / evidence / traffic / topology
 ```
 
-## Pipeline
-
-Progress and summary expose the durable pipeline:
-
-```text
-Passive analysis
-      ↓
-Discovery
-      ↓
-Protocol checks
-      ↓
-Findings
-      ↓
-Report
-```
-
-Stage state is derived from jobs in SQLite. The browser does not maintain another pipeline state machine.
+Pipeline state is derived from durable jobs in SQLite. The browser does not maintain another audit state machine.
 
 ## Overview panel
 
-After successful login, the panel can inspect any persisted audit. The control is hidden on the login screen.
+After login, the operator can select a retained audit and open different views.
 
 ### Overview
 
-Shows asset/service counts, findings, Critical/High counts, passive+active correlation, pipeline, device classes, and common services.
+Shows assets, services, findings, Critical/High counts, passive+active correlation, pipeline, device classes, and common services.
 
 ```text
 GET /api/v1/audits/{audit_id}/dashboard
@@ -111,7 +65,7 @@ GET /api/v1/audits/{audit_id}/correlations
 
 ### System
 
-Shows runtime capabilities, the effective listener, and loaded scan profiles:
+Shows runtime capabilities, listener state, and scan profiles:
 
 ```text
 GET /api/v1/capabilities
@@ -137,29 +91,109 @@ GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 
 Text/JSON/XML evidence is rendered inline; binary artifacts are opened separately. Artifact access is always audit-scoped.
 
-### Operations
+## Network Topology workspace
 
-This tab is visible only to `auditor` and is implemented by `operations.js`.
+Topology is a dedicated operator workspace rather than a decorative inventory view.
 
-It uses:
+Primary endpoint:
 
 ```text
-GET  /api/v1/diagnostics
-GET  /api/v1/diagnostics/export
-GET  /api/v1/audits/{audit_id}/jobs
-POST /api/v1/jobs/{job_id}/retry
-POST /api/v1/maintenance/cleanup
+GET /api/v1/audits/{audit_id}/topology
 ```
 
-It shows runtime readiness, SQLite `quick_check`, worker/core tools, free disk space, evidence-store size, retention policy/candidates, retryable jobs, and recent operational events.
+An explicitly selected PCAP overlay is attached with `traffic_analysis_job_id`. WireScope never chooses the “latest capture” automatically.
 
-Cleanup is deliberately two-step: preview uses `confirm=false`, while actual raw-evidence deletion requires explicit confirmation and `confirm=true`.
+### Views
 
-Retry creates a new durable job and keeps the terminal source job immutable.
+Available views include:
+
+- **Structural** — the primary infrastructure-first diagram;
+- **L2** — evidence-backed physical/adjacency/port relationships;
+- **L3** — subnet/gateway/router/interface relationships;
+- **Traffic** — communications from the selected Traffic Analysis result;
+- **All Evidence** — expanded technical canonical-graph view;
+- **VLAN Focus** — evidence-backed VLAN/port context;
+- **Topology History** — comparison of two retained audits.
+
+Structural view deliberately reduces noise: subnet-directed broadcast, uncorrelated link-local endpoints, and PCAP-only external addresses should not look like ordinary infrastructure hosts.
+
+### Coverage / evidence sufficiency
+
+The UI renders `coverage` for:
+
+```text
+inventory
+l3
+l2
+traffic
+vlan
+wifi
+hypervisor
+```
+
+Statuses are:
+
+```text
+sufficient
+partial
+missing
+```
+
+This is not a “percentage of the network discovered.” `missing` means WireScope has insufficient evidence for that class of claim. The UI should show what evidence is missing instead of hiding the limitation.
+
+### Topology controls
+
+Supported controls include zoom, pan, fit, subnet focus, confidence filters, asset details, edge details, findings on assets, explicit Traffic overlay, and global retained-audit topology.
+
+### Export
+
+Available exports include:
+
+- canonical topology JSON;
+- full structural SVG diagram;
+- structural PNG diagram;
+- current viewport SVG;
+- VLAN JSON/SVG;
+- topology diff JSON.
+
+Full-diagram export is independent of the current viewport and is intended to produce a readable export of the whole structural map.
+
+### Management enrichment
+
+Auditors can launch optional read-only enrichment:
+
+```text
+POST /api/v1/audits/{audit_id}/topology/snmp
+POST /api/v1/audits/{audit_id}/topology/ssh
+```
+
+The target must remain inside confirmed scope.
+
+The SNMP form accepts read-only v2c/v3 credentials.
+
+The SSH form targets Linux/OpenWrt-like managed devices, requires verified host-key material, and does not allow arbitrary remote commands. Credential material must not be displayed after submission and is not retained as plaintext topology evidence.
+
+If a MIB/SSH capability is unavailable, the UI shows partial/missing evidence rather than a synthetic topology.
+
+See [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
+
+## Traffic Analysis
+
+A separate `packet_capture` workflow saves PCAP. The operator can then start deterministic Traffic Analysis without another capture.
+
+Traffic Analysis and Network Topology are related but distinct views: the first answers “what communication was visible at this capture point,” while topology answers “which structural/network relationships are supported by evidence.”
+
+## Operations
+
+The Operations tab is auditor-only and exposes runtime readiness, SQLite `quick_check`, worker/core tools, disk/evidence usage, retention policy, retryable jobs, recent operational events, and diagnostics export.
+
+Cleanup is two-step: preview does not delete anything; actual cleanup requires explicit confirmation.
+
+Generic retry creates a new durable job. Credentialed SNMP/SSH topology jobs cannot be retried with old credential references; enrichment is launched again with fresh credentials.
 
 ## Device classification
 
-The UI renders classification produced by inventory:
+The UI displays inventory classification:
 
 ```text
 server-like
@@ -176,33 +210,32 @@ Classification is a confidence-rated inventory hint, not a finding.
 
 | Action | Auditor | Viewer |
 | --- | --- | --- |
-| Read audits/jobs/inventory/findings/reports | yes | yes |
+| Read audits/jobs/inventory/findings/reports/topology | yes | yes |
 | Dashboard / diff / capabilities / evidence | yes | yes |
+| View topology/traffic/history | yes | yes |
 | Change own password | yes | yes |
 | Create an audit | yes | no |
 | Start/cancel jobs | yes | no |
-| Retry terminal job | yes | no |
 | Listen / Record | yes | no |
+| SNMP/SSH topology enrichment | yes | no |
 | Change network settings | yes | no |
 | Change finding state | yes | no |
 | Generate a report | yes | no |
 | Diagnostics / audit log / maintenance | yes | no |
 
-The backend enforces roles independently of button visibility.
+Backend authorization is enforced independently of button visibility.
 
 ## Sessions
 
 After login, the backend issues an HttpOnly cookie. SQLite stores only a SHA-256 token digest. `SameSite=strict` is used; `Secure` is enabled for direct TLS/trusted-proxy deployments.
 
-The active audit id in `sessionStorage` is a UI convenience for reload recovery. Backend/SQLite remains authoritative.
+The active audit id may be stored in `sessionStorage` only as a UI convenience. Backend state remains authoritative.
 
 ## VLAN display
 
-A VLAN ID is shown as observed only when an 802.1Q tag was present. Untagged access traffic does not receive an invented VLAN ID. LLDP/CDP native or voice VLAN remains neighbor metadata.
+A passive VLAN ID is considered observed only when an actual 802.1Q tag was present.
 
-## Listen / Record
-
-The separate `packet_capture` workflow accepts interface, optional BPF/tcpdump filter, duration, and maximum PCAP size. Promiscuous mode records frames received by the NIC; it does not turn a switch port into SPAN.
+Topology can additionally establish VLAN membership from FDB/Q-BRIDGE/management evidence. A trunk/hybrid port without an exact endpoint VLAN never forces the UI to choose one arbitrary VLAN.
 
 ## Network screen
 
@@ -210,15 +243,13 @@ Network configuration goes through backend `NetworkService` and the `netctl` pri
 
 ## Reports
 
-The GUI opens a human-readable Russian HTML report and exports canonical JSON or Russian Markdown. The current HTML presentation is responsive and print-friendly; see [REPORTING_MODEL.md](REPORTING_MODEL.md).
+The GUI opens human-readable HTML and exports canonical JSON/Markdown. Reports are built from persisted data and do not start a new network audit.
 
-Older persisted reports also receive the current HTML presentation when opened because the export is rendered from their canonical JSON. No new network audit is required.
+## Errors and recovery
 
-PDF still returns `422 pdf_not_available` and is not a v1.0 blocker.
+The GUI distinguishes validation, provider, timeout, cancellation, authorization, and network errors.
 
-## Error handling and recovery
-
-The UI distinguishes validation, provider, timeout, cancellation, authorization, and network errors. An auditor may explicitly retry a failed/interrupted/cancelled stage through Operations. There is no uncontrolled automatic retry loop.
+Topology additionally exposes `partial`, `source_errors`, and `coverage` so the loss of one management artifact cannot masquerade as a complete map.
 
 ## Kiosk lifecycle
 
@@ -232,6 +263,6 @@ The screen is a client, not the executor.
 
 ## Testing
 
-Fixture/API tests cover roles and workflow. Static regression tests verify the modern theme, cache-busting, kiosk refresh after upgrade, enhancement-module loading, audit-scoped evidence, Markdown export, and the operations lifecycle UI. Optional Playwright tests retain the `browser` marker. CI runs compileall and the default pytest suite.
+CI covers compileall, the default pytest suite, Chromium regression, wheel build, and installed-wheel smoke.
 
-The release checklist is in [RELEASE_READINESS.md](RELEASE_READINESS.md).
+Topology browser regression covers structural rendering, filters, zoom/focus, bounded layout, findings, exports, and VLAN focus. M11.4 live smoke was completed on an upgraded WireScope VM; vendor-specific SNMP/SSH interoperability remains additional validation when suitable managed devices are available.

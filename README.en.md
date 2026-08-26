@@ -4,7 +4,7 @@
 
 WireScope is a self-contained network audit appliance for Linux. It can run on a dedicated PC, laptop, server, virtual machine, or ARM64 device and is intended as a portable tool for examining an unfamiliar network segment.
 
-The workflow is simple: observe the network passively, let the operator explicitly confirm the authorized active scope, then build inventory, dispatch service-aware checks, evaluate findings, and produce a report. A route being reachable from the host does not make it authorized scan scope.
+WireScope first observes the network passively, then requires the operator to explicitly confirm authorized active scope. It can then build inventory, perform active discovery and protocol audits, evaluate findings, analyze retained PCAP, build network topology, and generate reports. Reachability from the host is never treated as scan authorization by itself.
 
 Supported platforms include Debian/Ubuntu, Fedora/RHEL/Rocky, and openSUSE on `amd64` and `arm64`. Raspberry Pi is one supported hardware option, not a requirement.
 
@@ -25,20 +25,20 @@ active discovery
         ↓
 assets + services
         ↓
-protocol checks
+protocol audits
         ↓
 findings + evidence
         ↓
-HTML / JSON / Markdown report
+report / traffic analysis / topology
 ```
 
-A separate **Listen / Record** mode records PCAPs with a selected interface, optional BPF/tcpdump filter, time limit, and maximum file size.
+A separate **Listen / Record** mode saves PCAP using a selected interface, optional BPF/tcpdump filter, duration, and maximum file size.
 
 ## What WireScope does
 
 ### Passive analysis
 
-`dumpcap` performs bounded capture. The resulting PCAP is decoded once through `tshark -T ek`, then normalized packet records are processed by in-process sensors.
+`dumpcap` performs bounded capture. The resulting PCAP is decoded once through `tshark -T ek`, and normalized packet records are processed by in-process sensors.
 
 Coverage includes Ethernet/MAC, 802.1Q/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS, and SSDP.
 
@@ -48,11 +48,11 @@ Observations remain separate from assumptions. An ARP address is not proof of a 
 
 Nmap runs only inside operator-confirmed scope. The API does not accept arbitrary Nmap flags.
 
-The `discovery`, `standard`, and `deep` profiles are declarative in `config/active_profiles.json`. Operators can change supported profile parameters but cannot inject arbitrary command-line material such as `-sC` or `--script vuln`.
+The `discovery`, `standard`, and `deep` profiles are declarative in `config/active_profiles.json`. Clients cannot inject arbitrary command-line material such as `-sC` or `--script vuln`.
 
 ### Inventory and correlation
 
-Passive and active observations converge into one inventory. Stable identity prefers MAC, then IP. Conflicting identity signals are preserved as `identity_conflict` rather than silently merging devices. A hostname alone is not enough to merge assets.
+Passive and active observations converge into one inventory. Stable identity prefers MAC, then IP. Conflicting signals are preserved as `identity_conflict` rather than silently merging devices. Hostname alone is never enough to merge assets.
 
 Each asset receives a confidence-rated device-class hint:
 
@@ -65,6 +65,55 @@ Each asset receives a confidence-rated device-class hint:
 
 Classification is an inventory hint, not a security finding.
 
+### PCAP Traffic Analysis
+
+A retained PCAP can be analyzed by a separate durable job without another capture.
+
+Traffic Analysis provides top talkers and a communications graph, rate/volume statistics, TCP health, DNS latency/errors, ARP/DHCP/ICMP diagnostics, broadcast/multicast contributors, TLS/HTTP/QUIC/SMB metadata, ACK RTT summaries, and comparison of two persisted analyses.
+
+The canonical result is `traffic-analysis` JSON. Its communications graph can be **explicitly** attached to Network Topology; the latest PCAP is never mixed automatically.
+
+### Network Topology
+
+WireScope builds topology as an auditor: it retains a complete evidence graph while presenting a separate structural / infrastructure-first diagram to the operator.
+
+Views include:
+
+- Structural;
+- L2;
+- L3;
+- Traffic;
+- All Evidence;
+- VLAN focus;
+- historical topology comparison.
+
+Inputs include inventory, ARP/ND, interface routes, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, Traffic Analysis, and optional read-only SNMP/SSH management enrichment.
+
+Topology reports `coverage` / claimability for `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, and `hypervisor` as:
+
+```text
+sufficient
+partial
+missing
+```
+
+This is not a “percentage of the network discovered.” When evidence is insufficient, WireScope tells the operator **what evidence is missing** instead of inventing physical links or VLAN membership.
+
+JSON/SVG/PNG export, subnet regions, zoom/pan/fit, asset/edge details, findings, and global retained-audit topology are supported.
+
+See [Network Topology model](docs/en/TOPOLOGY_MODEL.md).
+
+### Management-plane enrichment
+
+For suitable managed devices, topology can be enriched from read-only management sources:
+
+- SNMPv2c/v3 using IF/IP/BRIDGE/Q-BRIDGE/LLDP MIBs;
+- SSH for Linux/OpenWrt-like systems using a fixed `ip/bridge/iw` allowlist.
+
+SNMP/SSH targets must remain inside confirmed scope. SSH requires strict host-key verification and accepts no arbitrary remote command. Credentials use an ephemeral consume-once spool and are not retained as plaintext topology evidence.
+
+A subnet learned from management data expands topology knowledge but remains `active_scope=false`.
+
 ### Protocol checks
 
 After discovery, WireScope dispatches only modules that match discovered services:
@@ -74,16 +123,16 @@ After discovery, WireScope dispatches only modules that match discovered service
 - HTTP/HTTPS — `curl`;
 - SMB — `smbclient`;
 - DNS — `dig`;
-- SNMP — conservative SNMPv3 noAuth probe;
+- SNMP — conservative SNMP probe;
 - LDAP — anonymous base DSE with `ldapsearch`.
 
-The modules do not guess passwords or community strings. `testssl.sh`, Nikto, and Nuclei remain `never-default`.
+The modules do not automatically guess passwords or community strings. `testssl.sh`, Nikto, and Nuclei remain `never-default`.
 
 ### Findings, evidence, and reports
 
 Protocol modules persist observations. A separate rule engine evaluates normalized facts and creates findings, keeping raw evidence separate from interpretation.
 
-A finding records severity, confidence, affected asset/service, rationale, recommendation, and evidence references. Text/JSON/XML evidence can be inspected directly from the UI.
+A finding records severity, confidence, asset/service, rationale, recommendation, and evidence references.
 
 Reports are built from persisted data without re-running scanners:
 
@@ -91,138 +140,102 @@ Reports are built from persisted data without re-running scanners:
 - JSON `audit-report` v1;
 - Markdown.
 
-PDF is not a v1.0 release requirement.
-
 ## Overview and operations
 
-The GUI exposes the durable pipeline:
+The GUI exposes durable audits and pipeline state. Auditors also get diagnostics, operational audit log, retention preview/cleanup, job recovery, and appliance backup/restore.
+
+Key runtime endpoints:
 
 ```text
-passive → discovery → protocol → findings → report
+GET /api/v1/health
+GET /api/v1/ready
+GET /api/v1/capabilities
+GET /api/v1/diagnostics
 ```
-
-The **Overview** panel shows:
-
-- asset/service counts;
-- findings by severity;
-- device classes;
-- passive/active correlation;
-- common open services;
-- external-tool availability;
-- loaded scan profiles;
-- audit-to-audit diff;
-- finding evidence.
-
-Auditors also get an **Operations** tab with:
-
-- SQLite/migration/worker/core-tool health;
-- free disk and evidence-store usage;
-- retention policy and cleanup preview;
-- operational audit log;
-- retry for failed/interrupted/cancelled stages;
-- diagnostics JSON export.
 
 ## Recovery and lifecycle
 
-If the worker restarts during a job, the running job becomes `interrupted` and stale resource locks are released. The operator can retry the affected terminal stage. Retry creates a **new** durable job with the same parameters and keeps the original history unchanged.
+If the worker restarts during a job, the running job becomes `interrupted` and stale resource locks are released. Explicit retry creates a **new** durable job and keeps the source history unchanged.
 
-Default retention candidates are:
+Credentialed `snmp_topology` and `ssh_topology` jobs never reuse old one-time credentials; enrichment is started again with fresh credentials.
 
-- temporary artifacts — 24 hours;
-- debug — 7 days;
-- PCAP — 30 days;
-- Nmap XML / protocol raw evidence — 90 days.
-
-Raw evidence is not deleted unexpectedly in the background: an auditor sees a preview first and must explicitly confirm cleanup. Normalized inventory, findings, and reports are not automatically deleted.
+Raw evidence is never silently deleted in the background. An auditor sees a cleanup preview and explicitly confirms removal.
 
 SQLite + evidence backup/restore is available through the appliance CLI.
 
 See [Operations](docs/en/OPERATIONS.md).
 
-## Operational audit log
-
-WireScope stores a separate log of significant operator actions: login/logout/password change, audit-stage starts, cancel/retry, network changes, finding changes, report generation, and maintenance cleanup.
-
-Passwords, request bodies, session tokens/cookies, and provider stdout are not copied into this log.
-
 ## Architecture
 
-WireScope is a modular monolith. API and worker are separate processes that use one local state model.
+WireScope is a modular monolith. API and worker are separate processes sharing one local state model.
 
 ```text
 browser / kiosk
       │
       ▼
-FastAPI
+FastAPI /api/v1
       │
-      ├── backend/routers/
-      ├── auth / network / scope
       ├── audits / durable jobs
-      ├── inventory / correlations
-      ├── findings / evidence / reports
-      ├── diagnostics / lifecycle / audit log
+      ├── inventory / findings / reports
+      ├── traffic analysis / topology
+      ├── diagnostics / lifecycle
       │
       ▼
 SQLite + evidence store
       ▲
       │
 worker
-      ├── passive discovery
-      ├── packet capture
+      ├── passive / capture
       ├── active discovery
       ├── protocol audits
-      ├── findings evaluation
-      └── report generation
+      ├── traffic analysis
+      ├── SNMP/SSH topology enrichment
+      └── findings / reports
 ```
 
-`backend/app.py` is the composition root. HTTP routes are grouped by domain under `backend/routers/`.
-
-SQLite runs in WAL mode. Normalized data and artifact metadata stay in the database; PCAPs, Nmap XML, raw provider evidence, and reports live in the evidence store and are registered by UUID, size, and SHA-256.
+`backend/app.py` is the composition root. SQLite uses WAL mode; large raw artifacts live in the evidence store and are registered by UUID, size, and SHA-256.
 
 See [Architecture](docs/en/ARCHITECTURE.md).
 
 ## API
 
-The canonical API is `/api/v1/*`. `/api/*` remains as a hidden compatibility alias for existing clients.
+The canonical API is `/api/v1/*`. `/api/*` remains a compatibility alias.
 
-Alongside the audit/job endpoints, v1 includes:
+Topology endpoints:
 
 ```text
-GET  /api/v1/capabilities
-GET  /api/v1/scan-profiles
-GET  /api/v1/audits/{id}/dashboard
-GET  /api/v1/audits/{id}/correlations
-GET  /api/v1/audits/{id}/diff?against={old_id}
-GET  /api/v1/audits/{id}/findings/{finding_id}/evidence
-POST /api/v1/jobs/{job_id}/retry
-GET  /api/v1/diagnostics
-GET  /api/v1/audit-log
-GET  /api/v1/maintenance/status
-POST /api/v1/maintenance/cleanup
+GET  /api/v1/audits/{audit_id}/topology
+GET  /api/v1/topology/global
+GET  /api/v1/audits/{audit_id}/topology/compare?against={baseline}
+POST /api/v1/audits/{audit_id}/topology/snmp
+POST /api/v1/audits/{audit_id}/topology/ssh
 ```
 
 See [API documentation](docs/en/API.md).
 
 ## Web interface and bind policy
 
-A normal WireScope appliance listens on **`0.0.0.0:8000`**. This is intentional: the UI should be reachable through any configured Ethernet/Wi-Fi interface on the device.
+A normal appliance listens on `0.0.0.0:8000` so the GUI is reachable through configured appliance interfaces. The local kiosk opens `http://127.0.0.1:8000/`.
 
-The local kiosk opens `http://127.0.0.1:8000/` because it runs on the same host.
-
-A deployment that needs a different policy can explicitly use a firewall, `--bind-host 127.0.0.1`, reverse proxy, or TLS.
+Firewall, loopback-only bind, reverse proxy, and TLS remain deployment controls.
 
 ## Privilege model
 
 `wirescope-api` and `wirescope-worker` do not run as root. Packet-capture privileges belong only to `/usr/bin/dumpcap`.
 
-WireScope does not grant Nmap extra capabilities. When raw sockets are unavailable, the provider uses safe unprivileged fallbacks.
+WireScope does not elevate Nmap itself. SNMP/SSH enrichment also runs inside the unprivileged worker.
 
 ## Quick install
+
+The repository is private, so a GitHub SSH key/token is required.
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
 cd wirescope
-git checkout milestone-8-appliance
+
+# For reproducible deployment, switch to the intended release/tag/checkpoint.
+# Do not use old milestone branches copied from historical instructions.
+
 cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
@@ -232,8 +245,6 @@ sudo ./packaging/install.sh \
   --with-kiosk \
   --enable-kiosk
 ```
-
-Normal install/upgrade entrypoints use `0.0.0.0` automatically.
 
 Main paths:
 
@@ -257,33 +268,30 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-GitHub Actions runs `compileall` and the default pytest suite. `network` and `live_pi` tests remain opt-in.
+GitHub Actions run compileall, the default pytest suite, Chromium regression, wheel build, and an installed-wheel smoke test outside the source tree.
 
-## The finish line
+## Current stage
 
-The next formal milestone is **WireScope v1.0 RC1**. It is defined by operational release gates rather than by the number of scanners: install/upgrade, persistence, full audit workflow, recovery, retention, operational logging, diagnostics, backup, and a live smoke test on an installed appliance.
+**Network Topology v1.2 is complete.** Structural topology passed live smoke on an upgraded WireScope VM. SNMP/SSH vendor-specific interoperability will continue to be checked when suitable managed devices are available and must never be replaced by heuristics.
 
-See [v1 release readiness](docs/en/RELEASE_READINESS.md).
+The next stage is **v1.3 Global Correlation Analysis**: deterministic correlation of persisted inventory/findings/Traffic Analysis/Network Topology without new network I/O.
 
-Until the live smoke test passes on an installed VM, the current code remains a development candidate even with green CI. After that test succeeds, `v1.0.0-rc1` is the appropriate tag.
+See [Roadmap](docs/en/ROADMAP.md).
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
-| [API](docs/en/API.md) | `/api/v1`, jobs, evidence, diagnostics, maintenance |
+| [API](docs/en/API.md) | `/api/v1`, jobs, topology, evidence, diagnostics |
 | [Installation](docs/en/INSTALLATION.md) | install, kiosk, bind, TLS, upgrade/rollback |
-| [Architecture](docs/en/ARCHITECTURE.md) | modules, data flow, jobs, persistence |
+| [Architecture](docs/en/ARCHITECTURE.md) | modules, data flow, jobs, topology, persistence |
+| [Network Topology](docs/en/TOPOLOGY_MODEL.md) | evidence graph, coverage, L2/L3/VLAN, SNMP/SSH, limits |
 | [Operations](docs/en/OPERATIONS.md) | diagnostics, recovery, retention, backup/restore |
-| [v1 readiness](docs/en/RELEASE_READINESS.md) | mandatory RC1 release gate |
 | [Scanning model](docs/en/SCANNING_MODEL.md) | scope, profiles, inventory, protocol audits |
 | [Security model](docs/en/SECURITY_MODEL.md) | trust boundaries, auth, evidence, privileges |
 | [Findings model](docs/en/FINDINGS_MODEL.md) | rules, severity/confidence, state model |
 | [Reporting](docs/en/REPORTING_MODEL.md) | `audit-report` v1, HTML/JSON/Markdown |
-| [Operator GUI](docs/en/GUI_MODEL.md) | wizard, dashboard, diff, evidence |
+| [Operator GUI](docs/en/GUI_MODEL.md) | wizard, dashboard, evidence, operator views |
 | [Development](docs/en/DEVELOPMENT.md) | local run, migrations, tests |
 | [Runbook](docs/en/RUNBOOK.md) | operational troubleshooting |
-
-## Post-1.0 roadmap
-
-After RC1/1.0, new functionality can continue without moving the first-release finish line: additional protocol modules, PDF, topology graph, CVE enrichment, scheduled audits, deeper historical identity correlation, and further frontend decomposition.
+| [Roadmap](docs/en/ROADMAP.md) | current status and upcoming milestones |

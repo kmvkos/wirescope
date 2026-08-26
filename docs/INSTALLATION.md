@@ -20,11 +20,17 @@ WireScope можно поставить на отдельный Linux appliance,
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
 cd wirescope
-git checkout milestone-8-appliance
+git fetch --tags origin
+
+# Для воспроизводимой установки выберите нужный release/tag/checkpoint:
+# git checkout <release-or-checkpoint>
+
 cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
 ```
+
+Не используйте имя старой milestone-ветки, скопированное из исторической инструкции. Для production-like deployment лучше фиксировать конкретный release/tag/checkpoint и записывать его SHA.
 
 Клон лучше делать без `sudo`: иначе Git использует SSH-конфигурацию root. Checkout выполняется до переноса в `/opt`, чтобы не создавать лишних проблем с ownership и `safe.directory`.
 
@@ -119,7 +125,7 @@ sudo ./packaging/install.sh \
 10. создание первого `auditor` без встроенного default password;
 11. запуск сервисов, если не указан `--no-start`.
 
-Nuclei и Nikto по умолчанию не устанавливаются.
+Nuclei и Nikto по умолчанию не устанавливаются. Optional topology management providers включают Net-SNMP tools и OpenSSH client; их отсутствие не делает базовый appliance `not_ready`.
 
 ## Сервисы
 
@@ -249,46 +255,54 @@ OS packages и первоначальная настройка `dumpcap` всё 
 
 ## Обновление установленной ВМ
 
-Если checkout уже находится в `/opt/wirescope`:
+Если checkout уже находится в `/opt/wirescope`, сначала убедитесь, что рабочее дерево чистое:
 
 ```bash
 cd /opt/wirescope
-git status
+git status --short
 git branch --show-current
-git fetch origin
-git pull --ff-only
+git rev-parse HEAD
+git fetch --tags origin
 ```
 
-После code-only update без новых migrations/dependencies:
+Для воспроизводимого upgrade переключайтесь на конкретный проверенный ref:
 
 ```bash
-sudo systemctl restart wirescope-worker wirescope-api
-curl -sS http://127.0.0.1:8000/api/v1/ready
+git checkout <release-tag-or-checkpoint>
+git rev-parse HEAD
 ```
 
-Для полного upgrade path:
-
-```bash
-sudo ./packaging/upgrade.sh --project-root /opt/wirescope
-```
-
-Upgrade использует тот же appliance default `0.0.0.0`, если пользователь явно не передал другой `--bind-host`.
-
-## Backup и rollback
-
-Перед существенным upgrade:
+Перед существенным обновлением сделайте backup, затем используйте полный upgrade path:
 
 ```bash
 sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
   /opt/wirescope/.venv/bin/python -m appliance backup
+
+sudo ./packaging/upgrade.sh --project-root /opt/wirescope
 ```
+
+После upgrade:
+
+```bash
+systemctl is-active wirescope-api wirescope-worker
+curl -sS http://127.0.0.1:8000/api/v1/ready
+curl -sS http://127.0.0.1:8000/api/v1/capabilities
+```
+
+Не используйте `git pull` как замену выбору release/checkpoint, если appliance должен оставаться на воспроизводимом revision.
+
+Upgrade использует appliance default `0.0.0.0`, если явно не передан другой `--bind-host`.
+
+## Backup и rollback
+
+Перед существенным upgrade backup уже должен быть создан командой выше.
 
 При rollback:
 
 1. остановить API и worker;
 2. восстановить backup, если менялась schema/data format;
 3. вернуть предыдущий проверенный Git revision;
-4. при необходимости переустановить editable package в `.venv`;
+4. при необходимости переустановить package в `.venv`;
 5. запустить worker и API;
 6. проверить `/api/v1/ready`.
 

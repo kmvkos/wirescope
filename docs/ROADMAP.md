@@ -1,342 +1,271 @@
 # WireScope — Roadmap после 1.0
 
-Этот документ начинается после feature freeze первой стабильной линии WireScope.
-Новые возможности не должны менять safety-контракты v1: пассивное наблюдение не является разрешением на активное сканирование, активный scope подтверждается оператором, сетевые инструменты запускаются без shell, evidence остаётся воспроизводимым.
+Этот документ описывает развитие WireScope после feature freeze базовой линии v1.0.
+
+Новые возможности не должны ослаблять базовые safety-контракты: пассивное наблюдение не является разрешением на активное сканирование, active scope подтверждается оператором, внешние инструменты запускаются без shell, а выводы должны ссылаться на сохранённые evidence.
 
 ## v1.0 — базовый сетевой аудитор
 
 Статус: **feature complete / frozen**.
 
-Состав релиза:
-- пассивный анализ локального сегмента;
-- отдельное прослушивание/запись PCAP;
-- подтверждённый active scope и профили Discovery / Standard / Deep;
-- inventory и корреляция устройств;
-- безопасные protocol audits;
-- findings;
-- HTML / JSON / Markdown отчёты;
-- audit diff, evidence viewer, diagnostics, retention, retry;
-- web/kiosk UI;
-- удаление отдельных отчётов и полное удаление завершённых аудитов.
+В базовую линию входят:
 
-После freeze допускаются только исправления дефектов и release engineering.
+- пассивный анализ локального сегмента;
+- отдельное прослушивание и сохранение PCAP;
+- operator-confirmed active scope;
+- профили Discovery / Standard / Deep;
+- inventory и консервативная identity correlation;
+- protocol audits;
+- findings + evidence;
+- HTML / JSON / Markdown отчёты;
+- audit diff, evidence viewer, diagnostics, retention и recovery;
+- web/kiosk UI;
+- backup/restore и эксплуатационный контур appliance.
+
+После freeze в v1.0 допускаются исправления дефектов и release engineering, но не новые крупные подсистемы.
 
 ---
 
 ## v1.1 — PCAP Traffic Analysis
 
-Статус: **implementation complete; smoke-test основных сценариев пройден, дополнительные real-PCAP проверки продолжаются**.
+Статус: **implementation complete; основные live-сценарии пройдены**.
 
-Цель: превратить «Прослушивание» из простого сохранения PCAP в самостоятельный инструмент диагностики трафика.
-
-### M10.1 — детерминированный анализ сохранённого PCAP
-
-Статус: **реализовано**.
-
-После завершённого или остановленного прослушивания оператор может нажать **«Анализировать PCAP»**.
-
-Анализ выполняется отдельной durable job и не запускает новый сетевой захват.
-Источник истины — уже сохранённый PCAP evidence.
-
-Анализ выдаёт:
-- длительность, количество кадров и объём;
-- уникальные MAC / IPv4 / IPv6;
-- top talkers по пакетам и байтам;
-- распределение основных протоколов;
-- список наиболее активных пар узлов;
-- TCP health: retransmission, duplicate ACK, out-of-order, reset, zero-window и другие доступные сигналы;
-- DNS: запросы, NXDOMAIN/SERVFAIL и наиболее частые имена;
-- ARP: IP↔MAC наблюдения, gratuitous/аномальные изменения и возможные конфликты;
-- DHCP server hints;
-- broadcast / multicast долю и основные источники;
-- наблюдение потенциально небезопасных clear-text/legacy протоколов;
-- детерминированные пояснения «что наблюдалось → что это может означать → что проверить».
-
-Результаты:
-- canonical JSON `traffic-analysis`;
-- читаемый русский TXT;
-- Markdown export;
-- UI-представление в web и kiosk.
-
-### M10.2 — communications graph data
-
-Статус: **реализовано как источник данных для M11**.
-
-Анализатор сохраняет нормализованные связи между узлами:
-- endpoint A / endpoint B;
-- пакеты и байты по направлениям;
-- наблюдавшиеся протоколы/порты;
-- first/last seen;
-- provenance=`pcap`;
-- confidence=`observed`.
-
-### M10.3 — расширенная диагностика
-
-Статус: **реализовано**.
+Цель v1.1 — превратить сохранённый PCAP в самостоятельный источник сетевой диагностики без нового захвата и без повторного обращения к сети.
 
 Реализовано:
-- packets/s и наблюдаемая полоса;
-- TCP handshake visibility;
-- повторные SYN;
-- привязка TCP health сигналов к конкретным парам;
-- previous/lost segment hints с осторожным объяснением capture/offload/visibility ограничений;
-- DNS latency average / p50 / p95 / max;
-- разделение обычного DNS и локального `.local` name-discovery;
-- ARP request/reply и repeated unanswered hints;
-- ICMP / ICMPv6 диагностика;
-- top broadcast/multicast contributors;
-- доминирующий обмен и local↔global IP связи;
-- операторский «Краткий диагноз»;
-- portable tshark compatibility path и graceful fallback.
 
-### M10.4 — Protocol Intelligence
+- детерминированный анализ retained PCAP;
+- длительность, frames, bytes, packets/s и наблюдаемая полоса;
+- top talkers и communications graph;
+- TCP health: retransmission, duplicate ACK, out-of-order, reset, zero-window, SYN/handshake visibility;
+- DNS errors и latency statistics;
+- ARP observations/conflict hints;
+- DHCP correlation;
+- ICMP/ICMPv6;
+- broadcast/multicast contributors;
+- TLS/HTTP/QUIC/SMB protocol intelligence без payload decryption;
+- ACK RTT с осторожной трактовкой;
+- сравнение двух сохранённых traffic-analysis результатов;
+- canonical `traffic-analysis` JSON, русский TXT/Markdown и web/kiosk UI.
 
-Статус: **реализовано**.
-
-Реализовано:
-- динамическое определение поддерживаемых полей `tshark`;
-- TLS: SNI/server name, version metadata, ALPN;
-- HTTP/1.x: Host, методы, коды ответа, 4xx/5xx;
-- QUIC metadata;
-- SMB/SMB2 commands и NT status без filenames/payload;
-- обычный DNS отдельно от mDNS/LLMNR;
-- DHCP message/DORA correlation;
-- operator observations для legacy TLS, HTTP 5xx, DNS errors, SMB status и нескольких DHCP servers;
-- отдельная секция «Протокольный разбор» в TXT/Markdown.
-
-### M10.5 — TCP RTT и сравнение захватов
-
-Статус: **реализовано**.
-
-RTT:
-- `tcp.analysis.ack_rtt` используется только при поддержке установленным `tshark`;
-- aggregate average / p50 / p95 / max;
-- статистика по конкретным парам;
-- отсутствие samples отображается как «RTT не оценён»;
-- ACK RTT не трактуется как latency приложения.
-
-Сравнение двух PCAP-анализов:
-- persisted normalized `traffic-analysis`, без повторного чтения сети;
-- объём, длительность, communications;
-- новые/исчезнувшие endpoints и observed edges;
-- изменение долей протоколов;
-- TCP signals, DNS errors, RTT, broadcast/multicast;
-- новые и исчезнувшие warning-сигналы;
-- сравнение доступно прямо в web/kiosk UI.
+Communications graph используется как **явно выбираемый** источник для topology. Последний PCAP не подмешивается в карту автоматически.
 
 ---
 
 ## v1.2 — Network Topology
 
-Статус: **M11.1–M11.4 implementation complete; полный automated regression зелёный, остаётся live-network validation нового hardening checkpoint**.
+Статус: **feature complete / closed**.
 
-Цель: построить понятную карту наблюдаемой сети с указанием происхождения и достоверности каждой связи и одновременно показывать оператору, **для каких выводов собранных данных действительно хватает**.
+M11.1–M11.4 реализованы. Полный automated regression зелёный; M11.4 установлен и проверен на рабочей WireScope VM. После обновления appliance сохранил рабочие database/migrations/worker/capture dependencies, `/api/v1/ready` вернул healthy state, а новый Deep audit прошёл live-проверку structural topology. Оператор принял итоговое представление как пригодное для дальнейшего использования.
 
-### M11.1 — логическая карта
+Цель v1.2 — не просто нарисовать граф обнаруженных IP, а построить объяснимую карту сети и одновременно показать, **какие топологические утверждения реально подтверждаются собранными данными**.
 
-Статус: **реализовано и проверено на реальном Deep-аудите + PCAP overlay**.
+### M11.1 — логическая топология
 
-Источники:
+Статус: **завершено**.
+
+Canonical `network-topology` объединяет persisted evidence из:
+
 - inventory;
-- ARP;
-- default gateway / route information;
+- ARP/ND;
+- route/default-gateway context;
 - DHCP;
-- LLDP / CDP;
+- LLDP/CDP;
 - STP;
 - VLAN/QinQ;
 - active discovery;
-- PCAP communications graph.
+- явно выбранного PCAP Traffic Analysis.
 
-Canonical `network-topology` различает:
-- узлы WireScope/interface, gateway/router, network-device hints, DHCP/DNS servers, assets и внешние endpoints;
-- отдельные subnet-сегменты;
-- связи `default_gateway`, `segment_gateway`, `layer2_neighbor`, `stp_observed`, `dhcp_observed`, `communication`;
-- уровни `general`, `l2`, `l3`, `traffic`;
-- `confirmed`, `observed`, `inferred` confidence;
-- provenance каждого узла и ребра.
+Модель различает:
 
-Сегменты привязаны к route context конкретного интерфейса аудита. Host-wide default route другого интерфейса не считается шлюзом просканированной сети.
+- WireScope/interface;
+- assets;
+- gateway/router и network-device evidence;
+- subnet segments;
+- DHCP/DNS infrastructure;
+- external traffic endpoints;
+- L2, L3 и traffic relationships;
+- `confirmed / observed / inferred` confidence;
+- provenance каждого узла и связи.
 
-Есть отдельная глобальная карта retained-аудитов: несколько просканированных подсетей сохраняются как разные сегменты, а подтверждённый общий gateway может связывать их на L3-уровне.
+Факт нахождения двух адресов в одной подсети не считается доказательством прямого L2-соединения.
 
-Принцип: WireScope не угадывает физический hop. LLDP/CDP/default route, PCAP traffic и subnet inference остаются разными типами evidence.
+### M11.2 — операторская визуализация
 
-PCAP overlay выбирается оператором **явно**. WireScope не подмешивает «последний capture» автоматически, потому что Deep-аудит и прослушивание могут относиться к разным сегментам/моментам времени.
+Статус: **завершено**.
 
-### M11.2 — интерактивная визуализация
+Web/kiosk UI содержит:
 
-Статус: **реализовано; Chromium browser smoke и автоматизированная проверка layout/filters/export проходят**.
-
-Реализовано в web/kiosk:
-- segment-aware SVG layout: каждая подсеть отображается отдельной визуальной областью;
-- общая cross-audit карта сохранённых сетей;
-- global topology явно помечается `partial`, если один из retained audits не удалось построить; пропущенные источники возвращаются в `source_errors`, а оператор получает warning;
-- выбор конкретной подсети;
-- уровни Общая / L2 / L3 / Traffic;
-- фильтр confidence: confirmed / observed / inferred;
-- отдельное отображение multicast/broadcast;
-- возможность скрывать малозначимые несвязанные узлы на больших картах;
-- zoom колёсом и кнопками, pan drag, команда «Вписать»;
-- двойной клик/Enter по области подсети для фокусировки;
-- внешние/global IP визуально вынесены в зону `Internet / внешние адреса`;
-- communication edge имеет толщину по объёму и стрелки по наблюдавшимся направлениям PCAP;
-- клик по asset → адреса, сервисы, vendor, OS, provenance/confidence и persisted findings, привязанные по `asset_id`;
-- клик по edge → layer, provenance, segment context, пакеты, байты, протоколы и направление;
+- structural / infrastructure-first view;
+- отдельные L2, L3, Traffic и All evidence представления;
+- subnet regions;
+- global retained-audit topology;
+- confidence filters;
+- asset/edge details и findings;
+- zoom/pan/fit;
+- явный PCAP overlay;
 - topology JSON export;
-- SVG export текущего отображаемого вида карты с сохранением фильтров и viewport transform;
-- PNG export из того же текущего SVG;
-- отдельный **VLAN-фокус** по evidence-backed VLAN membership с port mode/PVID/tagged/untagged и VLAN JSON export;
-- отдельная VLAN-specific SVG-карта без назначения endpoint в VLAN «по догадке»;
-- Chromium regression smoke для фильтров, zoom/focus, bounded rendering, findings, SVG/PNG и VLAN focus/download.
+- SVG/PNG export полной structural diagram;
+- отдельный viewport SVG export;
+- VLAN focus и VLAN JSON/SVG export;
+- historical topology compare между retained audits.
 
-Дополнительная проверка читаемости на очень больших реальных topology остаётся quality-improvement задачей по мере появления таких данных и не блокирует базовую семантику topology.
+Structural view не выдаёт directed broadcast, link-local шум и PCAP-only external endpoints за обычные инфраструктурные hosts.
 
-VLAN принадлежность назначается только при достаточном node↔VLAN evidence. Q-BRIDGE/FDB/PVID различаются: access/trunk/hybrid классифицируется только из наблюдаемых membership bitmaps, а multi-VLAN trunk/hybrid не заставляет WireScope выбрать один VLAN для endpoint.
+### M11.3 — физическое и L3 enrichment
 
-### M11.3 — расширение физической и L3-топологии
-
-Статус: **реализовано и покрыто automated regression; live management-plane проверка включена в общий M11.4 gate**.
+Статус: **завершено**.
 
 Реализовано:
-- безопасный traceroute/upstream view поверх явно ограниченного active context;
-- read-only SNMP с явно предоставленными оператором credentials;
-- базовые IF-MIB / BRIDGE-MIB / Q-BRIDGE-MIB / LLDP-MIB evidence;
-- RFC1213 IPv4 interface address/netmask fallback;
-- RFC4293 IP-MIB IPv4/IPv6 interface addresses и connected prefixes;
-- современный IPv4 ARP / IPv6 ND neighbor cache через `ipNetToPhysicalTable`;
-- `ifType` и `ifPhysAddress` для более точной модели интерфейса;
-- LLDP remote management addresses для консервативной корреляции соседей;
-- отдельные `network-interface` nodes и L3 `routed_interface` edges;
-- SNMP-observed connected subnet создаётся как topology evidence с `active_scope=false`: обнаруженная через SNMP сеть **не становится разрешением на сканирование**;
-- корреляция ARP/FDB/bridge evidence сетевого оборудования;
-- switch-port mapping без угадывания невидимых L2 hops;
-- Q-BRIDGE port membership с отдельными `tagged_vlans`, `untagged_vlans`, PVID и `access/trunk/hybrid/unknown`;
-- классический FDB без VLAN ID может получить VLAN только из однозначного access-port membership evidence;
-- multi-VLAN trunk/hybrid не назначает endpoint один произвольный VLAN;
-- SNMP management IP сам по себе не делает L2 switch роутером; router role требует подтверждённого gateway evidence или нескольких distinct connected L3 prefixes;
-- historical topology diff между retained audits;
-- conservative cross-audit identity: MAC → IP; одинаковый hostname сам по себе не считается доказательством одного устройства;
-- изменение audit-local asset UUID не создаёт ложный `removed + added`, если стабильная identity подтверждена;
-- отдельный API comparison и web/kiosk view **«История topology»** с JSON export;
-- global topology и historical diff наследуют `partial`/`source_errors`, если часть persisted evidence недоступна;
-- source-health проверяет, что сохранённые SNMP/route-trace artifacts действительно вошли в topology; пропуск evidence становится видимым оператору, но один повреждённый исторический artifact не валит всю карту;
-- legacy job-less SNMP не объявляется повреждённым без достаточного target/evidence контекста.
 
-WireScope не должен угадывать невидимый L2-коммутатор. Если физическое соединение не подтверждено LLDP/CDP/SNMP/FDB/switch-port или иным evidence, оно отображается только как логическая/предполагаемая связь.
+- bounded traceroute/upstream evidence;
+- read-only SNMPv2c/v3 enrichment;
+- IF-MIB / IP-MIB / BRIDGE-MIB / Q-BRIDGE-MIB / LLDP-MIB;
+- IPv4/IPv6 interface addresses и connected prefixes;
+- ARP/IPv6 ND neighbor data;
+- FDB/switch-port correlation;
+- PVID/tagged/untagged VLAN membership;
+- `access / trunk / hybrid / unknown` port semantics;
+- LLDP chassis/port/management-address correlation;
+- network-interface nodes и L3 routed-interface relationships;
+- conservative router classification;
+- fail-visible `partial/source_errors` для потерянного persisted management evidence.
+
+SNMP-observed subnet остаётся `active_scope=false`: management evidence может расширить **знание о topology**, но не разрешение на сканирование.
 
 ### M11.4 — topology hardening и достаточность evidence
 
-Статус: **implementation complete; automated regression / Chromium / wheel smoke зелёные, требуется live-network validation на WireScope VM**.
+Статус: **завершено и live-проверено на WireScope VM**.
 
-Реализовано:
-- отдельный `coverage` / claimability слой: `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, `hypervisor` получают `sufficient / partial / missing` без фиктивного «процента изученности сети»;
-- оператору показывается не только схема, но и какие утверждения подтверждены evidence, какие частичны и какие данные нужно получить дополнительно;
-- canonical topology остаётся полным evidence graph, а structural presentation отделена от raw/traffic observations;
-- infrastructure-first renderer: subnet как структурная область, assets/network devices как основные карточки, Traffic и All evidence вынесены в отдельные представления;
-- directed broadcast конкретной подсети, link-local шум и PCAP-only external endpoints больше не выдаются за обычные инфраструктурные hosts structural map;
-- экспорт полной structural diagram отделён от экспорта текущего viewport;
-- multi-homed environment сохраняет все default routes по interfaces и локальные DHCP lease/router options;
-- gateway выбранного audit interface добавляется только по точному persisted evidence, а не по host-wide default route или шаблону адреса;
-- добавлен optional **read-only SSH topology provider** для Linux/OpenWrt-подобных managed devices;
-- SSH provider имеет фиксированный allowlist `ip/bridge/iw`, strict host-key verification и не принимает произвольную remote command;
-- private key и `known_hosts` передаются через consume-once `0600` runtime spool и не сохраняются в SQLite/topology evidence;
-- queued cancel сразу удаляет SSH/SNMP credential spool, running handler удаляет credentials в `finally`;
-- retry `snmp_topology` / `ssh_topology` со старым `credential_ref` запрещён: новый запуск требует свежих credentials;
-- SSH `ip neigh` используется как IP↔MAC identity evidence, но не превращается в выдуманную физическую линию;
-- SSH FDB может подтверждать switch-port mapping;
-- SSH `iw station dump` может подтверждать AP↔client association;
-- SSH interface/prefix и route data участвуют в L3 topology, но management-discovered subnet остаётся `active_scope=false`;
-- SSH bridge VLAN semantics различает access/trunk/hybrid: endpoint получает VLAN только из точного FDB VLAN либо из однозначного single-VLAN access port;
-- `source_health` охватывает route-trace, SNMP и SSH: job-backed persisted artifact, который должен был войти в topology, не может исчезнуть молча — карта становится `partial` и получает sanitized `source_errors`;
-- добавлены regression tests для SSH scope/role/secret lifecycle, credential cleanup/retry, access-vs-trunk VLAN projection и source-health;
-- модель подробно зафиксирована в `docs/TOPOLOGY_MODEL.md` / `docs/en/TOPOLOGY_MODEL.md` и API docs.
+Основные изменения:
 
-Принцип M11.4: **если данных недостаточно, WireScope должен показать недостаток evidence, а не компенсировать его более смелой эвристикой**.
+- canonical evidence graph отделён от presentation projection;
+- добавлен `coverage` / claimability слой;
+- домены `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, `hypervisor` получают `sufficient / partial / missing`;
+- WireScope показывает, **чего именно не хватает для более сильного топологического вывода**, вместо фиктивного процента «изученности сети»;
+- multi-homed environment сохраняет per-interface default routes и DHCP router-option evidence;
+- gateway выбранного audit interface определяется только по точному persisted evidence;
+- шаблоны `.1`, `.254`, `.11` и подобные эвристики не используются;
+- добавлен optional read-only SSH topology provider для Linux/OpenWrt-подобных managed devices;
+- SSH использует fixed allowlist `ip/bridge/iw`, strict host-key verification и не принимает arbitrary remote command;
+- SSH private key/known_hosts передаются через consume-once `0600` spool и не сохраняются как plaintext evidence;
+- SNMP/SSH management jobs требуют свежих credentials при новом запуске;
+- SSH `ip neigh` используется как IP↔MAC identity evidence, но не как доказательство физического кабеля;
+- FDB, bridge VLAN и Wi-Fi association могут усиливать L2/VLAN/Wi-Fi topology только при реальных management-plane evidence;
+- source-health охватывает route-trace, SNMP и SSH;
+- если ожидаемый job-backed artifact не вошёл в карту, topology становится `partial`, а ошибка остаётся sanitized.
 
-### v1.2 live-validation gate
+Принцип v1.2: **если данных недостаточно, WireScope должен показать недостаток evidence, а не дорисовать более смелую схему**.
 
-Уже подтверждено на установленной WireScope VM для предыдущего M11 checkpoint:
-- upgrade проходит штатным `packaging/upgrade.sh`;
-- dependencies, systemd units и SQLite migrations применяются успешно;
-- `wirescope-api` и `wirescope-worker` запускаются после upgrade;
-- `dumpcap` privilege path остаётся рабочим;
-- API health/ready/capabilities после upgrade проверены оператором без критических ошибок.
+### Что было проверено вживую
 
-Для M11.4 нужен **новый Deep audit**, потому что старые audits не содержат нового persisted multi-interface default-route/DHCP lease evidence.
+На установленной WireScope VM подтверждено:
 
-До финального закрытия v1.2 проверить на live VM:
-- upgrade до M11.4 checkpoint и сохранность retained audits;
-- новый Deep audit на выбранном интерфейсе и confirmed scope;
-- structural map: subnet regions, assets/network devices, отсутствие directed-broadcast/link-local/PCAP внешнего шума в основном представлении;
-- `coverage`: корректные `sufficient/partial/missing`, рекомендации и отсутствие ложного «данных достаточно»;
-- interface-specific gateway: при наличии DHCP/default-route evidence gateway должен относиться именно к выбранному audit interface;
-- L2/L3/Traffic/All evidence переключения и явный PCAP overlay;
-- findings/details, zoom/pan/fit, JSON/SVG/PNG exports;
-- historical topology diff между retained audits;
-- read-only SNMP enrichment на доступном router/switch: interface/prefix, ARP/ND, а при поддержке BRIDGE/Q-BRIDGE/LLDP — FDB/VLAN/switch-port/LLDP;
-- либо read-only SSH enrichment на подходящем Linux/OpenWrt managed device: route/neigh/FDB/VLAN/Wi-Fi evidence с dedicated read-only account и проверенным host key;
-- отсутствие ложной router/VLAN/L2 classification;
-- `partial/source_errors` остаются fail-visible при недоступном persisted source.
+- переход с предыдущего topology checkpoint на M11.4 через штатный `packaging/upgrade.sh`;
+- сохранение рабочего состояния appliance;
+- SQLite/migrations/worker readiness;
+- `dumpcap` и `tshark` readiness;
+- новый Deep audit на реальном LAN interface;
+- structural topology и новая presentation model;
+- отсутствие критических regressions, мешающих пользоваться topology.
 
-Если конкретный router/switch не реализует отдельный стандартный MIB subtree или read-only SSH account не имеет доступа к конкретной allow-listed команде, это само по себе не ошибка WireScope: capability должен остаться false/empty, а карта строится из реально доступных источников.
+### Что не проверялось на живом устройстве
 
-После успешной live-проверки ставится финальный v1.2 topology checkpoint. Только затем начинается v1.3.
+В текущей сети SNMP на роутере не был настроен, поэтому **SNMP/FDB/Q-BRIDGE/LLDP management enrichment не объявляется live-validated**. Эти пути реализованы и покрыты automated regression, но vendor-specific interoperability будет проверяться по мере появления подходящих managed devices.
+
+То же относится к live-проверке SSH VLAN/Wi-Fi enrichment на подходящем Linux/OpenWrt device.
+
+Это больше не блокирует закрытие v1.2: topology корректно сообщает отсутствие соответствующего evidence через `coverage` и не обязана изображать VLAN/FDB/Wi-Fi данные там, где их не удалось получить.
+
+Подробная модель: [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
 
 ---
 
 ## v1.3 — Global Correlation Analysis
 
-Цель: объединить результаты активного/глубокого аудита, PCAP Traffic Analysis и Network Topology в единый детерминированный аналитический пакет.
+Статус: **следующий этап**.
 
-Global Analysis не просто склеивает отчёты. Он коррелирует persisted normalized данные и отвечает, например:
-- какой обнаруженный сервис реально использовался в PCAP;
-- относится ли finding к реально наблюдаемому обмену;
-- какие assets существуют в inventory, но не наблюдались в выбранном capture;
-- какие внешние endpoints связаны с конкретными внутренними assets;
-- совпадают ли gateway/DHCP/DNS/topology observations с данными аудита;
-- какие network-health симптомы относятся к важным/уязвимым сервисам;
-- где active и passive evidence расходятся.
+Цель — объединить результаты Deep/active audit, PCAP Traffic Analysis, findings и Network Topology в один детерминированный аналитический пакет.
 
-Выход:
+Global Analysis должен отвечать не «что лежит в четырёх разных отчётах», а как эти данные связаны между собой.
+
+Первые обязательные correlation rules:
+
+1. **Asset ↔ traffic identity**
+   - exact IP;
+   - exact MAC;
+   - без hostname-only merge.
+
+2. **Service ↔ observed traffic**
+   - какой обнаруженный service/port реально наблюдался в выбранном PCAP;
+   - какие inventory services не были видимы с данной capture point.
+
+3. **Finding ↔ traffic relevance**
+   - связан ли finding с asset/service, который участвовал в наблюдаемом обмене;
+   - отсутствие связи означает `uncorrelated`, а не «finding неважен».
+
+4. **Inventory ↔ Traffic coverage**
+   - assets, найденные discovery, но отсутствующие в capture;
+   - traffic endpoints, которые не удалось связать с inventory asset.
+
+5. **Internal ↔ external communications**
+   - внешние endpoints, связанные с конкретными внутренними assets;
+   - ports/protocols/packet-byte context из persisted Traffic Analysis.
+
+6. **Infrastructure consistency**
+   - совпадают ли gateway/DHCP/DNS observations между environment, passive evidence и topology;
+   - где active/passive/management evidence расходятся.
+
+7. **Evidence quality**
+   - partial/missing input должен наследоваться в Global Analysis;
+   - correlation не должна усиливать confidence сверх исходных evidence.
+
+Выход v1.3:
+
 - canonical `global-analysis` JSON;
-- русское итоговое заключение;
-- evidence references на audit/finding/traffic/topology сущности;
-- deterministic correlation rules как обязательная offline-база.
+- deterministic rule IDs;
+- evidence references на audit/assets/services/findings/traffic/topology;
+- русское операторское summary;
+- warnings/partial state для неполных источников;
+- воспроизводимый offline result без внешнего AI.
 
-Global Analysis должен работать **без внешнего AI**.
+Global Analysis **не перечитывает PCAP и не запускает scanner**: он работает поверх persisted normalized data.
 
 ---
 
 ## v1.4 — AI-assisted Global Analysis
 
-Цель: поверх deterministic `global-analysis` дать опциональное аналитическое заключение внешней или локальной модели.
+Цель — опционально добавить AI-аналитику поверх уже построенного deterministic `global-analysis`.
 
-Архитектура:
-- абстракция `AIProvider`;
-- первым provider может быть OpenAI API;
-- в будущем — локальный/offline provider;
-- API key хранится только backend-side;
-- raw PCAP по умолчанию внешнему provider не отправляется;
-- оператор явно выбирает, какие нормализованные данные разрешено передать;
-- передача внешнему provider — отдельная trust boundary и требует явного подтверждения.
+Базовые ограничения:
 
-AI получает не сырые несвязанные файлы, а подготовленный пакет: audit report JSON + traffic-analysis JSON + topology JSON + deterministic global correlations.
+- AI не заменяет deterministic correlation;
+- raw PCAP по умолчанию не передаётся внешнему provider;
+- оператор явно контролирует разрешённый набор передаваемых данных;
+- API key хранится backend-side;
+- AI output является аналитическим заключением/гипотезой, а не автоматическим WireScope finding;
+- вывод должен ссылаться на evidence/correlation IDs.
 
-AI-вывод не создаёт WireScope finding автоматически. Он помечается как аналитическое заключение/гипотеза и должен ссылаться на evidence IDs, на которых основан.
+Возможные providers: внешний API и локальная/offline модель через общую абстракцию `AIProvider`.
 
 ---
 
 ## Дальнейшие идеи
 
 Не являются текущими обязательствами:
+
 - PDF export;
 - дополнительные protocol audit modules;
 - CVE enrichment из локальной/контролируемой базы;
+- scheduled audits;
 - долгосрочная история traffic baselines;
-- topology diff между площадками/периодами;
-- расширенная multi-interface/multi-VLAN работа;
-- более широкая cross-distro/tshark compatibility matrix.
+- расширенная cross-site topology history;
+- hypervisor-specific topology providers;
+- vendor-specific management-plane adapters;
+- более широкая distro/architecture/tshark compatibility matrix.
 
 ## Текущий следующий шаг
 
-**M11.4 live-network validation:** обновить WireScope VM до hardening checkpoint, выполнить новый Deep audit и проверить structural map + `coverage` + interface-specific gateway. Затем, если доступен management device, выполнить read-only SNMP или SSH enrichment и проверить реальные L2/L3/VLAN/Wi-Fi evidence. Исправлять только подтверждённые live interoperability/UX проблемы. После зелёной live-проверки закрыть v1.2 и переходить к v1.3 Global Correlation Analysis.
+**v1.3 — Global Correlation Analysis.**
+
+Первый implementation slice: persisted inventory/report source + явно выбранный `traffic-analysis` + canonical `network-topology` → deterministic `global-analysis`, начиная с exact asset identity, observed service use, inventory-vs-traffic coverage и external endpoint correlation.

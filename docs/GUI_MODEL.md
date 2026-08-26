@@ -2,9 +2,9 @@
 
 **Русский** · [English](en/GUI_MODEL.md)
 
-GUI — основной интерфейс оператора. Для обычного аудита shell не требуется: создание audit, passive capture, подтверждение scope, active discovery, protocol audits, findings, evidence, reports и базовая диагностика доступны из браузера.
+GUI — основной интерфейс оператора. Для обычного аудита shell не требуется: создание audit, passive capture, подтверждение scope, active discovery, protocol audits, findings, evidence, reports, Traffic Analysis, Network Topology и базовая диагностика доступны из браузера.
 
-Frontend — клиент durable API. Закрытие вкладки, reload или restart kiosk не отменяют worker job.
+Frontend — клиент durable API. Закрытие вкладки, reload или restart kiosk не отменяют worker jobs.
 
 ## Где запускается GUI
 
@@ -16,45 +16,15 @@ http://127.0.0.1:8000/
 
 Обычная appliance-установка слушает `0.0.0.0:8000`, поэтому удалённый оператор может открыть GUI через IP любого настроенного интерфейса WireScope.
 
-## Frontend и визуальный слой
+## Frontend и visual layer
 
-Frontend остаётся без build framework:
+Frontend остаётся без build framework. Основной wizard живёт в `frontend/app.js`, а дополнительные функции вынесены в отдельные modules.
 
-```text
-frontend/
-├── index.html
-├── app.js
-├── i18n.js
-├── style.css          # базовая совместимая разметка
-├── modern.css         # актуальный responsive visual layer
-├── enhancements.js
-├── enhancements.css
-└── operations.js
-```
+Topology использует отдельные presentation modules поверх canonical API. Browser не является source of truth: topology, jobs, inventory, findings и evidence строятся из backend/SQLite/evidence store.
 
-`app.js` содержит основной wizard. `enhancements.js` добавляет dashboard/diff/evidence/Markdown export. `operations.js` отдельно добавляет эксплуатационные функции для auditor.
+Root page отдаётся с `Cache-Control: no-store`, а CSS/JS получают version query string. Это важно для topology renderer: после upgrade Chromium не должен продолжать использовать старые JS/CSS.
 
-`modern.css` загружается последним и меняет только presentation layer: существующие DOM id, API-контракты и workflow не переписываются. Это позволяет модернизировать внешний вид без риска сломать durable audit flow.
-
-### Адаптивность
-
-Один и тот же интерфейс используется в двух режимах:
-
-- маленький kiosk — крупные touch targets, компактные карточки, вертикальная прокрутка, минимум визуального шума;
-- обычный браузер/ноутбук — широкая рабочая область, более плотные grid-layouts и больше контекста на экране.
-
-Базовые breakpoint'ы:
-
-```text
-≤560 px     kiosk / small touchscreen
-≥900 px     desktop / laptop browser
-```
-
-### Обновление интерфейса после upgrade
-
-Root page отдаётся с `Cache-Control: no-store`, а CSS/JS получают version query string. Это защищает от ситуации, когда Chromium после обновления продолжает использовать старые assets.
-
-`packaging/upgrade.sh` после успешного upgrade автоматически рестартует `wirescope-kiosk.service`, если kiosk был запущен. API/worker jobs при этом не отменяются.
+`packaging/upgrade.sh` перезапускает kiosk browser после успешного upgrade, если kiosk включён; API/worker jobs при этом не отменяются.
 
 ## Основной audit flow
 
@@ -75,34 +45,18 @@ confirmation
   ↓
 passive → discovery → protocol → findings → report
   ↓
-summary / inventory / evidence / report
+summary / inventory / evidence / traffic / topology
 ```
 
-## Pipeline
-
-На progress/summary GUI показывает durable pipeline:
-
-```text
-Пассивный анализ
-      ↓
-Discovery
-      ↓
-Протоколы
-      ↓
-Findings
-      ↓
-Отчёт
-```
-
-Состояние вычисляется из jobs в SQLite. Браузер не хранит отдельную state machine.
+Pipeline state вычисляется из durable jobs в SQLite. Браузер не хранит отдельную state machine аудита.
 
 ## Панель «Обзор»
 
-После успешного login панель позволяет выбрать любой сохранённый audit. На login-screen кнопка скрыта.
+После login можно выбрать сохранённый audit и открыть operator views.
 
 ### «Обзор»
 
-Показывает assets, services, findings, Critical/High counts, passive+active correlation, pipeline, device classes и наиболее частые сервисы.
+Показывает assets, services, findings, Critical/High counts, passive+active correlation, pipeline, device classes и частые сервисы.
 
 ```text
 GET /api/v1/audits/{audit_id}/dashboard
@@ -111,14 +65,14 @@ GET /api/v1/audits/{audit_id}/correlations
 
 ### «Система»
 
-Показывает runtime capabilities, effective listener и загруженные scan profiles:
+Показывает runtime capabilities, listener и scan profiles:
 
 ```text
 GET /api/v1/capabilities
 GET /api/v1/scan-profiles
 ```
 
-Отсутствующий optional provider отображается как недоступная capability, а не как успешная проверка.
+Отсутствующий optional provider отображается как unavailable capability, а не как successful check.
 
 ### «Сравнение»
 
@@ -126,7 +80,7 @@ GET /api/v1/scan-profiles
 GET /api/v1/audits/{new_id}/diff?against={old_id}
 ```
 
-GUI группирует новые/исчезнувшие assets, open services и findings.
+GUI группирует появившиеся/исчезнувшие assets, open services и findings.
 
 ### «Evidence»
 
@@ -137,38 +91,129 @@ GET /api/v1/audits/{audit_id}/artifacts/{artifact_id}
 
 Text/JSON/XML evidence раскрывается inline; binary artifacts открываются отдельно. Artifact access всегда audit-scoped.
 
-### «Эксплуатация»
+## Network Topology workspace
 
-Эта вкладка показывается только `auditor` и реализована отдельным `operations.js`.
+Topology — отдельный operator workspace, а не декоративное приложение к inventory.
 
-Она использует:
+Основной endpoint:
 
 ```text
-GET  /api/v1/diagnostics
-GET  /api/v1/diagnostics/export
-GET  /api/v1/audits/{audit_id}/jobs
-POST /api/v1/jobs/{job_id}/retry
-POST /api/v1/maintenance/cleanup
+GET /api/v1/audits/{audit_id}/topology
 ```
 
-На экране видны:
+Для явно выбранного PCAP overlay передаётся `traffic_analysis_job_id`. WireScope не выбирает «последний capture» автоматически.
+
+### Представления
+
+Доступны:
+
+- **Structural** — основная infrastructure-first схема;
+- **L2** — доказанные physical/adjacency/port relationships;
+- **L3** — subnet/gateway/router/interface relationships;
+- **Traffic** — communication graph выбранного Traffic Analysis;
+- **All evidence** — расширенное техническое представление canonical graph;
+- **VLAN focus** — evidence-backed VLAN/port context;
+- **История topology** — сравнение двух retained audits.
+
+Structural view специально уменьшает шум: directed broadcast, uncorrelated link-local endpoints и PCAP-only external addresses не должны выглядеть как обычные infrastructure hosts.
+
+### Coverage / достаточность данных
+
+GUI показывает `coverage` для:
+
+```text
+inventory
+l3
+l2
+traffic
+vlan
+wifi
+hypervisor
+```
+
+Статусы:
+
+```text
+sufficient
+partial
+missing
+```
+
+Это не процент «изученности сети». `missing` означает, что WireScope не имеет evidence, достаточного для соответствующего класса утверждений. Интерфейс должен показывать оператору, каких данных не хватает, а не скрывать ограничение.
+
+### Topology controls
+
+Поддерживаются:
+
+- zoom;
+- pan;
+- fit;
+- subnet focus;
+- confidence filters;
+- asset details;
+- edge details;
+- findings на assets;
+- явный Traffic overlay;
+- global retained-audit topology.
+
+### Export
+
+Доступны:
+
+- canonical topology JSON;
+- полная structural SVG diagram;
+- PNG structural diagram;
+- SVG текущего viewport;
+- VLAN JSON/SVG;
+- topology diff JSON.
+
+Полный diagram export не обязан повторять текущий viewport: это отдельный layout для читаемой выгрузки всей структурной схемы.
+
+### Management enrichment
+
+Auditor может запускать optional read-only enrichment:
+
+```text
+POST /api/v1/audits/{audit_id}/topology/snmp
+POST /api/v1/audits/{audit_id}/topology/ssh
+```
+
+Target должен находиться внутри confirmed scope.
+
+SNMP form принимает read-only v2c/v3 credentials.
+
+SSH form предназначена для Linux/OpenWrt-подобных managed devices, требует verified host key и не позволяет вводить arbitrary remote command. Credential material не должен отображаться после отправки и не хранится в persisted topology как plaintext.
+
+Если конкретный MIB/SSH capability недоступен, UI показывает partial/missing evidence вместо фиктивной topology.
+
+Подробнее: [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
+
+## Traffic Analysis
+
+Отдельный `packet_capture` сохраняет PCAP. После этого оператор может запустить deterministic Traffic Analysis без нового capture.
+
+Traffic Analysis и Network Topology остаются связанными, но разными views: первый отвечает «какой обмен был виден capture point», второй — «какие структурные/сетевые relationships подтверждаются evidence».
+
+## «Эксплуатация»
+
+Вкладка доступна только `auditor` и показывает:
 
 - runtime ready/not-ready;
 - SQLite `quick_check`;
 - worker/core tools;
-- свободное место;
-- размер evidence store;
-- retention policy и количество cleanup candidates;
-- failed/interrupted/cancelled jobs выбранного audit;
-- последние operational events.
+- disk/evidence usage;
+- retention policy;
+- retryable jobs;
+- operational events;
+- diagnostics export.
 
-Cleanup двухшаговый: сначала preview с `confirm=false`, затем отдельное подтверждение и запрос `confirm=true`.
+Cleanup двухшаговый: preview не удаляет данные; actual cleanup требует отдельного confirmation.
 
-Retry создаёт новую durable job и не переписывает terminal job.
+Generic retry создаёт новую durable job. Credentialed SNMP/SSH topology jobs нельзя повторять со старым credential reference — enrichment запускается заново.
 
 ## Device classification
 
-GUI показывает classification, вычисленную inventory layer:
+GUI показывает inventory classification:
 
 ```text
 server-like
@@ -185,13 +230,14 @@ Classification — confidence-rated hint, не finding.
 
 | Действие | Auditor | Viewer |
 | --- | --- | --- |
-| Читать audits/jobs/inventory/findings/reports | да | да |
+| Читать audits/jobs/inventory/findings/reports/topology | да | да |
 | Dashboard / diff / capabilities / evidence | да | да |
+| Смотреть topology/traffic/history | да | да |
 | Сменить собственный пароль | да | да |
 | Создать audit | да | нет |
 | Запустить/отменить job | да | нет |
-| Retry terminal job | да | нет |
 | Listen / Record | да | нет |
+| SNMP/SSH topology enrichment | да | нет |
 | Изменить network settings | да | нет |
 | Изменить finding state | да | нет |
 | Сгенерировать report | да | нет |
@@ -203,24 +249,13 @@ Backend проверяет role независимо от видимости к�
 
 После login backend выдаёт HttpOnly cookie. Token случайный; в SQLite хранится SHA-256 digest. `SameSite=strict`; `Secure` включается для direct TLS/trusted proxy deployment.
 
-Активный audit id frontend хранит в `sessionStorage` только для восстановления UI после reload. Source of truth — backend/SQLite.
-
-## Summary / observations / assessment / findings
-
-- **Summary** — короткая картина аудита и pipeline;
-- **Observations** — нормализованные факты sensors/protocol modules;
-- **Assessment** — интерпретации passive evidence с confidence;
-- **Findings** — rule-engine conclusions с severity/recommendation/state.
-
-Passive sensor hit сам по себе finding не создаёт.
+Активный audit id может храниться в `sessionStorage` только как UI convenience. Source of truth — backend.
 
 ## VLAN display
 
-VLAN ID показывается как реально увиденный только при наличии 802.1Q tag. Untagged access traffic не получает выдуманный VLAN ID. LLDP/CDP native/voice VLAN остаётся neighbor metadata.
+Пассивный VLAN ID считается observed только при реальном 802.1Q tag.
 
-## Listen / Record
-
-Отдельный `packet_capture` job принимает interface, optional BPF/tcpdump filter, duration и max PCAP size. Promiscuous mode записывает всё, что NIC реально принимает, но не превращает switch port в SPAN.
+В topology VLAN membership может дополнительно подтверждаться FDB/Q-BRIDGE/management evidence. Trunk/hybrid без точного endpoint VLAN не заставляет GUI назначить один произвольный VLAN.
 
 ## Network screen
 
@@ -228,15 +263,13 @@ Network settings идут через backend `NetworkService`/`netctl`. Поте
 
 ## Reports
 
-GUI открывает human-readable HTML и экспортирует canonical JSON/русский Markdown. HTML renderer адаптивный и print-friendly; подробнее — [REPORTING_MODEL.md](REPORTING_MODEL.md).
-
-Старые сохранённые reports при открытии HTML автоматически получают текущий presentation layer, потому что human HTML строится из их canonical JSON. Повторный network audit для этого не нужен.
-
-PDF пока возвращает `422 pdf_not_available` и не блокирует v1.0.
+GUI открывает human-readable HTML и экспортирует canonical JSON/Markdown. Reports строятся из persisted data и не запускают новый network audit.
 
 ## Ошибки и recovery
 
-GUI различает validation/provider/timeout/cancellation/authorization/network errors. Terminal failed/interrupted/cancelled job может быть явно повторена auditor через Operations. Автоматического бесконтрольного retry нет.
+GUI различает validation/provider/timeout/cancellation/authorization/network errors.
+
+Topology дополнительно показывает `partial`, `source_errors` и `coverage`, чтобы потеря одного management artifact не выглядела как полноценная карта.
 
 ## Kiosk lifecycle
 
@@ -250,6 +283,6 @@ wirescope-kiosk    может рестартовать независимо
 
 ## Тестирование
 
-Fixture/API tests проверяют roles и workflow. Static regression tests контролируют modern theme, cache-busting, kiosk refresh после upgrade, enhancement modules, audit-scoped evidence, Markdown и operations lifecycle UI. Optional Playwright tests остаются `browser` marker. Основной CI выполняет compileall и default pytest suite.
+CI проверяет compileall, default pytest, Chromium regression, wheel build и installed-wheel smoke.
 
-Release checklist находится в [RELEASE_READINESS.md](RELEASE_READINESS.md).
+Browser regression для topology покрывает structural rendering, filters, zoom/focus, bounded layout, findings, exports и VLAN focus. Live smoke M11.4 выполнен на обновлённой WireScope VM; vendor-specific SNMP/SSH interoperability проверяется дополнительно при наличии подходящих managed devices.

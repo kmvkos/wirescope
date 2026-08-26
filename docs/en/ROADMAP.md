@@ -2,101 +2,203 @@
 
 [Русский](../ROADMAP.md)
 
-This roadmap starts after the v1 feature freeze. New capabilities must preserve the v1 safety contracts: observed traffic is not authorization for active scanning, active scope is operator-confirmed, external tools are executed without a shell, and retained evidence remains reproducible.
+This roadmap describes development after the v1.0 feature freeze.
+
+New work must preserve the core safety contracts: passive observation is not authorization for active scanning, active scope is operator-confirmed, external tools are executed without a shell, and conclusions remain traceable to retained evidence.
 
 ## v1.0 — Base network auditor
 
 Status: **feature complete / frozen**.
 
-The release includes passive discovery, standalone PCAP capture, confirmed Discovery/Standard/Deep active scope, inventory, safe protocol audits, findings, HTML/JSON/Markdown reports, audit diff, evidence viewer, diagnostics, retention/retry, web/kiosk UI, report deletion, and full deletion of inactive audits.
+The base line includes passive analysis, standalone PCAP capture, operator-confirmed active scope, Discovery / Standard / Deep profiles, conservative inventory correlation, protocol audits, findings with evidence, HTML/JSON/Markdown reports, audit diff, diagnostics, retention/recovery, web/kiosk UI, and appliance backup/restore.
+
+After freeze, the v1.0 line receives defect fixes and release engineering rather than new major subsystems.
+
+---
 
 ## v1.1 — PCAP Traffic Analysis
 
-Status: **implementation complete; core live smoke scenarios passed**.
+Status: **implementation complete; core live scenarios passed**.
 
-Implemented milestones cover deterministic analysis of retained PCAP, a normalized communications graph, TCP/DNS/ARP/DHCP/ICMP diagnostics, protocol intelligence, defensible ACK RTT summaries, and persisted capture-to-capture comparison. Traffic Analysis does not start a new capture and remains explicit input to topology rather than a competing network model.
+v1.1 turns a retained PCAP into a standalone diagnostic source without starting another capture or contacting the network again.
+
+Implemented capabilities include:
+
+- deterministic retained-PCAP analysis;
+- duration, frames, bytes, packets/s, and observed bandwidth;
+- top talkers and a normalized communications graph;
+- TCP retransmission/duplicate-ACK/out-of-order/reset/zero-window/SYN-handshake signals;
+- DNS errors and latency statistics;
+- ARP conflict/change hints;
+- DHCP correlation;
+- ICMP/ICMPv6;
+- broadcast/multicast contributors;
+- TLS/HTTP/QUIC/SMB protocol intelligence without payload decryption;
+- cautious ACK RTT summaries;
+- comparison of two persisted traffic-analysis results;
+- canonical `traffic-analysis` JSON, readable text/Markdown, and web/kiosk presentation.
+
+The communications graph is an **explicitly selected** topology input. WireScope never silently mixes the most recent capture into a network map.
+
+---
 
 ## v1.2 — Network Topology
 
-Status: **M11.1–M11.4 implementation complete; full automated regression is green, live-network validation of the hardening checkpoint remains**.
+Status: **feature complete / closed**.
 
-Goal: render a useful map of the observed network while exposing provenance, confidence, and whether the retained evidence is actually sufficient for each class of topology claim.
+M11.1–M11.4 are implemented. Full automated regression is green, and the M11.4 hardening checkpoint was installed and exercised on an actual WireScope VM. The appliance remained healthy after upgrade, `/api/v1/ready` confirmed database/migrations/worker/capture dependencies, and a new Deep audit was used to validate the structural presentation. The resulting topology view was accepted for normal use.
+
+The v1.2 goal is not merely to draw discovered IP addresses. It builds an explainable network map and tells the operator **which classes of topology claims are actually supported by the available evidence**.
 
 ### M11.1 — logical topology
 
-Status: **implemented and live-tested with Deep audit + explicit PCAP overlay**.
+Status: **complete**.
 
-Canonical topology combines inventory, ARP, interface-specific routing context, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, and explicitly selected PCAP communications. Physical, routed, traffic, and inferred relationships remain distinct.
+Canonical `network-topology` combines persisted evidence from inventory, ARP/ND, route/default-gateway context, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, and an explicitly selected PCAP Traffic Analysis result.
 
-### M11.2 — interactive visualization
+The model keeps assets, interfaces, gateways/routers, subnet segments, infrastructure hints, external traffic endpoints, L2/L3/traffic relationships, confidence, and provenance separate. Sharing a subnet is never treated as proof of a direct physical L2 hop.
 
-Status: **implemented with Chromium regression for layout, filters, focus/zoom and exports**.
+### M11.2 — operator visualization
 
-The web/kiosk UI includes subnet regions, global retained-audit view, L2/L3/Traffic filters, confidence filters, asset/edge details, findings, explicit PCAP overlay, JSON/SVG/PNG export, and evidence-backed VLAN focus.
+Status: **complete**.
 
-### M11.3 — deeper physical and L3 topology
+The web/kiosk UI provides:
 
-Status: **implemented; management-plane live validation is part of the M11.4 gate**.
+- structural / infrastructure-first view;
+- dedicated L2, L3, Traffic, and All Evidence views;
+- subnet regions;
+- retained-audit global topology;
+- confidence filters;
+- asset/edge details and findings;
+- zoom/pan/fit;
+- explicit PCAP overlay;
+- topology JSON export;
+- full structural-diagram SVG/PNG export;
+- separate viewport SVG export;
+- VLAN focus with VLAN JSON/SVG export;
+- historical topology comparison.
 
-Implemented capabilities include bounded route-trace/upstream evidence, read-only SNMP, IF/IP/BRIDGE/Q-BRIDGE/LLDP evidence, router interfaces and connected prefixes, ARP/ND, conservative FDB/switch-port/VLAN projection, historical topology comparison, and fail-visible `partial/source_errors` behavior.
+Directed broadcasts, link-local noise, and PCAP-only external endpoints do not masquerade as normal infrastructure in the structural view.
 
-WireScope never invents an invisible L2 switch. Physical relationships require direct evidence.
+### M11.3 — physical and L3 enrichment
+
+Status: **complete**.
+
+Implemented capabilities include:
+
+- bounded traceroute/upstream evidence;
+- read-only SNMPv2c/v3 enrichment;
+- IF-MIB / IP-MIB / BRIDGE-MIB / Q-BRIDGE-MIB / LLDP-MIB;
+- IPv4/IPv6 interface addresses and connected prefixes;
+- ARP/IPv6 ND neighbor data;
+- FDB/switch-port correlation;
+- PVID/tagged/untagged VLAN membership;
+- `access / trunk / hybrid / unknown` port semantics;
+- LLDP chassis/port/management-address correlation;
+- network-interface nodes and routed-interface relationships;
+- conservative router classification;
+- fail-visible `partial/source_errors` behavior for missing persisted management evidence.
+
+A subnet learned from SNMP remains `active_scope=false`: management evidence may expand topology knowledge but never scanning authorization.
 
 ### M11.4 — topology hardening and evidence sufficiency
 
-Status: **implementation complete; automated regression, Chromium, wheel build, and installed-wheel smoke are green; live VM validation remains**.
+Status: **complete and live-tested on a WireScope VM**.
 
-Implemented:
+Implemented changes include:
 
-- `coverage` / claimability domains for inventory, L3, L2, traffic, VLAN, Wi-Fi, and hypervisor evidence using `sufficient / partial / missing`;
-- structural presentation separated from the full canonical evidence graph;
-- infrastructure-first rendering that prevents directed broadcast, link-local noise, and PCAP-only external endpoints from masquerading as ordinary infrastructure in the structural view;
-- full-diagram export separated from current-viewport export;
-- persisted per-interface default routes and DHCP router-option evidence for multi-homed WireScope hosts;
-- interface gateway projection only from exact persisted evidence, never `.1/.254/.11` guessing;
-- optional read-only SSH topology enrichment for Linux/OpenWrt-like managed devices;
-- strict SSH host-key verification, fixed `ip/bridge/iw` command allowlist, no arbitrary remote command, and no shell execution;
-- consume-once `0600` credential spool for SSH private key/known_hosts material;
-- immediate cleanup of queued SNMP/SSH credentials on cancel and fresh-credentials requirement for retry;
-- conservative SSH FDB/VLAN semantics: exact FDB VLAN or an unambiguous single-VLAN access port may establish endpoint VLAN; trunk/hybrid ports never force an arbitrary VLAN;
-- Wi-Fi association evidence from read-only management data when available;
-- source-health coverage for route-trace, SNMP, and SSH so omitted job-backed persisted evidence becomes visible as `partial/source_errors`;
-- dedicated regression for SSH role/scope/credential lifecycle, source health, and access-vs-trunk VLAN projection.
+- canonical evidence graph separated from presentation projection;
+- `coverage` / claimability layer;
+- `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, and `hypervisor` domains reported as `sufficient / partial / missing`;
+- explicit operator guidance about which stronger claims require additional evidence rather than a fake discovery percentage;
+- persisted per-interface default routes and DHCP router-option evidence for multi-homed hosts;
+- gateway projection only from exact persisted evidence, never `.1/.254/.11` guessing;
+- optional read-only SSH topology provider for Linux/OpenWrt-like managed devices;
+- fixed `ip/bridge/iw` SSH allowlist, strict host-key verification, no arbitrary remote command, and no shell execution;
+- consume-once `0600` spool for SSH private-key/known_hosts material;
+- fresh-credential requirement for SNMP/SSH management jobs;
+- `ip neigh` treated as IP↔MAC identity evidence rather than physical-cable proof;
+- FDB, bridge VLAN, and Wi-Fi association data used only when management-plane evidence supports the claim;
+- source-health coverage for route-trace, SNMP, and SSH with sanitized fail-visible errors.
 
-See [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md) for the evidence and claimability contract.
+The v1.2 rule is simple: **when evidence is insufficient, WireScope reports the missing evidence instead of drawing a more confident diagram**.
 
-### v1.2 live-validation gate
+### Live validation status
 
-The previous M11 checkpoint has already been upgraded successfully on an installed WireScope VM with healthy API/worker, migrations, capabilities, and dumpcap privilege path.
+Validated on the installed WireScope VM:
 
-M11.4 requires a **new Deep audit**, because older retained audits do not contain the new per-interface default-route/DHCP lease evidence.
+- normal upgrade from the previous topology checkpoint;
+- retained appliance state after upgrade;
+- SQLite/migrations/worker readiness;
+- `dumpcap` and `tshark` readiness;
+- a new Deep audit on the real LAN interface;
+- the structural topology presentation;
+- absence of critical regressions that prevent normal topology use.
 
-Live validation must cover:
+### Not live-validated in this environment
 
-- upgrade to the M11.4 checkpoint while preserving retained audits;
-- a new Deep audit on the selected interface and confirmed scope;
-- structural-map readability and suppression/grouping of non-structural broadcast/link-local/PCAP-only noise;
-- truthful `coverage` states and recommendations;
-- interface-specific gateway projection on a multi-homed appliance;
-- L2/L3/Traffic/All-evidence views and explicit PCAP overlay;
-- findings/details, zoom/pan/fit, JSON/SVG/PNG exports, and topology history diff;
-- read-only SNMP on an available router/switch, or read-only SSH on a suitable Linux/OpenWrt device, to validate real interface/route/neighbour/FDB/VLAN/LLDP/Wi-Fi evidence where supported;
-- absence of false router/VLAN/L2 classification and fail-visible source errors.
+SNMP was not configured on the router used for this validation, so **SNMP/FDB/Q-BRIDGE/LLDP management enrichment is not claimed as live-validated**. Those paths are implemented and covered by automated regression; vendor-specific interoperability will be checked when suitable managed devices are available.
 
-After a green live check, v1.2 receives the final topology checkpoint and development moves to v1.3.
+The same applies to live SSH VLAN/Wi-Fi enrichment on a suitable Linux/OpenWrt device.
+
+This no longer blocks v1.2 closure: topology correctly reports missing management evidence through `coverage` and does not invent VLAN/FDB/Wi-Fi structure when those sources are unavailable.
+
+See [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md) for the full evidence contract.
+
+---
 
 ## v1.3 — Global Correlation Analysis
 
-Goal: combine active/deep audit results, selected PCAP Traffic Analysis, findings, and Network Topology into a deterministic `global-analysis` package.
+Status: **next stage**.
 
-The first implementation should correlate exact identities and persisted evidence only: observed service use, finding relevance to observed traffic, inventory-only assets, external endpoints related to internal assets, and topology/gateway/DHCP/DNS consistency. Missing relationships remain `uncorrelated`, not guessed.
+Goal: combine Deep/active audit results, selected PCAP Traffic Analysis, findings, and Network Topology into one deterministic analytical package.
 
-Global Analysis must work **without external AI**.
+The first required correlation rules are:
+
+1. **Asset ↔ traffic identity** — exact IP/MAC, never hostname-only merge.
+2. **Service ↔ observed traffic** — which discovered services/ports were actually seen in the selected capture.
+3. **Finding ↔ traffic relevance** — whether a finding belongs to an asset/service participating in observed traffic; absence of a relationship means `uncorrelated`, not “irrelevant”.
+4. **Inventory ↔ Traffic coverage** — inventory assets absent from capture and traffic endpoints that cannot be linked to inventory.
+5. **Internal ↔ external communications** — external endpoints associated with specific internal assets with protocol/port/packet-byte context.
+6. **Infrastructure consistency** — compare gateway/DHCP/DNS observations across environment, passive evidence, and topology.
+7. **Evidence quality** — partial/missing input propagates to the global result; correlation never raises confidence above the source evidence.
+
+Outputs:
+
+- canonical `global-analysis` JSON;
+- deterministic rule IDs;
+- evidence references across audits/assets/services/findings/traffic/topology;
+- readable Russian operator summary;
+- warnings and partial state for incomplete sources;
+- reproducible offline output without external AI.
+
+Global Analysis does **not** re-read PCAP or start a scanner. It consumes persisted normalized data.
+
+---
 
 ## v1.4 — AI-assisted Global Analysis
 
-Optional AI analysis may be added only on top of deterministic global correlations. Raw PCAP is not sent by default; provider data transfer is a separate trust boundary and requires explicit operator control. AI output is an analytical conclusion/hypothesis, not an automatic WireScope finding.
+Optional AI analysis may be added only on top of deterministic `global-analysis`.
+
+Constraints:
+
+- AI does not replace deterministic correlation;
+- raw PCAP is not sent to an external provider by default;
+- the operator explicitly controls which normalized data may leave the appliance;
+- API keys stay backend-side;
+- AI output is an analytical conclusion/hypothesis, not an automatic WireScope finding;
+- output must reference evidence/correlation IDs.
+
+External APIs and local/offline models can share an `AIProvider` abstraction.
+
+---
+
+## Later ideas
+
+Non-blocking future work includes PDF export, additional protocol modules, local/controlled CVE enrichment, scheduled audits, longer traffic baselines, cross-site topology history, hypervisor-specific topology providers, vendor-specific management-plane adapters, and a broader distro/architecture/tshark compatibility matrix.
 
 ## Current next step
 
-**M11.4 live-network validation:** upgrade the WireScope VM to the hardening checkpoint, run a new Deep audit, verify structural topology + `coverage` + interface-specific gateway, then validate read-only SNMP or SSH management evidence where a suitable managed device is available. Fix only confirmed live interoperability/UX defects. After a green live check, close v1.2 and start v1.3 Global Correlation Analysis.
+**v1.3 — Global Correlation Analysis.**
+
+First implementation slice: persisted inventory/report source + explicitly selected `traffic-analysis` + canonical `network-topology` → deterministic `global-analysis`, starting with exact asset identity, observed service use, inventory-vs-traffic coverage, and external-endpoint correlation.

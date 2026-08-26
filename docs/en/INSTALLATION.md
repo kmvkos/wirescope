@@ -20,11 +20,17 @@ The repository is private, so use an SSH key or GitHub token.
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
 cd wirescope
-git checkout milestone-8-appliance
+git fetch --tags origin
+
+# For reproducible installation, select the intended release/tag/checkpoint:
+# git checkout <release-or-checkpoint>
+
 cd ..
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
 ```
+
+Do not copy an old milestone branch name from historical instructions. Production-like deployments should pin a known release/tag/checkpoint and record its exact SHA.
 
 Clone without `sudo` so Git uses the current user's SSH configuration. Checkout before moving the repository into `/opt` to avoid unnecessary ownership and `safe.directory` issues.
 
@@ -36,7 +42,7 @@ sudo ./packaging/install.sh --generate-admin-password
 
 A normal appliance install listens on **`0.0.0.0:8000`**. This is intentional: the UI is expected to be reachable through any configured WireScope interface, including Ethernet and Wi-Fi.
 
-A local browser can still use:
+A local browser can use:
 
 ```text
 http://127.0.0.1:8000/
@@ -56,7 +62,7 @@ sudo ./packaging/install.sh \
   --bind-host 127.0.0.1
 ```
 
-Firewall rules, TLS, and a reverse proxy remain available as deployment hardening options; they are not mandatory WireScope defaults.
+Firewall rules, TLS, and a reverse proxy remain available as deployment hardening options.
 
 ## Local kiosk
 
@@ -119,7 +125,7 @@ Only certificate/key paths are stored in the environment/systemd configuration; 
 10. first `auditor` creation without a built-in default password;
 11. service startup unless `--no-start` is supplied.
 
-Nuclei and Nikto are not installed by default.
+Nuclei and Nikto are not installed by default. Optional topology-management providers include Net-SNMP tools and the OpenSSH client; their absence does not make the base appliance `not_ready`.
 
 ## Services
 
@@ -249,46 +255,54 @@ OS packages and the initial `dumpcap` setup may still require root once.
 
 ## Updating an installed VM
 
-If the checkout already lives at `/opt/wirescope`:
+If the checkout already lives at `/opt/wirescope`, first confirm the working tree is clean:
 
 ```bash
 cd /opt/wirescope
-git status
+git status --short
 git branch --show-current
-git fetch origin
-git pull --ff-only
+git rev-parse HEAD
+git fetch --tags origin
 ```
 
-After a code-only update with no migration/dependency changes:
+For a reproducible upgrade, switch to a specific known-good ref:
 
 ```bash
-sudo systemctl restart wirescope-worker wirescope-api
-curl -sS http://127.0.0.1:8000/api/v1/ready
+git checkout <release-tag-or-checkpoint>
+git rev-parse HEAD
 ```
 
-For the full upgrade path:
+Before a substantial upgrade, create a backup, then use the full upgrade path:
 
 ```bash
+sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
+  /opt/wirescope/.venv/bin/python -m appliance backup
+
 sudo ./packaging/upgrade.sh --project-root /opt/wirescope
 ```
+
+After upgrade:
+
+```bash
+systemctl is-active wirescope-api wirescope-worker
+curl -sS http://127.0.0.1:8000/api/v1/ready
+curl -sS http://127.0.0.1:8000/api/v1/capabilities
+```
+
+Do not use `git pull` as a substitute for selecting a release/checkpoint when the appliance is expected to remain on a reproducible revision.
 
 The upgrade entrypoint uses the same `0.0.0.0` appliance default unless an explicit `--bind-host` override is provided.
 
 ## Backup and rollback
 
-Before a substantial upgrade:
-
-```bash
-sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
-  /opt/wirescope/.venv/bin/python -m appliance backup
-```
+A backup should already exist before a substantial upgrade.
 
 For rollback:
 
 1. stop API and worker;
 2. restore the backup if schema/data formats changed;
 3. return to the previous known-good Git revision;
-4. reinstall the editable package in `.venv` if needed;
+4. reinstall the package in `.venv` if needed;
 5. start worker and API;
 6. verify `/api/v1/ready`.
 

@@ -23,6 +23,7 @@ from reports.html_v2 import render_html
 from reports.markdown import render_markdown
 from reports.models import AuditReport
 from reports.presentation import localized_report
+from reports.presentation_cleanup import polish_human_report
 from reports.store import ReportNotFound
 
 
@@ -119,9 +120,6 @@ def delete_report(
         services.jobs.get_audit(audit_id)
         report = services.reports.get(audit_id, report_id)
 
-        # Resolve paths before deleting artifact metadata from SQLite. Missing
-        # artifacts do not block logical report deletion; the report history is
-        # still made consistent and orphan cleanup can handle stray files.
         artifacts = {}
         for artifact_id in {
             report.json_artifact_id,
@@ -148,8 +146,6 @@ def delete_report(
         try:
             services.evidence.path_for(artifact).unlink(missing_ok=True)
         except OSError:
-            # Logical deletion already succeeded. Keep the response successful;
-            # startup/orphan maintenance may remove the unregistered file later.
             cleanup_pending.append(artifact_id)
 
     return {
@@ -176,7 +172,7 @@ def export_report(
             status_code=422,
             detail={
                 "code": "pdf_not_available",
-                "message": "PDF export is not implemented",
+                "message": "Экспорт в PDF пока не реализован",
             },
         )
     if requested not in {"json", "html", "markdown"}:
@@ -184,7 +180,7 @@ def export_report(
             status_code=422,
             detail={
                 "code": "unsupported_report_format",
-                "message": "format must be json, html, or markdown",
+                "message": "Поддерживаемые форматы: json, html, markdown",
             },
         )
 
@@ -192,17 +188,16 @@ def export_report(
         services.jobs.get_audit(audit_id)
         report = services.reports.get(audit_id, report_id)
 
-        # JSON is the canonical report document. Human-readable HTML and
-        # Markdown are rendered from that same persisted document so even
-        # reports created by older WireScope versions immediately benefit from
-        # presentation/localization improvements without re-running an audit.
+        # JSON remains the canonical report document. Human-readable exports are
+        # presentation-only and may receive terminology/design improvements
+        # without mutating the saved report or re-running the audit.
         json_artifact = services.jobs.artifact(report.json_artifact_id)
         if json_artifact.audit_id != audit_id:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "code": "artifact_audit_mismatch",
-                    "message": "Report artifact does not belong to audit",
+                    "message": "Артефакт отчёта относится к другому аудиту",
                 },
             )
 
@@ -212,11 +207,11 @@ def export_report(
         else:
             document = services.evidence.read_json(json_artifact)
             if requested == "markdown":
-                payload = render_markdown(document).encode("utf-8")
+                payload = polish_human_report(render_markdown(document)).encode("utf-8")
                 media_type = "text/markdown; charset=utf-8"
             else:
                 canonical = AuditReport.model_validate(document)
-                payload = render_html(localized_report(canonical)).encode("utf-8")
+                payload = polish_human_report(render_html(localized_report(canonical))).encode("utf-8")
                 media_type = "text/html; charset=utf-8"
     except EntityNotFound as exc:
         raise not_found(exc) from exc

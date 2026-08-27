@@ -176,13 +176,13 @@ def global_analysis_history(
             "summary": None,
             "error": None,
         }
-        if row.error:
-            error = dict(row.error)
+        if row.error_code or row.error_message:
             item["error"] = {
-                "code": error.get("code"),
-                "category": error.get("category"),
-                "message": error.get("message"),
-                "retryable": bool(error.get("retryable")),
+                "code": row.error_code,
+                "category": row.error_category,
+                "message": row.error_message,
+                "component": row.error_component,
+                "retryable": bool(row.error_retryable),
             }
         if row.result_reference and row.status == JobStatus.COMPLETED.value:
             try:

@@ -27,7 +27,7 @@ from reports.store import ReportStore
 from storage.evidence import EvidenceStore
 
 
-# Keep the established cache version for unchanged baseline assets.  Product
+# Keep the established cache version for unchanged baseline assets. Product
 # coherence files and modified feature assets use their own cache-bust tokens.
 _UI_ASSET_VERSION = "20260825-ui14"
 _TOPOLOGY_HISTORY_ASSET_VERSION = "20260827-ui22"
@@ -35,7 +35,7 @@ _SNMP_TOPOLOGY_ASSET_VERSION = "20260825-ui16"
 _TOPOLOGY_HARDENING_ASSET_VERSION = "20260826-ui17"
 _SSH_TOPOLOGY_ASSET_VERSION = "20260826-ui18"
 _GLOBAL_ANALYSIS_ASSET_VERSION = "20260827-ui19"
-_PRODUCT_COHERENCE_ASSET_VERSION = "20260827-ui21"
+_PRODUCT_COHERENCE_ASSET_VERSION = "20260827-ui23"
 
 
 def create_app(
@@ -220,8 +220,6 @@ def create_app(
                 f'<script src="/static/topology.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_hardening.js?v={_TOPOLOGY_HARDENING_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_compare.js?v={_TOPOLOGY_HISTORY_ASSET_VERSION}"></script>\n'
-                f'<script src="/static/snmp_topology.js?v={_UI_ASSET_VERSION}&feature={_SNMP_TOPOLOGY_ASSET_VERSION}"></script>\n'
-                f'<script src="/static/ssh_topology.js?v={_SSH_TOPOLOGY_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_tab.js?v={_UI_ASSET_VERSION}&feature={_TOPOLOGY_HARDENING_ASSET_VERSION}&coherence={_PRODUCT_COHERENCE_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/global_analysis.js?v={_GLOBAL_ANALYSIS_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/product_coherence.js?v={_PRODUCT_COHERENCE_ASSET_VERSION}"></script>\n'

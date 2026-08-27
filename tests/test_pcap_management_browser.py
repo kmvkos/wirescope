@@ -21,7 +21,7 @@ def _browser():
     return instance, browser
 
 
-def test_capture_row_can_delete_raw_pcap_without_deleting_history():
+def test_capture_row_disappears_after_raw_pcap_delete_while_history_is_preserved():
     instance, browser = _browser()
     try:
         page = browser.new_page(viewport={"width": 480, "height": 320})
@@ -34,7 +34,7 @@ def test_capture_row_can_delete_raw_pcap_without_deleting_history():
                 payload = {"username": "auditor", "role": "auditor"}
             elif url.endswith("/api/v1/captures?limit=20"):
                 payload = {
-                    "items": [{
+                    "items": [] if calls["delete"] else [{
                         "job_id": "capture-1",
                         "status": "completed",
                         "pcap_url": "/api/jobs/capture-1/pcap",
@@ -89,10 +89,12 @@ def test_capture_row_can_delete_raw_pcap_without_deleting_history():
         page.locator("#pcap-delete-modal").wait_for(state="visible")
         page.locator("#pcap-delete-modal").get_by_role("button", name="Удалить PCAP").click()
 
-        row.locator(".pcap-unavailable-note").wait_for(state="visible")
-        assert row.locator(".pcap-unavailable-note").inner_text() == "PCAP удалён"
-        assert row.locator(".traffic-analysis-button").count() == 0
-        assert row.get_by_text("Скачать pcap").count() == 0
+        row.wait_for(state="detached")
+        assert page.locator("#listen-session-list .session-row").count() == 0
+        empty = page.locator("#listen-session-list .pcap-empty-state")
+        empty.wait_for(state="visible")
+        assert "Сохранённых PCAP нет" in empty.inner_text()
+        assert page.get_by_text("PCAP недоступен").count() == 0
         # The independent progress-screen control is outside the capture row
         # and remains hidden because this synthetic fixture has no active job.
         assert not page.locator("#listen-download-button").is_visible()

@@ -64,51 +64,15 @@ M11.1–M11.4 реализованы. Полный automated regression зелё
 
 Статус: **завершено**.
 
-Canonical `network-topology` объединяет persisted evidence из:
+Canonical `network-topology` объединяет persisted evidence из inventory, ARP/ND, route/default-gateway context, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery и явно выбранного PCAP Traffic Analysis.
 
-- inventory;
-- ARP/ND;
-- route/default-gateway context;
-- DHCP;
-- LLDP/CDP;
-- STP;
-- VLAN/QinQ;
-- active discovery;
-- явно выбранного PCAP Traffic Analysis.
-
-Модель различает:
-
-- WireScope/interface;
-- assets;
-- gateway/router и network-device evidence;
-- subnet segments;
-- DHCP/DNS infrastructure;
-- external traffic endpoints;
-- L2, L3 и traffic relationships;
-- `confirmed / observed / inferred` confidence;
-- provenance каждого узла и связи.
-
-Факт нахождения двух адресов в одной подсети не считается доказательством прямого L2-соединения.
+Модель различает WireScope/interface, assets, gateway/router и network-device evidence, subnet segments, DHCP/DNS infrastructure, external traffic endpoints, L2/L3/traffic relationships, confidence и provenance. Факт нахождения двух адресов в одной подсети не считается доказательством прямого L2-соединения.
 
 ### M11.2 — операторская визуализация
 
 Статус: **завершено**.
 
-Web/kiosk UI содержит:
-
-- structural / infrastructure-first view;
-- отдельные L2, L3, Traffic и All evidence представления;
-- subnet regions;
-- global retained-audit topology;
-- confidence filters;
-- asset/edge details и findings;
-- zoom/pan/fit;
-- явный PCAP overlay;
-- topology JSON export;
-- SVG/PNG export полной structural diagram;
-- отдельный viewport SVG export;
-- VLAN focus и VLAN JSON/SVG export;
-- historical topology compare между retained audits.
+Web/kiosk UI содержит structural/infrastructure-first view, отдельные L2/L3/Traffic/All Evidence представления, subnet regions, global retained-audit topology, confidence filters, asset/edge details и findings, zoom/pan/fit, явный PCAP overlay, topology JSON export, SVG/PNG export structural diagram, viewport SVG export, VLAN focus/export и historical topology compare.
 
 Structural view не выдаёт directed broadcast, link-local шум и PCAP-only external endpoints за обычные инфраструктурные hosts.
 
@@ -116,22 +80,9 @@ Structural view не выдаёт directed broadcast, link-local шум и PCAP-
 
 Статус: **завершено**.
 
-Реализовано:
+Реализованы bounded traceroute/upstream evidence, read-only SNMPv2c/v3, IF-MIB/IP-MIB/BRIDGE-MIB/Q-BRIDGE-MIB/LLDP-MIB, IPv4/IPv6 interface addresses и connected prefixes, ARP/IPv6 ND, FDB/switch-port correlation, VLAN membership и access/trunk/hybrid semantics, LLDP correlation, network-interface nodes, routed-interface relationships, conservative router classification и fail-visible `partial/source_errors`.
 
-- bounded traceroute/upstream evidence;
-- read-only SNMPv2c/v3 enrichment;
-- IF-MIB / IP-MIB / BRIDGE-MIB / Q-BRIDGE-MIB / LLDP-MIB;
-- IPv4/IPv6 interface addresses и connected prefixes;
-- ARP/IPv6 ND neighbor data;
-- FDB/switch-port correlation;
-- PVID/tagged/untagged VLAN membership;
-- `access / trunk / hybrid / unknown` port semantics;
-- LLDP chassis/port/management-address correlation;
-- network-interface nodes и L3 routed-interface relationships;
-- conservative router classification;
-- fail-visible `partial/source_errors` для потерянного persisted management evidence.
-
-SNMP-observed subnet остаётся `active_scope=false`: management evidence может расширить **знание о topology**, но не разрешение на сканирование.
+SNMP-observed subnet остаётся `active_scope=false`: management evidence может расширить знание о topology, но не разрешение на сканирование.
 
 ### M11.4 — topology hardening и достаточность evidence
 
@@ -141,41 +92,26 @@ SNMP-observed subnet остаётся `active_scope=false`: management evidence 
 
 - canonical evidence graph отделён от presentation projection;
 - добавлен `coverage` / claimability слой;
-- домены `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, `hypervisor` получают `sufficient / partial / missing`;
-- WireScope показывает, **чего именно не хватает для более сильного топологического вывода**, вместо фиктивного процента «изученности сети»;
+- `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, `hypervisor` получают `sufficient / partial / missing`;
+- WireScope показывает, какого evidence не хватает для более сильного вывода;
 - multi-homed environment сохраняет per-interface default routes и DHCP router-option evidence;
-- gateway выбранного audit interface определяется только по точному persisted evidence;
-- шаблоны `.1`, `.254`, `.11` и подобные эвристики не используются;
-- добавлен optional read-only SSH topology provider для Linux/OpenWrt-подобных managed devices;
-- SSH использует fixed allowlist `ip/bridge/iw`, strict host-key verification и не принимает arbitrary remote command;
-- SSH private key/known_hosts передаются через consume-once `0600` spool и не сохраняются как plaintext evidence;
-- SNMP/SSH management jobs требуют свежих credentials при новом запуске;
-- SSH `ip neigh` используется как IP↔MAC identity evidence, но не как доказательство физического кабеля;
-- FDB, bridge VLAN и Wi-Fi association могут усиливать L2/VLAN/Wi-Fi topology только при реальных management-plane evidence;
+- gateway audit interface определяется только по точному persisted evidence, без `.1/.254/.11` эвристик;
+- optional read-only SSH topology provider для Linux/OpenWrt-подобных устройств;
+- fixed allowlist `ip/bridge/iw`, strict host-key verification, no arbitrary command;
+- SSH private key/known_hosts передаются через consume-once `0600` spool;
+- SNMP/SSH jobs требуют свежих credentials;
+- SSH `ip neigh` — IP↔MAC identity evidence, не доказательство кабеля;
+- FDB/bridge VLAN/Wi-Fi association усиливают topology только при реальном management evidence;
 - source-health охватывает route-trace, SNMP и SSH;
-- если ожидаемый job-backed artifact не вошёл в карту, topology становится `partial`, а ошибка остаётся sanitized.
+- пропущенный ожидаемый job-backed artifact переводит topology в `partial` с sanitized error.
 
 Принцип v1.2: **если данных недостаточно, WireScope должен показать недостаток evidence, а не дорисовать более смелую схему**.
 
-### Что было проверено вживую
+### Live validation status
 
-На установленной WireScope VM подтверждено:
+На установленной WireScope VM подтверждены штатный upgrade, сохранение appliance state, SQLite/migrations/worker readiness, `dumpcap`/`tshark` readiness, новый Deep audit на реальном LAN interface и structural topology presentation.
 
-- переход с предыдущего topology checkpoint на M11.4 через штатный `packaging/upgrade.sh`;
-- сохранение рабочего состояния appliance;
-- SQLite/migrations/worker readiness;
-- `dumpcap` и `tshark` readiness;
-- новый Deep audit на реальном LAN interface;
-- structural topology и новая presentation model;
-- отсутствие критических regressions, мешающих пользоваться topology.
-
-### Что не проверялось на живом устройстве
-
-В текущей сети SNMP на роутере не был настроен, поэтому **SNMP/FDB/Q-BRIDGE/LLDP management enrichment не объявляется live-validated**. Эти пути реализованы и покрыты automated regression, но vendor-specific interoperability будет проверяться по мере появления подходящих managed devices.
-
-То же относится к live-проверке SSH VLAN/Wi-Fi enrichment на подходящем Linux/OpenWrt device.
-
-Это больше не блокирует закрытие v1.2: topology корректно сообщает отсутствие соответствующего evidence через `coverage` и не обязана изображать VLAN/FDB/Wi-Fi данные там, где их не удалось получить.
+SNMP/FDB/Q-BRIDGE/LLDP management enrichment и SSH VLAN/Wi-Fi enrichment пока не объявляются live-validated из-за отсутствия подходящего managed device в текущем стенде. Эти пути покрыты automated regression и не блокируют закрытие v1.2.
 
 Подробная модель: [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
 
@@ -183,77 +119,96 @@ SNMP-observed subnet остаётся `active_scope=false`: management evidence 
 
 ## v1.3 — Global Correlation Analysis
 
-Статус: **implementation in progress; deterministic slice 1 реализован**.
+Статус: **implementation complete по коду; automated validation зелёный; требуется live validation на WireScope VM**.
 
-Цель — объединить результаты Deep/active audit, PCAP Traffic Analysis, findings и Network Topology в один детерминированный аналитический пакет.
+Цель — объединить Deep/active audit, выбранный PCAP Traffic Analysis, findings и Network Topology в один детерминированный аналитический пакет, который показывает не четыре независимых отчёта, а связи между ними.
 
-Global Analysis должен отвечать не «что лежит в четырёх разных отчётах», а как эти данные связаны между собой.
+Обязательные correlation domains:
 
-Первые обязательные correlation rules:
-
-1. **Asset ↔ traffic identity**
-   - exact IP;
-   - exact MAC;
-   - без hostname-only merge.
-
-2. **Service ↔ observed traffic**
-   - какой обнаруженный service/port реально наблюдался в выбранном PCAP;
-   - какие inventory services не были видимы с данной capture point.
-
-3. **Finding ↔ traffic relevance**
-   - связан ли finding с asset/service, который участвовал в наблюдаемом обмене;
-   - отсутствие связи означает `uncorrelated`, а не «finding неважен».
-
-4. **Inventory ↔ Traffic coverage**
-   - assets, найденные discovery, но отсутствующие в capture;
-   - traffic endpoints, которые не удалось связать с inventory asset.
-
-5. **Internal ↔ external communications**
-   - внешние endpoints, связанные с конкретными внутренними assets;
-   - ports/protocols/packet-byte context из persisted Traffic Analysis.
-
-6. **Infrastructure consistency**
-   - совпадают ли gateway/DHCP/DNS observations между environment, passive evidence и topology;
-   - где active/passive/management evidence расходятся.
-
-7. **Evidence quality**
-   - partial/missing input должен наследоваться в Global Analysis;
-   - correlation не должна усиливать confidence сверх исходных evidence.
+1. **Asset ↔ traffic identity** — exact IP/MAC, без hostname-only merge.
+2. **Service ↔ observed traffic** — какие inventory services/ports наблюдались в выбранном capture.
+3. **Finding ↔ traffic relevance** — связь finding с asset/service, участвующим в traffic; отсутствие связи = `uncorrelated`, а не «finding неважен».
+4. **Inventory ↔ Traffic coverage** — inventory assets вне visibility capture и traffic endpoints без inventory identity.
+5. **Internal ↔ external communications** — global external endpoints, связанные с exact-correlated internal assets.
+6. **Infrastructure consistency** — gateway/DHCP/DNS между environment, passive, traffic и topology evidence.
+7. **Evidence quality** — partial/missing input наследуется, confidence не усиливается сверх источника.
 
 ### Slice 1 — deterministic correlation core ✓
 
-Первый slice работает полностью поверх persisted data и не выполняет network I/O.
+Реализовано:
 
-Реализованы:
-
-- отдельный пакет `global_analysis`;
-- canonical `global-analysis` schema v1;
-- read-only API `GET /api/v1/audits/{audit_id}/global-analysis?traffic_analysis_job_id=...`;
-- exact IP/MAC asset↔traffic identity;
-- явный запрет hostname-only merge;
-- stable deterministic correlation IDs и versioned rule IDs;
-- conservative endpoint classification `internal_asset / internal_segment / external_global / private_unknown / special / unknown`;
+- пакет `global_analysis`;
+- canonical `global-analysis` v1;
+- offline preview API;
+- exact IP/MAC identity и запрет hostname-only merge;
+- deterministic correlation IDs и versioned rule IDs;
+- conservative endpoint classes `internal_asset / internal_segment / external_global / private_unknown / special / unknown`;
 - pair-level service-use correlation;
-- finding↔traffic relevance (`service_traffic_observed / asset_traffic_observed / uncorrelated`);
+- finding↔traffic relevance;
 - inventory-vs-capture visibility;
-- internal asset ↔ globally routable external endpoint correlation;
-- отдельный `private_unknown` path вместо ложного объявления private address «внешним»;
-- наследование topology/report partial state и identity conflicts;
-- fixture-based regression для exact IP/MAC, hostname non-merge, service matching, private/external classification, coverage и stable IDs;
-- CI compile/default pytest/wheel/installed-wheel smoke для нового package.
+- internal asset ↔ globally routable external endpoint;
+- `private_unknown` отдельно от external;
+- inheritance topology/report partial state и identity conflicts.
 
-Текущий `traffic-analysis` v1 хранит destination ports агрегированно на communication pair. Поэтому service-use match в этом slice имеет basis `observed_pair_destination_port`: он подтверждает наблюдение service port внутри пары с asset, но не утверждает без доказательств, какая сторона пары владела socket. Directional service mapping требует расширения traffic contract или отдельного persisted directional projection.
+Текущий `traffic-analysis` v1 агрегирует destination ports на communication pair. Поэтому service-use basis остаётся `observed_pair_destination_port`: это подтверждает наблюдение service port в паре с asset, но не заявляет без evidence, какая сторона владела socket.
 
-Подробная модель: [GLOBAL_ANALYSIS_MODEL.md](GLOBAL_ANALYSIS_MODEL.md).
+### Slice 2 — durable result + cross-source consistency ✓
 
-Выход v1.3 в завершённом виде должен включать:
+Реализовано:
 
-- canonical `global-analysis` JSON;
-- deterministic rule IDs;
-- evidence references на audit/assets/services/findings/traffic/topology;
-- русское операторское summary;
-- warnings/partial state для неполных источников;
-- воспроизводимый offline result без внешнего AI.
+- durable job type `global_analysis` в worker registry;
+- `POST /api/v1/audits/{audit_id}/global-analysis`;
+- persisted `global_analysis_result` / `global-analysis` v1 / retention `audit`;
+- namespaced `audit.summary.global_analysis`;
+- gateway/DHCP/DNS consistency rules;
+- safe evidence lineage по audit/assets/services/findings/traffic/topology;
+- artifact refs содержат ID/type/hash/schema/timestamp, но не filesystem path;
+- deterministic русская `operator_summary`;
+- preview и durable stage используют один correlation runtime;
+- никакого scanner/PCAP reread/network I/O.
+
+### Slice 3 — history, rebuild, exports и operator GUI ✓
+
+Реализовано:
+
+- история durable Global Analysis jobs для audit;
+- чтение только валидного completed `global_analysis_result`;
+- immutable rebuild: новый job/artifact с `rebuild_of_job_id`, старый result не изменяется;
+- rebuild разрешён только от completed durable result того же audit и с тем же selected Traffic Analysis;
+- JSON/TXT/Markdown exports из сохранённого canonical JSON;
+- dedicated operational audit action `global_analysis.generate`;
+- отдельный operator workspace в web/kiosk UI без вмешательства в основной audit pipeline;
+- выбор audit и конкретного completed Traffic Analysis;
+- run/progress/cancel для auditor;
+- history/read/export для auditor/viewer;
+- summary, infrastructure consistency, coverage/source health, finding relevance, external communications, warnings и evidence lineage;
+- отдельный `node --check` для нового JS в CI.
+
+### Automated validation
+
+На checkpoint Slice 3 полный CI прошёл:
+
+- Python compile;
+- Global Analysis JavaScript syntax check;
+- **494 tests passed, 3 deselected**;
+- wheel build;
+- installed-wheel smoke с импортом `topology` и `global_analysis` вне source tree.
+
+Последующие hardening-правки ограничены rebuild validation и operational audit action; branch CI остаётся обязательным gate перед live installation.
+
+Полная модель: [GLOBAL_ANALYSIS_MODEL.md](GLOBAL_ANALYSIS_MODEL.md). API: [API.md](API.md).
+
+### Что осталось до закрытия v1.3
+
+Только live validation на установленной WireScope VM:
+
+- обновить appliance штатным upgrade path;
+- убедиться в `/api/v1/ready`, worker/database/migrations/capture dependencies;
+- выбрать существующий/новый Deep audit и сохранённый Traffic Analysis;
+- запустить durable Global Analysis;
+- проверить canonical result, `partial/source_health`, consistency и evidence lineage на реальных persisted данных;
+- проверить operator GUI, history, immutable rebuild и JSON/TXT/Markdown exports;
+- после успешной проверки зафиксировать v1.3 checkpoint/tag.
 
 Global Analysis **не перечитывает PCAP и не запускает scanner**: он работает поверх persisted normalized data.
 
@@ -261,7 +216,7 @@ Global Analysis **не перечитывает PCAP и не запускает 
 
 ## v1.4 — AI-assisted Global Analysis
 
-Цель — опционально добавить AI-аналитику поверх уже построенного deterministic `global-analysis`.
+Цель — опционально добавить AI-аналитику поверх deterministic `global-analysis`.
 
 Базовые ограничения:
 
@@ -292,6 +247,6 @@ Global Analysis **не перечитывает PCAP и не запускает 
 
 ## Текущий следующий шаг
 
-**v1.3 — Global Correlation Analysis, slice 2.**
+**v1.3 — live validation и закрытие релиза.**
 
-Следующий implementation slice: durable `global_analysis_result` artifact/job contract + infrastructure consistency (gateway/DHCP/DNS cross-source correlation) + полные evidence references/operator summary. После этого можно добавлять history/rebuild semantics и GUI, не меняя базовые safety-контракты.
+Код Slice 1–3 собран. Следующий этап — штатно обновить WireScope VM и проверить durable Global Analysis, history/rebuild/exports и operator GUI на реальных persisted Deep/Traffic Analysis данных. После успешной live-проверки v1.3 можно закрывать checkpoint/tag и переходить к отдельному v1.4 AI-assisted layer.

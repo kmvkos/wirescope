@@ -235,6 +235,12 @@
             .replace(/\bport links\b/g, "связей портов");
     }
 
+    function translateSshMeta(text) {
+        if (text === "L3 IF") return "L3-интерфейсы";
+        if (text === "port links") return "связи портов";
+        return translateMeta(text, { allSegments: false });
+    }
+
     function normalizeTextNode(node) {
         if (!node || node.nodeType !== Node.TEXT_NODE) return;
         const kind = presentationKind(node);
@@ -259,7 +265,7 @@
         if (kind === "global-evidence") normalized = translateEvidence(normalized);
         if (kind === "global-row") normalized = translateGlobalRow(normalized);
         if (kind === "snmp-meta") normalized = translateSnmpMeta(normalized);
-        if (kind === "ssh-meta") normalized = translateMeta(normalized, { allSegments: false });
+        if (kind === "ssh-meta") normalized = translateSshMeta(normalized);
 
         if (normalized !== current) node.nodeValue = `${leading}${normalized}${trailing}`;
     }

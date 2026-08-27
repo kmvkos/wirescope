@@ -82,16 +82,20 @@ def test_capture_row_can_delete_raw_pcap_without_deleting_history():
         page.add_style_tag(path=str(ROOT / "frontend/style.css"))
         page.add_script_tag(path=str(ROOT / "frontend/pcap_management.js"))
 
-        delete_button = page.get_by_role("button", name="Удалить PCAP").first
+        row = page.locator("#listen-session-list .session-row")
+        delete_button = row.get_by_role("button", name="Удалить PCAP")
         delete_button.wait_for(state="visible")
         delete_button.click()
         page.locator("#pcap-delete-modal").wait_for(state="visible")
         page.locator("#pcap-delete-modal").get_by_role("button", name="Удалить PCAP").click()
 
-        page.locator(".pcap-unavailable-note").wait_for(state="visible")
-        assert page.locator(".pcap-unavailable-note").inner_text() == "PCAP удалён"
-        assert page.locator(".traffic-analysis-button").count() == 0
-        assert page.get_by_text("Скачать pcap").count() == 0
+        row.locator(".pcap-unavailable-note").wait_for(state="visible")
+        assert row.locator(".pcap-unavailable-note").inner_text() == "PCAP удалён"
+        assert row.locator(".traffic-analysis-button").count() == 0
+        assert row.get_by_text("Скачать pcap").count() == 0
+        # The independent progress-screen control is outside the capture row
+        # and remains hidden because this synthetic fixture has no active job.
+        assert not page.locator("#listen-download-button").is_visible()
         assert calls["delete"] == 1
     finally:
         browser.close()

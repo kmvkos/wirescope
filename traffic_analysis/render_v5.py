@@ -1,4 +1,9 @@
-"""RTT presentation layered over the protocol-intelligence v4 report."""
+"""Final Traffic Analysis presentation over protocol intelligence and RTT.
+
+The lower renderer layers intentionally remain backward-compatible.  This final
+layer applies product-coherence rules so the operator does not see the same DNS
+names or DHCP server details twice in one report.
+"""
 
 from __future__ import annotations
 
@@ -38,8 +43,45 @@ def _rtt_text(document: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _deduplicate_text(base: str) -> str:
+    """Remove detail blocks already owned by Protocol Intelligence.
+
+    v3 historically printed generic DNS top names and DHCP server hints, while
+    v4 later added a more precise ordinary-DNS/DHCP protocol section.  Preserve
+    the v3 aggregate diagnostics, but keep each detailed list only once.
+    """
+
+    lines = base.splitlines()
+    result: list[str] = []
+    skip_indented = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped == "Наиболее частые наблюдаемые имена:":
+            skip_indented = True
+            continue
+        if stripped == "DHCP server hints:":
+            skip_indented = True
+            continue
+        if stripped == "DHCP server hints в этом интервале не выделены.":
+            continue
+
+        if skip_indented:
+            if line.startswith("  "):
+                continue
+            skip_indented = False
+
+        if stripped == "ARP / DHCP / ICMP":
+            line = line.replace("ARP / DHCP / ICMP", "ARP / ICMP")
+
+        result.append(line)
+
+    return "\n".join(result).rstrip() + "\n"
+
+
 def render_text(document: dict[str, Any]) -> str:
-    base = render_text_v4(document)
+    base = _deduplicate_text(render_text_v4(document))
     block = _rtt_text(document)
     marker = "ПРОТОКОЛЬНЫЙ РАЗБОР\n"
     if marker in base:

@@ -31,6 +31,13 @@ def _iso_utc(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _pcap_unavailable(message: str = "Capture PCAP is unavailable") -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": "pcap_unavailable", "message": message},
+    )
+
+
 def _source_capture(job_id: str, services: AppServices):
     try:
         job = services.jobs.get_job(job_id)
@@ -50,39 +57,43 @@ def _source_capture(job_id: str, services: AppServices):
             },
         )
     if not job.result_reference:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "pcap_unavailable",
-                "message": "Capture has no retained PCAP result",
-            },
-        )
+        raise _pcap_unavailable("Capture has no retained PCAP result")
+
     try:
         result_artifact = services.jobs.artifact(job.result_reference)
         document = services.evidence.read_json(result_artifact)
-        pcap_artifact_id = str(document.get("pcap_artifact_id") or "")
-        if not pcap_artifact_id:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "pcap_unavailable", "message": "Capture PCAP is unavailable"},
-            )
-        pcap_artifact = services.jobs.artifact(pcap_artifact_id)
-        if (
-            pcap_artifact.audit_id != job.audit_id
-            or pcap_artifact.job_id != job.id
-            or pcap_artifact.artifact_type != "packet_capture"
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "pcap_reference_mismatch",
-                    "message": "Stored PCAP does not belong to this capture",
-                },
-            )
     except EntityNotFound as exc:
         raise not_found(exc) from exc
     except JobExecutionError as exc:
         raise job_execution_http_error(exc) from exc
+
+    pcap_artifact_id = str(document.get("pcap_artifact_id") or "")
+    if not pcap_artifact_id:
+        raise _pcap_unavailable()
+    try:
+        pcap_artifact = services.jobs.artifact(pcap_artifact_id)
+    except EntityNotFound as exc:
+        # Manual/retention deletion intentionally removes the raw artifact row
+        # while preserving capture_result and completed normalized analyses.
+        # Treat that state as an unavailable source, not as a missing capture.
+        raise _pcap_unavailable("Capture PCAP has been deleted or expired") from exc
+
+    if (
+        pcap_artifact.audit_id != job.audit_id
+        or pcap_artifact.job_id != job.id
+        or pcap_artifact.artifact_type != "packet_capture"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "pcap_reference_mismatch",
+                "message": "Stored PCAP does not belong to this capture",
+            },
+        )
+    if not services.evidence.path_for(pcap_artifact).is_file():
+        # Do not enqueue a worker job that can only fail because the retained
+        # file disappeared outside the normal metadata lifecycle.
+        raise _pcap_unavailable("Capture PCAP file has been deleted or expired")
     return job, pcap_artifact
 
 

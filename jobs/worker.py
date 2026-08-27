@@ -14,6 +14,7 @@ from jobs.errors import JobCancelled, JobExecutionError
 from jobs.handlers import (
     ActiveDiscoveryHandler,
     FindingsEvaluationHandler,
+    GlobalAnalysisHandler,
     PacketCaptureHandler,
     PassiveDiscoveryHandler,
     ProtocolAuditHandler,
@@ -274,6 +275,7 @@ def build_registry() -> HandlerRegistry:
     registry.register("protocol_audit", ProtocolAuditHandler())
     registry.register("findings_evaluation", FindingsEvaluationHandler())
     registry.register("report_generation", ReportGenerationHandler())
+    registry.register("global_analysis", GlobalAnalysisHandler())
     return registry
 
 

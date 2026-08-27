@@ -14,9 +14,9 @@ def test_root_loads_product_coherence_assets(api_context):
     app, _service, _evidence, _environment = api_context
     response = request(app, "GET", "/", auth=False)
     assert response.status_code == 200
-    assert "/static/product_coherence.css?v=20260827-ui26" in response.text
-    assert "/static/product_coherence.js?v=20260827-ui26" in response.text
-    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui26" in response.text
+    assert "/static/product_coherence.css?v=20260827-ui28" in response.text
+    assert "/static/product_coherence.js?v=20260827-ui28" in response.text
+    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui28" in response.text
 
 
 def test_topology_navigation_treats_management_sources_as_optional():
@@ -45,18 +45,23 @@ def test_management_panels_are_hidden_until_explicitly_opened():
     assert "overflow-wrap: anywhere" in css
 
 
-def test_operator_terminology_cleanup_is_loaded_for_legacy_saved_results():
+def test_operator_terminology_cleanup_is_scoped_to_presentation_nodes():
     script = _text("frontend/product_coherence.js")
     assert '["SNMP enrichment", "SNMP-опрос"]' in script
     assert '["SSH enrichment", "SSH-сбор данных"]' in script
-    assert '"inventory assets", "устройств инвентаря"' in script
+    assert '"inventory assets", "устройства инвентаря"' in script
     assert '"source_health, coverage и warnings"' in script
     assert '["Слабые места", "Проблемы"]' in script
     assert "порт доступа коммутатора" in script
     assert '["L3-адрес на NIC захвата", "L3-адрес на интерфейсе захвата"]' in script
+    assert "protectedDataNode" in script
+    assert "presentationKind" in script
+    assert 'pre, code, option, input, textarea, select, [data-ws-raw]' in script
+    assert "CORRELATION_FRAGMENTS" not in script
+    assert "scopedFragments" not in script
 
 
-def test_correlated_assessment_machine_warnings_are_localized_only_in_presentation():
+def test_correlated_assessment_machine_warnings_are_localized_without_generic_data_rewrites():
     script = _text("frontend/product_coherence.js")
     builder = _text("global_analysis/builder.py")
 
@@ -65,11 +70,17 @@ def test_correlated_assessment_machine_warnings_are_localized_only_in_presentati
     assert warning in script
     assert "Выбранный анализ PCAP не содержит пригодного графа коммуникаций" in script
     assert "Список устройств превышает лимит входных данных" in script
-    assert '[" · Traffic ", " · PCAP "]' in script
-    assert '["CA ", "Корреляция "]' in script
-    assert '[" · deep ·", " · Глубокий ·"]' in script
+    assert 'segment.startsWith("CA ")' in script
+    assert 'segment.startsWith("Traffic ")' in script
+    assert "META_EXACT.has(segment)" in script
     assert '["Evidence lineage", "Источники и ссылки на доказательства"]' in script
     assert '["трафик сервиса наблюдался", "трафик службы наблюдался"]' in script
+    assert 'if (/^asset\\s+[0-9a-f-]+$/i.test(text))' in script
+    assert 'if (/^\\d+\\s+pkt\\s+·/i.test(text))' in script
+    # Dangerous free-form substitutions from the previous implementation are
+    # deliberately absent. Asset/Traffic words in evidence remain untouched.
+    assert '["Asset", "Устройство"]' not in script
+    assert '["Traffic", "Трафик"]' not in script
 
 
 def test_human_report_cleanup_does_not_change_canonical_json_contract():

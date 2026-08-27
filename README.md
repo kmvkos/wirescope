@@ -2,157 +2,133 @@
 
 **Русский** · [English](README.en.md)
 
-WireScope — автономный сетевой аудитор для Linux. Его можно поставить на отдельный ПК, ноутбук, сервер, виртуальную машину или ARM64-устройство и использовать как переносной прибор для разбора незнакомого сетевого сегмента.
+WireScope — автономный сетевой аудитор для Linux. Его можно установить на отдельный ПК, ноутбук, сервер, виртуальную машину или ARM64-устройство и использовать как переносной прибор для разбора незнакомого сетевого сегмента.
 
-WireScope сначала наблюдает сеть пассивно, затем оператор явно подтверждает разрешённый active scope. После этого система строит inventory, выполняет активное обнаружение и protocol audits, формирует findings, анализирует PCAP, строит topology и собирает отчёт. Достижимая с хоста сеть сама по себе не считается разрешённой для сканирования.
+WireScope сначала наблюдает сеть пассивно, затем оператор явно подтверждает разрешённый active scope. После этого система строит inventory, выполняет active discovery и protocol audits, формирует findings, анализирует сохранённый PCAP, строит topology и позволяет сопоставить результаты разных источников. Достижимая с хоста сеть сама по себе не считается разрешённой для сканирования.
 
 Поддерживаются Debian/Ubuntu, Fedora/RHEL/Rocky и openSUSE на `amd64` и `arm64`. Raspberry Pi подходит как одна из аппаратных платформ, но не является обязательным.
 
-## Как проходит аудит
+## Как проходит работа
 
 ```text
 подключение к сети
         ↓
 состояние хоста и интерфейсов
         ↓
-пассивный захват
+пассивное наблюдение
         ↓
-ARP / DHCP / VLAN / LLDP / CDP / STP / IPv6 / mDNS / LLMNR / NBNS / SSDP
+подтверждение оператором active scope
         ↓
-подтверждение оператором разрешённого scope
+Discovery / Standard / Deep
         ↓
-активное обнаружение
-        ↓
-assets + services
+inventory + services
         ↓
 protocol audits
         ↓
 findings + evidence
         ↓
-report / traffic analysis / topology
+Audit Report
+
+отдельный retained PCAP
+        ↓
+Traffic Analysis
+        ↓
+опционально: Network Topology overlay / Корреляция результатов
 ```
 
 Есть отдельный режим **«Прослушивание»** для сохранения PCAP: выбирается интерфейс, optional BPF/tcpdump filter, время и максимальный размер файла.
 
-## Что умеет WireScope
+## Основные возможности
 
 ### Пассивный анализ
 
-`dumpcap` выполняет bounded capture, после чего PCAP один раз разбирается через `tshark -T ek`. Нормализованные packet records обрабатываются сенсорами внутри Python-процесса.
+`dumpcap` выполняет bounded capture, после чего PCAP разбирается через `tshark`. WireScope извлекает Ethernet/MAC, VLAN/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS и SSDP observations.
 
-Поддерживаются Ethernet/MAC, 802.1Q/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS и SSDP.
+Наблюдения отделены от предположений: ARP не доказывает маску сети, а untagged traffic не получает выдуманный VLAN ID.
 
-WireScope отделяет наблюдения от предположений: ARP-адрес не считается доказательством маски сети, а untagged traffic не получает выдуманный VLAN ID.
+### Active discovery
 
-### Активное обнаружение
+Nmap запускается только внутри operator-confirmed scope. Профили `discovery`, `standard` и `deep` описаны декларативно в `config/active_profiles.json`; arbitrary Nmap command line через API не принимается.
 
-Nmap запускается только внутри operator-confirmed scope. Произвольные Nmap flags через API не принимаются.
+### Inventory
 
-Профили `discovery`, `standard` и `deep` описаны декларативно в `config/active_profiles.json`. Нельзя передать через API `-sC`, `--script vuln` или arbitrary command line.
+Passive и active observations сходятся в нормализованный inventory. Identity correlation консервативна: MAC/IP используются как evidence, hostname сам по себе не является основанием для merge. При конфликте сохраняется `identity_conflict`.
 
-### Inventory и корреляция
+Для assets рассчитывается device-class hint (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`) с confidence и источниками сигнала. Это inventory hint, а не finding.
 
-Passive и active observations сходятся в одном inventory. Базовый приоритет идентичности — MAC, затем IP. При конфликте WireScope сохраняет `identity_conflict`, а не молча склеивает устройства. Hostname сам по себе основанием для merge не является.
+### Protocol audits и Findings
 
-Для assets рассчитывается device-class hint с confidence и источниками сигнала:
+После discovery запускаются только подходящие найденным сервисам read-only/diagnostic modules: SSH, TLS, HTTP/HTTPS, SMB, DNS, SNMP и LDAP.
 
-- `server-like`;
-- `workstation-like`;
-- `network-device-like`;
-- `printer-like`;
-- `iot-like`;
-- `unknown`.
+Protocol modules сохраняют observations. Отдельный rule engine строит findings поверх нормализованных фактов. Finding содержит severity, confidence, asset/service, rationale, recommendation и evidence references.
 
-Это inventory hint, а не security finding.
+### Audit Report
+
+Audit Report — source-of-truth для результатов самого аудита:
+
+- inventory;
+- discovered services;
+- protocol-audit results;
+- findings;
+- rationale/recommendations;
+- audit evidence.
+
+Доступны self-contained HTML, canonical JSON `audit-report` v1 и Markdown. Report строится из persisted data без повторного сканирования.
 
 ### PCAP Traffic Analysis
 
-Сохранённый PCAP можно анализировать отдельной durable job без нового захвата.
+Retained PCAP анализируется отдельной durable job без нового capture и без обращения к сети.
 
-Traffic Analysis даёт:
+Traffic Analysis отвечает за **то, что наблюдалось в конкретном capture window**:
 
+- duration/frames/bytes/rates;
 - top talkers и communications graph;
-- packets/bytes/rate;
 - TCP health;
 - DNS latency/errors;
 - ARP/DHCP/ICMP diagnostics;
 - broadcast/multicast contributors;
-- TLS/HTTP/QUIC/SMB metadata;
+- TLS/HTTP/QUIC/SMB metadata без payload decryption;
 - ACK RTT summaries;
-- сравнение двух сохранённых анализов.
+- сравнение сохранённых анализов.
 
-Canonical результат — `traffic-analysis` JSON. Communications graph может быть **явно** подключён к Network Topology; последний PCAP автоматически не подмешивается.
+Canonical результат — `traffic-analysis` JSON. Последний PCAP автоматически не подмешивается ни в topology, ни в другие результаты.
 
 ### Network Topology
 
-WireScope строит topology как аудитор: сохраняет полный evidence graph, а оператору показывает отдельную structural / infrastructure-first схему.
+WireScope строит explainable topology из persisted evidence. Доступны Structural, L2, L3, Traffic, All Evidence, VLAN focus и historical compare.
 
-Основные представления:
+Источники включают inventory, ARP/ND, routes, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, явно выбранный Traffic Analysis и optional read-only SNMP/SSH enrichment.
 
-- Structural;
-- L2;
-- L3;
-- Traffic;
-- All evidence;
-- VLAN focus;
-- historical topology diff.
+`coverage` / claimability показывает `sufficient / partial / missing`. Если evidence недостаточно, WireScope сообщает ограничение вместо того, чтобы угадывать gateway, physical link, VLAN или Wi-Fi attachment.
 
-Источники включают inventory, ARP/ND, interface routes, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, Traffic Analysis и optional read-only management enrichment через SNMP/SSH.
-
-Topology содержит `coverage` / claimability для `inventory`, `l3`, `l2`, `traffic`, `vlan`, `wifi`, `hypervisor` со статусами:
-
-```text
-sufficient
-partial
-missing
-```
-
-Это не «процент изученности сети». Если данных не хватает, WireScope показывает, **какого evidence не хватает**, а не дорисовывает физические связи или VLAN по догадке.
-
-Поддерживаются JSON/SVG/PNG export, subnet regions, zoom/pan/fit, asset/edge details, findings и global retained-audit topology.
+Management-discovered topology не расширяет active scope.
 
 Подробности: [docs/TOPOLOGY_MODEL.md](docs/TOPOLOGY_MODEL.md).
 
-### Management-plane enrichment
+### Корреляция результатов — v1.3
 
-Для подходящих managed devices topology можно обогащать read-only источниками:
+Функция **«Корреляция результатов»** (`Correlated Assessment`) сопоставляет уже сохранённый audit с явно выбранным Traffic Analysis и topology.
 
-- SNMPv2c/v3: IF/IP/BRIDGE/Q-BRIDGE/LLDP MIB;
-- SSH для Linux/OpenWrt-подобных устройств: фиксированный allowlist `ip/bridge/iw`.
+Она показывает только межисточниковые связи, например:
 
-SNMP/SSH target обязан находиться внутри confirmed scope. SSH использует strict host-key verification и не принимает arbitrary remote command. Credentials передаются через ephemeral consume-once spool и не сохраняются в topology evidence как plaintext.
+- какие inventory assets exact-сопоставились с traffic;
+- какие найденные service ports наблюдались в выбранном capture;
+- какие findings относятся к asset/service, видимым в traffic;
+- какие traffic endpoints не сопоставились с inventory;
+- какие exact-correlated internal assets общались с globally routable endpoints;
+- согласуются ли gateway/DHCP/DNS observations между независимыми sources.
 
-Management-discovered subnet расширяет знания о topology, но остаётся `active_scope=false`.
+Это **не второй Audit Report и не второй Traffic Analysis**. Correlated Assessment не должен копировать полные source reports; факт источника показывается только когда он нужен для объяснения связи.
 
-### Протокольные проверки
+Функция полностью offline: scanner не запускается, PCAP повторно не читается, network I/O не выполняется.
 
-После discovery запускаются только модули, подходящие найденным сервисам:
+Для backward compatibility внутренний job/schema/API пока называются `global_analysis`, `global-analysis` и `/global-analysis`.
 
-- SSH — `ssh-audit`;
-- TLS — `openssl s_client`;
-- HTTP/HTTPS — `curl`;
-- SMB — `smbclient`;
-- DNS — `dig`;
-- SNMP — консервативный SNMP probe;
-- LDAP — anonymous base DSE через `ldapsearch`.
+Подробности: [docs/GLOBAL_ANALYSIS_MODEL.md](docs/GLOBAL_ANALYSIS_MODEL.md).
 
-Пароли и community strings автоматически не перебираются. `testssl.sh`, Nikto и Nuclei остаются `never-default`.
+## Web/kiosk и эксплуатация
 
-### Findings, evidence и отчёты
-
-Protocol modules сохраняют observations. Отдельный rule engine строит findings поверх нормализованных фактов — scanner output и выводы не смешиваются.
-
-Finding содержит severity, confidence, asset/service, rationale, recommendation и ссылки на evidence.
-
-Отчёты строятся из persisted data без повторного сканирования:
-
-- self-contained HTML;
-- JSON `audit-report` v1;
-- Markdown.
-
-## Обзор и эксплуатация
-
-GUI показывает durable pipeline и сохранённые audits. Для auditor доступны diagnostics, operational audit log, retention preview/cleanup, job recovery и backup/restore.
+GUI показывает durable pipeline и сохранённые audits. Для auditor доступны diagnostics, operational audit log, retention preview/cleanup, job recovery и backup/restore. Viewer может читать разрешённые persisted results без запуска mutating jobs.
 
 Ключевые runtime endpoints:
 
@@ -163,13 +139,13 @@ GET /api/v1/capabilities
 GET /api/v1/diagnostics
 ```
 
+Обычная appliance-установка слушает `0.0.0.0:8000`; kiosk открывает `http://127.0.0.1:8000/`. Firewall, loopback-only bind, reverse proxy и TLS остаются deployment controls.
+
 ## Recovery и lifecycle
 
-Если worker перезапустился во время job, running job становится `interrupted`, а stale resource locks освобождаются. Explicit retry создаёт **новую** durable job; старая история не переписывается.
+Если worker перезапускается во время job, running job становится `interrupted`, stale resource locks освобождаются. Explicit retry создаёт новую durable job и не переписывает историю.
 
-Credentialed `snmp_topology` и `ssh_topology` не переиспользуют старые одноразовые credentials: enrichment запускается заново со свежими credentials.
-
-Retention консервативный. Raw evidence не удаляется неожиданно в фоне: auditor сначала видит preview и отдельно подтверждает cleanup.
+Credentialed `snmp_topology` и `ssh_topology` не переиспользуют consume-once credentials. Retention консервативный: raw evidence удаляется только через explicit preview/confirm cleanup.
 
 Backup/restore SQLite + evidence входит в appliance CLI.
 
@@ -177,7 +153,7 @@ Backup/restore SQLite + evidence входит в appliance CLI.
 
 ## Архитектура
 
-WireScope — modular monolith. API и worker работают отдельными процессами, но используют одну локальную модель состояния.
+WireScope — modular monolith. API и worker работают отдельными процессами, используя одну локальную модель состояния.
 
 ```text
 browser / kiosk
@@ -188,7 +164,8 @@ FastAPI /api/v1
       ├── audits / durable jobs
       ├── inventory / findings / reports
       ├── traffic analysis / topology
-      ├── diagnostics / lifecycle
+      ├── correlated assessment
+      └── diagnostics / lifecycle
       │
       ▼
 SQLite + evidence store
@@ -200,51 +177,23 @@ worker
       ├── protocol audits
       ├── traffic analysis
       ├── SNMP/SSH topology enrichment
+      ├── correlated assessment
       └── findings / reports
 ```
 
-`backend/app.py` — composition root. SQLite работает в WAL mode; крупные raw artifacts находятся в evidence store и зарегистрированы UUID/size/SHA-256.
+`wirescope-api` и `wirescope-worker` работают без root. Packet-capture privileges получает только `dumpcap`. External commands формируются как argv, без `shell=True`.
 
 Подробнее: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## API
-
-Канонический API — `/api/v1/*`. `/api/*` пока сохранён как compatibility alias.
-
-Topology endpoints:
-
-```text
-GET  /api/v1/audits/{audit_id}/topology
-GET  /api/v1/topology/global
-GET  /api/v1/audits/{audit_id}/topology/compare?against={baseline}
-POST /api/v1/audits/{audit_id}/topology/snmp
-POST /api/v1/audits/{audit_id}/topology/ssh
-```
-
-Подробнее: [docs/API.md](docs/API.md).
-
-## Веб-интерфейс и bind
-
-Обычная appliance-установка слушает `0.0.0.0:8000`, чтобы GUI был доступен через настроенный интерфейс устройства. Локальный kiosk открывает `http://127.0.0.1:8000/`.
-
-Firewall, loopback-only bind, reverse proxy и TLS остаются deployment controls.
-
-## Модель привилегий
-
-`wirescope-api` и `wirescope-worker` не запускаются от root. Packet-capture privileges получает только `/usr/bin/dumpcap`.
-
-Nmap не повышается самим WireScope. SNMP/SSH enrichment также выполняется unprivileged worker-ом.
-
 ## Быстрая установка
 
-Репозиторий приватный, поэтому нужен GitHub SSH key/token.
+Репозиторий приватный, поэтому нужен доступ GitHub SSH/token.
 
 ```bash
 git clone git@github.com:kmvkos/wirescope.git
 cd wirescope
 
-# Для воспроизводимого deployment переключитесь на нужный release/tag/checkpoint.
-# Не используйте старые milestone-ветки из исторических инструкций.
+# Для воспроизводимого deployment переключитесь на нужный checkpoint/tag.
 
 cd ..
 sudo mv wirescope /opt/wirescope
@@ -259,10 +208,9 @@ sudo ./packaging/install.sh \
 Основные пути:
 
 ```text
-/opt/wirescope                  code + .venv
-/etc/wirescope                  configuration
-/var/lib/wirescope              SQLite, runtime, evidence, backups
-/etc/systemd/system             systemd units
+/opt/wirescope       code + .venv
+/etc/wirescope       configuration
+/var/lib/wirescope   SQLite, runtime, evidence, backups
 ```
 
 Полная инструкция: [docs/INSTALLATION.md](docs/INSTALLATION.md).
@@ -278,13 +226,15 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-GitHub Actions выполняет compileall, default pytest suite, Chromium regression, wheel build и smoke install wheel вне source tree.
+GitHub Actions выполняет compileall, default pytest suite, browser regression, JavaScript syntax checks для feature UI, wheel build и installed-wheel smoke вне source tree.
 
 ## Текущий этап
 
-**Network Topology v1.2 завершена.** Structural topology прошла live smoke на обновлённой WireScope VM. SNMP/SSH vendor-specific interoperability будет дополнительно проверяться по мере появления подходящих managed devices и не должна подменяться эвристиками.
+**v1.3 Correlated Assessment / «Корреляция результатов» завершён и live-проверен.**
 
-Следующий этап — **v1.3 Global Correlation Analysis**: детерминированная корреляция persisted inventory/findings/Traffic Analysis/Network Topology без повторного network I/O.
+Следующий этап — **Product Coherence Review**: пройти по Audit Report, Traffic Analysis, Network Topology, Correlated Assessment и dashboard/operator views, определить source-of-truth для каждого типа данных и убрать повторяющиеся отчётные блоки.
+
+Импорт внешнего PCAP рассматривается как отдельная будущая функция и пока намеренно не специфицирован.
 
 Подробнее: [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -292,16 +242,15 @@ GitHub Actions выполняет compileall, default pytest suite, Chromium reg
 
 | Документ | Что внутри |
 | --- | --- |
-| [API](docs/API.md) | `/api/v1`, jobs, topology, evidence, diagnostics |
+| [API](docs/API.md) | `/api/v1`, jobs, evidence, topology, correlation |
 | [Установка](docs/INSTALLATION.md) | install, kiosk, bind, TLS, upgrade/rollback |
-| [Архитектура](docs/ARCHITECTURE.md) | modules, data flow, jobs, topology, persistence |
-| [Network Topology](docs/TOPOLOGY_MODEL.md) | evidence graph, coverage, L2/L3/VLAN, SNMP/SSH, limits |
+| [Архитектура](docs/ARCHITECTURE.md) | modules, data flow, jobs, persistence |
+| [Network Topology](docs/TOPOLOGY_MODEL.md) | evidence graph, coverage, L2/L3/VLAN, SNMP/SSH |
+| [Корреляция результатов](docs/GLOBAL_ANALYSIS_MODEL.md) | cross-source correlation и границы v1.3 |
 | [Эксплуатация](docs/OPERATIONS.md) | diagnostics, recovery, retention, backup/restore |
 | [Модель сканирования](docs/SCANNING_MODEL.md) | scope, profiles, inventory, protocol audits |
 | [Модель безопасности](docs/SECURITY_MODEL.md) | trust boundaries, auth, evidence, privileges |
 | [Findings](docs/FINDINGS_MODEL.md) | rules, severity/confidence, state model |
-| [Отчёты](docs/REPORTING_MODEL.md) | `audit-report` v1, HTML/JSON/Markdown |
-| [GUI](docs/GUI_MODEL.md) | wizard, dashboard, evidence и operator views |
-| [Разработка](docs/DEVELOPMENT.md) | local run, migrations, tests |
-| [Runbook](docs/RUNBOOK.md) | operational troubleshooting |
-| [Roadmap](docs/ROADMAP.md) | текущий статус и следующие milestones |
+| [Отчёты](docs/REPORTING_MODEL.md) | `audit-report` v1 и presentation rules |
+| [GUI](docs/GUI_MODEL.md) | wizard, dashboard, evidence/operator views |
+| [Roadmap](docs/ROADMAP.md) | текущий статус и следующие этапы |

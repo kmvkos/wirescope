@@ -81,21 +81,35 @@ See [GLOBAL_ANALYSIS_MODEL.md](GLOBAL_ANALYSIS_MODEL.md).
 
 ---
 
-## Next stage — Product Coherence Review
+## v1.3.1 — Product Coherence Review
 
-This is **not a new major feature**. It is a systematic review of the existing product before further expansion.
+Status: **complete / closed**.
 
-The goal is to remove repeated information across Audit Report, Traffic Analysis, Network Topology, Correlated Assessment, dashboard/operator views, and HTML/JSON/Markdown/TXT exports.
+This was not a new major feature. It was a systematic review of the existing product after v1.3, focused on removing duplicated information across Audit Report, Traffic Analysis, Network Topology, Correlated Assessment, dashboard/operator views, and human-readable exports.
 
-Ownership rules:
+The product now follows one ownership model:
 
 1. **Audit Report** owns inventory, discovered services, protocol-audit findings, rationale/recommendations, and audit evidence.
 2. **Traffic Analysis** owns facts from a specific capture window: traffic metrics, conversations, protocol observations, and network diagnostics.
-3. **Network Topology** owns structure, relationships, and claimability; it does not restate security or traffic reports in full.
-4. **Correlated Assessment** owns cross-source relationships only and references source data instead of repeating it.
+3. **Network Topology** owns structure, relationships, and claimability rather than restating security or traffic reports.
+4. **Correlated Assessment** owns cross-source relationships only and references source data instead of repeating full source reports.
 5. Dashboard/UI summaries provide compact navigation and status rather than another full report.
 
-The outcome must be enforced in code and in reporting/GUI documentation and regression tests.
+The review completed:
+
+- deduplication of human-readable Traffic Analysis and operator terminology cleanup;
+- preservation of canonical JSON contracts while improving TXT/Markdown/HTML/UI presentation;
+- Audit Report human-export cleanup without changing persisted canonical reports;
+- enforcement of Correlated Assessment as a cross-source view rather than a composite vulnerability report;
+- infrastructure-first topology presentation;
+- explicit optional/lazy SNMP and SSH management sources under the advanced topology UI;
+- isolated SNMP/SSH topology renderers so the normal topology view does not keep issuing management API reads after those modules were opened;
+- regression coverage for anti-duplication, presentation safety, kiosk/web layout, and lazy management behavior;
+- cache-bust/version checks for changed frontend assets.
+
+The final code checkpoint passed the complete GitHub Actions gate: Python compile, JS syntax, default pytest, Chromium kiosk/web smoke, wheel build, and installed-wheel smoke.
+
+See [PRODUCT_COHERENCE.md](PRODUCT_COHERENCE.md) and [REPORTING_MODEL.md](REPORTING_MODEL.md).
 
 ---
 
@@ -118,4 +132,4 @@ External PCAP import is intentionally not specified yet; its UX, ownership, limi
 
 ## Current next step
 
-**Run the Product Coherence Review and remove duplicated report/view content.**
+**Product Coherence Review is closed. The next major direction has not been selected; any new stage should be designed explicitly rather than silently expanding WireScope scope.**

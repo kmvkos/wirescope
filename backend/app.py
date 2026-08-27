@@ -32,6 +32,7 @@ _TOPOLOGY_HISTORY_ASSET_VERSION = "20260825-ui15"
 _SNMP_TOPOLOGY_ASSET_VERSION = "20260825-ui16"
 _TOPOLOGY_HARDENING_ASSET_VERSION = "20260826-ui17"
 _SSH_TOPOLOGY_ASSET_VERSION = "20260826-ui18"
+_GLOBAL_ANALYSIS_ASSET_VERSION = "20260827-ui19"
 
 
 def create_app(
@@ -196,6 +197,7 @@ def create_app(
                 f'<link rel="stylesheet" href="/static/topology_compare.css?v={_TOPOLOGY_HISTORY_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/snmp_topology.css?v={_UI_ASSET_VERSION}&feature={_SNMP_TOPOLOGY_ASSET_VERSION}">\n'
                 f'<link rel="stylesheet" href="/static/ssh_topology.css?v={_SSH_TOPOLOGY_ASSET_VERSION}">\n'
+                f'<link rel="stylesheet" href="/static/global_analysis.css?v={_GLOBAL_ANALYSIS_ASSET_VERSION}">\n'
                 "</head>"
             ),
         )
@@ -217,6 +219,7 @@ def create_app(
                 f'<script src="/static/snmp_topology.js?v={_UI_ASSET_VERSION}&feature={_SNMP_TOPOLOGY_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/ssh_topology.js?v={_SSH_TOPOLOGY_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_tab.js?v={_UI_ASSET_VERSION}&feature={_TOPOLOGY_HARDENING_ASSET_VERSION}"></script>\n'
+                f'<script src="/static/global_analysis.js?v={_GLOBAL_ANALYSIS_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/operations.js?v={_UI_ASSET_VERSION}"></script>\n'
                 "</body>"
             ),

@@ -14,9 +14,9 @@ def test_root_loads_product_coherence_assets(api_context):
     app, _service, _evidence, _environment = api_context
     response = request(app, "GET", "/", auth=False)
     assert response.status_code == 200
-    assert "/static/product_coherence.css?v=20260827-ui20" in response.text
-    assert "/static/product_coherence.js?v=20260827-ui20" in response.text
-    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui20" in response.text
+    assert "/static/product_coherence.css?v=20260827-ui21" in response.text
+    assert "/static/product_coherence.js?v=20260827-ui21" in response.text
+    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui21" in response.text
 
 
 def test_topology_navigation_treats_management_sources_as_optional():
@@ -45,6 +45,9 @@ def test_operator_terminology_cleanup_is_loaded_for_legacy_saved_results():
     assert '["SSH enrichment", "SSH-сбор данных"]' in script
     assert '"inventory assets", "устройств инвентаря"' in script
     assert '"source_health, coverage и warnings"' in script
+    assert '["Слабые места", "Проблемы"]' in script
+    assert '"порт доступа коммутатора"' in script
+    assert '["L3-адрес на NIC захвата", "L3-адрес на интерфейсе захвата"]' in script
 
 
 def test_human_report_cleanup_does_not_change_canonical_json_contract():

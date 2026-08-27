@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - milestone-*
+      - v*
       - refactor/**
   pull_request:
 
@@ -40,7 +41,7 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
       - name: Compile Python sources
-        run: python -m compileall -q backend appliance config engine findings inventory jobs parsers persistence protocol_audits providers reports storage traffic_analysis topology tests
+        run: python -m compileall -q backend appliance config engine findings global_analysis inventory jobs parsers persistence protocol_audits providers reports storage traffic_analysis topology tests
 
       - name: Run default test suite
         run: pytest -q
@@ -56,4 +57,4 @@ jobs:
           /tmp/wirescope-wheel-venv/bin/python -m pip install --upgrade pip
           /tmp/wirescope-wheel-venv/bin/python -m pip install dist/wirescope-*.whl
           cd /tmp
-          /tmp/wirescope-wheel-venv/bin/python -c "import topology; from topology import build_topology; print(topology.__file__)"
+          /tmp/wirescope-wheel-venv/bin/python -c "import topology, global_analysis; from topology import build_topology; from global_analysis import build_global_analysis; print(topology.__file__); print(global_analysis.__file__)"

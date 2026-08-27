@@ -13,17 +13,61 @@
         ["Viewer может читать результаты корреляции, но не запускать новый job.", "Роль viewer может читать сохранённые результаты, но не запускать новую корреляцию."],
         ["SNMP · физическая топология", "SNMP — данные сетевого оборудования"],
         ["SSH · management topology", "SSH — данные Linux/OpenWrt"],
+        ["SNMP enrichment", "SNMP-опрос"],
+        ["SSH enrichment", "SSH-сбор данных"],
         ["Запустить read-only SSH", "Собрать данные по SSH"],
         ["Запустить SNMP", "Собрать данные по SNMP"],
+        ["partial", "частично"],
     ]);
+
+    const CORRELATION_FRAGMENTS = [
+        ["inventory assets", "устройств инвентаря"],
+        ["inventory services", "служб инвентаря"],
+        ["exact-correlated assets", "точно сопоставленными устройствами"],
+        ["infrastructure evidence", "данных об инфраструктуре"],
+        ["infrastructure checks", "проверок инфраструктурных данных"],
+        ["source_health, coverage и warnings", "состояние источников, покрытие и предупреждения"],
+        [" · Traffic ", " · PCAP "],
+        [" · rebuild ", " · пересборка "],
+    ];
+
+    const META_FRAGMENTS = [
+        ["completed", "завершён"],
+        ["running", "выполняется"],
+        ["queued", "в очереди"],
+        ["cancelled", "остановлен"],
+        ["interrupted", "прерван"],
+        ["failed", "ошибка"],
+        ["deep", "глубокий"],
+        ["standard", "стандартный"],
+        ["discovery", "обнаружение"],
+        ["passive", "пассивный"],
+    ];
+
+    function scopedFragments(node) {
+        const parent = node.parentElement;
+        if (!parent) return [];
+        if (parent.closest("#global-analysis-modal")) {
+            const fragments = [...CORRELATION_FRAGMENTS];
+            if (parent.closest("#ga-audit-meta")) fragments.push(...META_FRAGMENTS);
+            return fragments;
+        }
+        return [];
+    }
 
     function normalizeTextNode(node) {
         if (!node || node.nodeType !== Node.TEXT_NODE) return;
-        const current = String(node.nodeValue || "").trim();
-        if (!current || !EXACT_TEXT.has(current)) return;
-        const leading = String(node.nodeValue || "").match(/^\s*/)?.[0] || "";
-        const trailing = String(node.nodeValue || "").match(/\s*$/)?.[0] || "";
-        node.nodeValue = `${leading}${EXACT_TEXT.get(current)}${trailing}`;
+        const original = String(node.nodeValue || "");
+        const current = original.trim();
+        if (!current) return;
+
+        const leading = original.match(/^\s*/)?.[0] || "";
+        const trailing = original.match(/\s*$/)?.[0] || "";
+        let normalized = EXACT_TEXT.get(current) || current;
+        scopedFragments(node).forEach(([oldValue, newValue]) => {
+            normalized = normalized.replaceAll(oldValue, newValue);
+        });
+        if (normalized !== current) node.nodeValue = `${leading}${normalized}${trailing}`;
     }
 
     function normalizeTree(root) {

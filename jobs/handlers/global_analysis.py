@@ -75,16 +75,17 @@ class GlobalAnalysisHandler:
             schema_version=1,
         )
         self._progress(context, 100, "completed", "Global correlation analysis completed")
-        summary = dict(document.get("summary") or {})
-        summary.update(
-            {
+        document_summary = dict(document.get("summary") or {})
+        summary = {
+            "global_analysis": {
+                **document_summary,
                 "schema": "global-analysis-summary",
                 "schema_version": 1,
                 "result_reference": artifact.id,
                 "traffic_analysis_job_id": traffic_job_id,
                 "partial": bool(document.get("partial")),
             }
-        )
+        }
         return HandlerResult(
             result_reference=artifact.id,
             summary=summary,

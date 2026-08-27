@@ -14,9 +14,9 @@ def test_root_loads_product_coherence_assets(api_context):
     app, _service, _evidence, _environment = api_context
     response = request(app, "GET", "/", auth=False)
     assert response.status_code == 200
-    assert "/static/product_coherence.css?v=20260827-ui21" in response.text
-    assert "/static/product_coherence.js?v=20260827-ui21" in response.text
-    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui21" in response.text
+    assert "/static/product_coherence.css?v=20260827-ui23" in response.text
+    assert "/static/product_coherence.js?v=20260827-ui23" in response.text
+    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui23" in response.text
 
 
 def test_topology_navigation_treats_management_sources_as_optional():
@@ -28,6 +28,9 @@ def test_topology_navigation_treats_management_sources_as_optional():
     assert 'sshButton.textContent = "SSH enrichment"' in script
     assert "ws-extra-snmp-open" in script
     assert "ws-extra-ssh-open" in script
+    assert "ensureExtraModule" in script
+    assert 'snmp: "/static/snmp_topology.js?v=20260825-ui14&feature=20260825-ui16"' in script
+    assert 'ssh: "/static/ssh_topology.js?v=20260826-ui18"' in script
     assert "История topology" not in script
 
 
@@ -58,3 +61,5 @@ def test_human_report_cleanup_does_not_change_canonical_json_contract():
     assert "polish_human_report(render_html(localized_report(canonical)))" in router
     assert '("Все findings", "Все проблемы")' in cleanup
     assert '("Evidence-артефакты", "Артефакты доказательств")' in cleanup
+    assert "Asset list exceeded the report input limit" in cleanup
+    assert "Список устройств превышает лимит данных отчёта" in cleanup

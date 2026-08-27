@@ -50,6 +50,18 @@
     ]);
 
     const CORRELATION_FRAGMENTS = [
+        ["One or more traffic endpoints matched multiple inventory identities; no automatic merge was performed.", "Одна или несколько конечных точек PCAP соответствуют нескольким записям инвентаря; автоматическое объединение не выполнялось."],
+        ["Selected traffic analysis does not contain a usable communications graph.", "Выбранный анализ PCAP не содержит пригодного графа коммуникаций; часть корреляции недоступна."],
+        ["Service-use correlation in this schema is pair-level: traffic-analysis v1 stores destination ports aggregated per endpoint pair, so it does not prove which side owned the matched port.", "Сопоставление использования служб выполняется на уровне пары узлов: traffic-analysis v1 хранит порты агрегированно для пары, поэтому по этим данным нельзя доказать, какой стороне принадлежал совпавший порт."],
+        ["An inventory asset missing from the selected PCAP is not considered absent from the network; capture-point visibility is limited.", "Если устройство из инвентаря не наблюдалось в выбранном PCAP, это не означает его отсутствие в сети: видимость ограничена точкой и интервалом захвата."],
+        ["Asset list exceeded the report input limit", "Список устройств превышает лимит входных данных; корреляция использует только допустимую часть."],
+        ["Service list exceeded the report input limit", "Список служб превышает лимит входных данных; корреляция использует только допустимую часть."],
+        ["Finding list exceeded the report input limit", "Список проблем превышает лимит входных данных; корреляция использует только допустимую часть."],
+        ["Evidence reference list exceeded the report input limit", "Список артефактов доказательств превышает лимит входных данных; используется только допустимая часть."],
+        ["Environment snapshot artifact was not found", "Снимок окружения не найден; часть инфраструктурной корреляции может быть недоступна."],
+        ["Environment snapshot could not be read", "Снимок окружения не удалось прочитать; часть инфраструктурной корреляции может быть недоступна."],
+        ["Environment snapshot did not contain an object", "Снимок окружения имеет неожиданный формат; часть инфраструктурной корреляции может быть недоступна."],
+        ["Passive result artifact could not be read", "Результат пассивного анализа не удалось прочитать; часть пассивных данных может быть недоступна."],
         ["Узлы inventory вне visibility выбранного capture:", "Устройства инвентаря, не наблюдавшиеся в выбранном PCAP:"],
         ["Traffic endpoints без exact inventory identity:", "Конечные точки PCAP без точного сопоставления с инвентарём:"],
         ["Для exact-correlated assets обмен с global external endpoints в выбранном PCAP не обнаружен.", "Для точно сопоставленных устройств внешние коммуникации в выбранном PCAP не обнаружены."],
@@ -65,6 +77,7 @@
         ["External", "Внешние связи"],
         ["Traffic endpoints", "Конечные точки PCAP"],
         ["Traffic job:", "Задание анализа PCAP:"],
+        [" · Traffic ", " · PCAP "],
         ["Traffic", "Трафик"],
         ["Protocols / ports", "Протоколы / порты"],
         ["Topology:", "Топология:"],
@@ -83,8 +96,12 @@
         ["COMPLETE", "ПОЛНО"],
         ["offline / no network I/O", "офлайн / без сетевых запросов"],
         [" pkt ·", " пак. ·"],
-        [" · Traffic ", " · PCAP "],
         [" · rebuild ", " · пересборка "],
+        ["CA ", "Корреляция "],
+        [" · deep ·", " · Глубокий ·"],
+        [" · standard ·", " · Стандартный ·"],
+        [" · discovery ·", " · Поиск устройств ·"],
+        [" · passive ·", " · Пассивный ·"],
     ];
 
     const TRAFFIC_FRAGMENTS = [

@@ -38,6 +38,18 @@ def _document() -> dict:
             "streams_seen": 2,
             "attempted_streams": 1,
             "syn_ack_observed": 1,
+            "top_problem_pairs": [
+                {
+                    "endpoint_a": "10.0.0.2",
+                    "endpoint_b": "10.0.0.10",
+                    "retransmissions": 1,
+                    "duplicate_acks": 2,
+                    "out_of_order": 1,
+                    "zero_window": 0,
+                    "resets": 0,
+                    "syn_retransmissions": 3,
+                }
+            ],
         },
         "dns": {"nxdomain": 0, "servfail": 0},
         "dns_latency": {
@@ -95,6 +107,8 @@ def test_text_export_uses_operator_facing_russian_without_mutating_data():
     assert "Признаки пропущенных или предыдущих сегментов:" in text
     assert "Дубли ACK / пакеты вне порядка:" in text
     assert "Нулевое TCP-окно / RST:" in text
+    assert "повторные SYN=3" in text
+    assert "SYN-повторные передачи=" not in text
     assert "Время ответа DNS: выборок 4; среднее 5.0 мс; p95 8.0 мс; максимум 10.0 мс." in text
     assert "ARP-запросы/ответы:" in text
     assert "Широковещательный трафик:" in text

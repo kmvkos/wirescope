@@ -154,6 +154,10 @@
             if (view !== "topology") activeExtra = null;
             setPrimaryTab(button);
             closeExtrasMenu();
+            // Update visibility synchronously. A previously opened management
+            // panel must disappear as soon as the operator switches views,
+            // rather than after the asynchronous topology render completes.
+            syncExtraPanels();
             await renderSelected();
         };
 
@@ -170,6 +174,7 @@
                 activeView = "topology";
                 activeExtra = null;
                 setPrimaryTab(topologyButton);
+                syncExtraPanels();
                 await renderSelected();
             }
             extrasOpen = !extrasOpen;
@@ -182,6 +187,7 @@
             activeView = "topology";
             setPrimaryTab(topologyButton);
             closeExtrasMenu();
+            syncExtraPanels();
             const body = insightsBody();
             try {
                 await ensureExtraModule(kind);

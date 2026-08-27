@@ -12,6 +12,7 @@ from traffic_analysis import ANALYZER_VERSION
 from traffic_analysis.advanced import merge_advanced
 from traffic_analysis.advanced_compat import PortableAdvancedTrafficAnalyzer
 from traffic_analysis.analyzer import TrafficAnalyzer
+from traffic_analysis.coherence import apply_product_coherence
 from traffic_analysis.insights import enrich_document
 from traffic_analysis.latency import TcpLatencyAnalyzer, merge_tcp_latency
 from traffic_analysis.protocol_intelligence import (
@@ -202,6 +203,10 @@ class TrafficAnalysisHandler:
             document.setdefault("limitations", []).append(
                 "TCP ACK RTT hints недоступны для этого PCAP; остальные результаты анализа сохранены."
             )
+
+        # Product coherence: protocol presence stays PCAP evidence, but Traffic
+        # Analysis must not turn it into a second Audit Findings report.
+        apply_product_coherence(document)
 
         context.report_progress(
             JobProgress(

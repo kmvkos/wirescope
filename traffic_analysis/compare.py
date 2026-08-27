@@ -190,6 +190,8 @@ def _signed(value: Any, suffix: str = "") -> str:
 
 
 def render_comparison_text(document: dict[str, Any]) -> str:
+    """Render an operator-facing comparison without exposing schema jargon."""
+
     traffic = document.get("traffic") or {}
     network = document.get("network") or {}
     tcp = document.get("tcp") or {}
@@ -208,8 +210,8 @@ def render_comparison_text(document: dict[str, Any]) -> str:
         "WIRESCOPE — СРАВНЕНИЕ ДВУХ PCAP-АНАЛИЗОВ",
         "=" * 58,
         "",
-        f"Baseline analysis: {str((document.get('baseline') or {}).get('job_id') or '—')[:8]}",
-        f"Current analysis:  {str((document.get('current') or {}).get('job_id') or '—')[:8]}",
+        f"Базовый анализ: {str((document.get('baseline') or {}).get('job_id') or '—')[:8]}",
+        f"Текущий анализ: {str((document.get('current') or {}).get('job_id') or '—')[:8]}",
         "",
         "ОБЪЁМ И СТРУКТУРА",
         "-" * 58,
@@ -220,16 +222,16 @@ def render_comparison_text(document: dict[str, Any]) -> str:
         delta_line("Broadcast", bm.get("broadcast_percent") or {}, "%"),
         delta_line("Multicast", bm.get("multicast_percent") or {}, "%"),
         "",
-        "ИЗМЕНЕНИЯ УЗЛОВ И СВЯЗЕЙ",
+        "ИЗМЕНЕНИЯ КОНЕЧНЫХ ТОЧЕК И СВЯЗЕЙ",
         "-" * 58,
-        f"Новые endpoints: {len(network.get('new_endpoints') or [])}",
-        f"Исчезнувшие endpoints: {len(network.get('missing_endpoints') or [])}",
+        f"Новые конечные точки: {len(network.get('new_endpoints') or [])}",
+        f"Исчезнувшие конечные точки: {len(network.get('missing_endpoints') or [])}",
         f"Новые связи: {len(network.get('new_edges') or [])}",
         f"Исчезнувшие связи: {len(network.get('missing_edges') or [])}",
     ]
     for label, values in (
-        ("  Новые endpoints", network.get("new_endpoints") or []),
-        ("  Исчезнувшие endpoints", network.get("missing_endpoints") or []),
+        ("  Новые конечные точки", network.get("new_endpoints") or []),
+        ("  Исчезнувшие конечные точки", network.get("missing_endpoints") or []),
         ("  Новые связи", network.get("new_edges") or []),
         ("  Исчезнувшие связи", network.get("missing_edges") or []),
     ):
@@ -241,11 +243,11 @@ def render_comparison_text(document: dict[str, Any]) -> str:
         "",
         "TCP / DNS / RTT",
         "-" * 58,
-        delta_line("TCP retransmission", tcp.get("retransmission_percent") or {}, "%"),
-        delta_line("TCP lost hints", tcp.get("lost_segments") or {}),
+        delta_line("Повторные передачи TCP", tcp.get("retransmission_percent") or {}, "%"),
+        delta_line("Признаки пропущенных TCP-сегментов", tcp.get("lost_segments") or {}),
         delta_line("TCP Zero Window", tcp.get("zero_window") or {}),
         delta_line("TCP RST", tcp.get("resets") or {}),
-        delta_line("DNS error responses", dns.get("error_responses") or {}),
+        delta_line("DNS-ответы с ошибкой", dns.get("error_responses") or {}),
     ])
     if rtt.get("baseline_status") == "measured" and rtt.get("current_status") == "measured":
         lines.extend([
@@ -254,7 +256,7 @@ def render_comparison_text(document: dict[str, Any]) -> str:
         ])
     else:
         lines.append(
-            "TCP ACK RTT: сравнение ограничено — в одном или обоих capture недостаточно подтверждённых RTT samples."
+            "TCP ACK RTT: сравнение ограничено — в одном или обоих захватах недостаточно подтверждённых значений RTT."
         )
 
     protocols = document.get("protocols") or []
@@ -282,10 +284,10 @@ def render_comparison_text(document: dict[str, Any]) -> str:
         lines.append("Предупреждения, которых больше нет:")
         lines.extend(f"  - {item}" for item in resolved)
     if not new_warnings and not resolved:
-        lines.append("Набор warning-сигналов не изменился.")
+        lines.append("Набор предупреждений не изменился.")
 
     lines.extend([
         "",
-        "Важно: сравнение относится к двум конкретным интервалам и точкам захвата. Разница может быть вызвана временем, нагрузкой, фильтром или видимостью capture, а не изменением конфигурации сети.",
+        "Важно: сравнение относится к двум конкретным интервалам и точкам захвата. Разница может быть вызвана временем, нагрузкой, фильтром или видимостью захвата, а не изменением конфигурации сети.",
     ])
     return "\n".join(lines) + "\n"

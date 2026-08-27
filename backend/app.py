@@ -28,9 +28,9 @@ from storage.evidence import EvidenceStore
 
 
 # Keep the established cache version for unchanged baseline assets.  Product
-# coherence files and the modified topology tab use their own cache-bust token.
+# coherence files and modified feature assets use their own cache-bust tokens.
 _UI_ASSET_VERSION = "20260825-ui14"
-_TOPOLOGY_HISTORY_ASSET_VERSION = "20260825-ui15"
+_TOPOLOGY_HISTORY_ASSET_VERSION = "20260827-ui22"
 _SNMP_TOPOLOGY_ASSET_VERSION = "20260825-ui16"
 _TOPOLOGY_HARDENING_ASSET_VERSION = "20260826-ui17"
 _SSH_TOPOLOGY_ASSET_VERSION = "20260826-ui18"

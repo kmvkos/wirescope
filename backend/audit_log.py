@@ -193,6 +193,8 @@ def operational_action(method: str, path: str) -> str | None:
             return "audit.discovery_start"
         if path.endswith("/protocol-audits"):
             return "audit.protocol_start"
+        if path.endswith("/global-analysis"):
+            return "global_analysis.generate"
         return "audit.change"
     if method in {"POST", "PUT", "PATCH", "DELETE"} and path.startswith("/api/"):
         return "api.mutation"

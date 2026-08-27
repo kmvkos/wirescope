@@ -136,7 +136,7 @@ def test_global_analysis_history_read_and_exports_are_viewer_accessible(api_cont
     )
     assert text_export.status_code == 200
     assert "КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ" in text_export.text
-    assert "СОГЛАСОВАННОСТЬ ИНФРАСТРУКТУРНЫХ ДАННЫХ" in text_export.text
+    assert "СОГЛАСОВАННОСТЬ ДАННЫХ ОБ ИНФРАСТРУКТУРЕ" in text_export.text
 
     md_export = request(
         app,
@@ -145,7 +145,7 @@ def test_global_analysis_history_read_and_exports_are_viewer_accessible(api_cont
         as_role="viewer",
     )
     assert md_export.status_code == 200
-    assert "# WireScope — Корреляция результатов" in md_export.text
+    assert "# WireScope — корреляция результатов" in md_export.text
 
 
 def test_global_analysis_rebuild_creates_new_immutable_result_with_lineage(api_context):
@@ -248,7 +248,7 @@ def test_global_analysis_renderers_are_bounded_human_readable_views():
         },
         "operator_summary": {
             "headline": "Корреляция результатов",
-            "lines": ["С выбранным PCAP сопоставлен один asset."],
+            "lines": ["С выбранным PCAP сопоставлено одно устройство."],
         },
         "infrastructure_consistency": {
             "gateway": {"status": "consistent", "rule_id": "GA-GATEWAY-CONSISTENCY-001", "sources": {"environment": ["192.0.2.1"], "topology": ["192.0.2.1"]}, "common_values": ["192.0.2.1"]},
@@ -268,8 +268,8 @@ def test_global_analysis_renderers_are_bounded_human_readable_views():
     markdown = render_markdown(document)
     assert "КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ" in text
     assert "8.8.8.8" in text
-    assert "DNS: расхождение" in text
-    assert "## Internal assets ↔ global endpoints" in markdown
+    assert "DNS: есть расхождение" in text
+    assert "## Связи устройств с внешними адресами" in markdown
     assert "8.8.8.8" in markdown
 
 

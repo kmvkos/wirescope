@@ -100,6 +100,7 @@ def _load_workspace(page) -> dict[str, int]:
 
         <script>
           window.WireScopeTopology = { render: async () => {} };
+          window.__wsBaseTopologyRender = window.WireScopeTopology.render;
           window.WireScopeTopologyCompare = { render: async () => {} };
         </script>
         </body></html>
@@ -175,6 +176,7 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
         assert calls["api"] >= 2
         assert not page.locator(".ws-ssh-topology-panel").is_visible()
         assert "SNMP — данные сетевого оборудования" in page.locator(".ws-snmp-topology-panel h3").inner_text()
+        assert page.evaluate("window.WireScopeTopology.render === window.__wsBaseTopologyRender")
         _assert_no_page_overflow(page, width)
 
         extras.click()
@@ -184,11 +186,16 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
         assert calls["ssh_script"] == 1
         assert not page.locator(".ws-snmp-topology-panel").is_visible()
         assert "SSH — данные Linux/OpenWrt" in page.locator(".ws-ssh-topology-panel h3").inner_text()
+        assert page.evaluate("window.WireScopeTopology.render === window.__wsBaseTopologyRender")
         _assert_no_page_overflow(page, width)
 
+        management_api_calls = calls["api"]
         page.get_by_role("button", name="Топология").click()
+        page.wait_for_timeout(100)
         assert not page.locator(".ws-snmp-topology-panel").is_visible()
         assert not page.locator(".ws-ssh-topology-panel").is_visible()
+        assert page.evaluate("window.WireScopeTopology.render === window.__wsBaseTopologyRender")
+        assert calls["api"] == management_api_calls
         _assert_no_page_overflow(page, width)
     finally:
         browser.close()

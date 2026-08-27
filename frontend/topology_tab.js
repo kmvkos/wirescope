@@ -1,6 +1,12 @@
 (() => {
     "use strict";
 
+    const EXTRA_SCRIPTS = {
+        snmp: "/static/snmp_topology.js?v=20260825-ui14&feature=20260825-ui16",
+        ssh: "/static/ssh_topology.js?v=20260826-ui18",
+    };
+    const extraLoads = new Map();
+
     let activeView = null;
     let activeExtra = null;
     let extrasOpen = false;
@@ -24,6 +30,27 @@
         renameEnrichmentPanels(body);
         body.classList.toggle("ws-extra-snmp-open", activeView === "topology" && activeExtra === "snmp");
         body.classList.toggle("ws-extra-ssh-open", activeView === "topology" && activeExtra === "ssh");
+    }
+
+    function ensureExtraModule(kind) {
+        if (!EXTRA_SCRIPTS[kind]) return Promise.reject(new Error("Неизвестный дополнительный источник топологии"));
+        if (extraLoads.has(kind)) return extraLoads.get(kind);
+
+        const promise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = EXTRA_SCRIPTS[kind];
+            script.async = true;
+            script.dataset.wsTopologyExtra = kind;
+            script.addEventListener("load", () => resolve(), { once: true });
+            script.addEventListener("error", () => {
+                extraLoads.delete(kind);
+                script.remove();
+                reject(new Error(`Не удалось загрузить модуль ${kind.toUpperCase()}`));
+            }, { once: true });
+            document.head.append(script);
+        });
+        extraLoads.set(kind, promise);
+        return promise;
     }
 
     async function renderSelected() {
@@ -130,7 +157,10 @@
             await renderSelected();
         };
 
-        topologyButton.addEventListener("click", (event) => activate("topology", topologyButton, event));
+        topologyButton.addEventListener("click", async (event) => {
+            activeExtra = null;
+            await activate("topology", topologyButton, event);
+        });
         compareButton.addEventListener("click", (event) => activate("compare", compareButton, event));
 
         extrasButton.addEventListener("click", async (event) => {
@@ -138,6 +168,7 @@
             event.stopPropagation();
             if (activeView !== "topology") {
                 activeView = "topology";
+                activeExtra = null;
                 setPrimaryTab(topologyButton);
                 await renderSelected();
             }
@@ -151,10 +182,22 @@
             activeView = "topology";
             setPrimaryTab(topologyButton);
             closeExtrasMenu();
-            syncExtraPanels();
             const body = insightsBody();
-            const panel = body && body.querySelector(kind === "snmp" ? ".ws-snmp-topology-panel" : ".ws-ssh-topology-panel");
-            if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+            try {
+                await ensureExtraModule(kind);
+                await renderSelected();
+                const panel = body && body.querySelector(kind === "snmp" ? ".ws-snmp-topology-panel" : ".ws-ssh-topology-panel");
+                if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+            } catch (error) {
+                activeExtra = null;
+                syncExtraPanels();
+                if (body) {
+                    const message = document.createElement("p");
+                    message.className = "warning";
+                    message.textContent = error.message || String(error);
+                    body.prepend(message);
+                }
+            }
         };
 
         snmpButton.addEventListener("click", () => openExtra("snmp"));

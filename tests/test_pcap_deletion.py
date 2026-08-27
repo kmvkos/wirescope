@@ -92,6 +92,9 @@ def test_delete_pcap_preserves_capture_history_and_normalized_results(api_contex
     assert before.status_code == 200
     assert before.json()["pcap_url"]
 
+    listed_before = http_request(app, "GET", "/api/captures?limit=20")
+    assert job.id in {row["job_id"] for row in listed_before.json()["items"]}
+
     deleted = http_request(app, "DELETE", f"/api/captures/{job.id}/pcap")
     assert deleted.status_code == 200
     payload = deleted.json()
@@ -104,6 +107,11 @@ def test_delete_pcap_preserves_capture_history_and_normalized_results(api_contex
     # already-produced normalized analysis artifact remain available.
     assert jobs.artifact(capture_result.id).artifact_type == "capture_result"
     assert jobs.artifact(downstream.id).artifact_type == "traffic_analysis_result"
+
+    # Ordinary saved-PCAP listing must no longer keep a dead row after an
+    # explicit operator deletion. Direct historical lookup remains available.
+    listed_after = http_request(app, "GET", "/api/captures?limit=20")
+    assert job.id not in {row["job_id"] for row in listed_after.json()["items"]}
 
     after = http_request(app, "GET", f"/api/captures/{job.id}")
     assert after.status_code == 200

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
+from backend.capture_deletion import (
+    CapturePcapBusy,
+    CapturePcapDeletionSafetyError,
+    CapturePcapDeletionService,
+)
 from backend.dependencies import AppServices, get_services
 from backend.http import (
     capture_session_response,
@@ -28,6 +34,43 @@ from providers.bpf import BpfFilterError, normalize_bpf_filter
 
 
 router = APIRouter()
+
+
+def _capture_summary(job, services: AppServices) -> dict:
+    """Return capture summary with raw-PCAP availability verified.
+
+    Audit summary is historical metadata and may outlive a raw PCAP after
+    retention or manual deletion.  Never advertise a download URL from that
+    stale reference alone.
+    """
+
+    summary = dict(services.jobs.get_audit(job.audit_id).summary or {})
+    pcap_id = str(summary.get("pcap_artifact_id") or "")
+    if not pcap_id:
+        return summary
+    try:
+        artifact = services.jobs.artifact(pcap_id)
+        valid = (
+            artifact.audit_id == job.audit_id
+            and artifact.job_id == job.id
+            and artifact.artifact_type == "packet_capture"
+            and services.evidence.path_for(artifact).is_file()
+        )
+    except EntityNotFound:
+        valid = False
+    if not valid:
+        summary["pcap_artifact_id"] = None
+    return summary
+
+
+def _pcap_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=410,
+        detail={
+            "code": "pcap_unavailable",
+            "message": "PCAP has been deleted or expired",
+        },
+    )
 
 
 @router.post("/captures", response_model=JobAcceptedResponse, status_code=202)
@@ -151,10 +194,7 @@ def list_captures(
     )
     return CaptureSessionPageResponse(
         items=[
-            capture_session_response(
-                item,
-                services.jobs.get_audit(item.audit_id).summary,
-            )
+            capture_session_response(item, _capture_summary(item, services))
             for item in page.items
         ],
         limit=page.limit,
@@ -180,10 +220,36 @@ def get_capture(
                 "message": "Capture session not found",
             },
         )
-    return capture_session_response(
-        job,
-        services.jobs.get_audit(job.audit_id).summary,
-    )
+    return capture_session_response(job, _capture_summary(job, services))
+
+
+@router.delete("/captures/{job_id}/pcap")
+def delete_capture_pcap(
+    job_id: str,
+    http_request: Request,
+    services: AppServices = Depends(get_services),
+) -> dict:
+    """Delete only the retained raw PCAP, preserving normalized history."""
+
+    actor = getattr(getattr(http_request.state, "user", None), "username", None)
+    try:
+        result = CapturePcapDeletionService(
+            services.database,
+            services.evidence,
+        ).delete(job_id, actor=actor)
+    except EntityNotFound as exc:
+        raise not_found(exc) from exc
+    except CapturePcapBusy as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "pcap_delete_busy", "message": str(exc)},
+        ) from exc
+    except CapturePcapDeletionSafetyError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "pcap_delete_safety_error", "message": str(exc)},
+        ) from exc
+    return asdict(result)
 
 
 @router.get("/jobs/{job_id}/pcap")
@@ -213,15 +279,16 @@ def download_capture_pcap(
         document = services.evidence.read_json(result_artifact)
         pcap_id = document.get("pcap_artifact_id")
         if not pcap_id:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "pcap_unavailable",
-                    "message": "Capture file is not available",
-                },
-            )
-        pcap_artifact = services.jobs.artifact(str(pcap_id))
-        if pcap_artifact.job_id != job.id:
+            raise _pcap_unavailable()
+        try:
+            pcap_artifact = services.jobs.artifact(str(pcap_id))
+        except EntityNotFound as exc:
+            raise _pcap_unavailable() from exc
+        if (
+            pcap_artifact.audit_id != job.audit_id
+            or pcap_artifact.job_id != job.id
+            or pcap_artifact.artifact_type != "packet_capture"
+        ):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -230,6 +297,8 @@ def download_capture_pcap(
                 },
             )
         path = services.evidence.path_for(pcap_artifact)
+        if not path.is_file():
+            raise _pcap_unavailable()
     except EntityNotFound as exc:
         raise not_found(exc) from exc
     except JobExecutionError as exc:

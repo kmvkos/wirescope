@@ -27,91 +27,93 @@ reports/schema/audit-report-v1.json
 
 ## Core rule
 
-JSON keeps stable machine values and remains the source of truth. Human-facing HTML and Markdown can improve without changing the schema or the report `source_hash`.
+JSON keeps stable machine values and remains the source of truth. Human-facing HTML and Markdown can improve without changing the schema or report `source_hash`.
 
-For example, the machine value `high` remains `high` in JSON while the Russian operator report displays **«Высокая»**. Profiles, statuses, confidence values, device classes, and headline tokens are localized the same way.
+## Audit Report ownership
 
-This keeps external integrations stable while allowing the presentation layer to improve.
+Audit Report is the **source-of-truth for the audit itself**. It owns:
+
+- inventory and discovered services;
+- protocol-audit observations;
+- findings, severity/confidence/status;
+- rationale and recommendations;
+- audit evidence and confirmed scope;
+- concise passive visibility collected as part of the audit pipeline.
+
+A separate PCAP Traffic Analysis is not automatically embedded into Audit Report and must not be reproduced there in full. Its role is to describe a specific capture window, communications, protocol visibility, and network diagnostics.
+
+Audit passive context and standalone Traffic Analysis can use related network primitives such as ARP/DHCP, but they answer different questions:
+
+- **Audit passive** explains which evidence described the local environment and supported safe audit scoping;
+- **Traffic Analysis** owns detailed diagnostics and protocol visibility for a retained PCAP.
+
+PCAP-specific rates, top talkers, communications graph, TCP health, DNS latency, and detailed Protocol Intelligence do not belong to Audit Report.
+
+See [PRODUCT_COHERENCE.md](PRODUCT_COHERENCE.md) for the product-wide ownership and deduplication contract.
 
 ## Operator-facing structure
 
-The HTML report follows the order in which a human normally makes a decision:
+The HTML report follows the decision flow:
 
 1. **Audit result** — concise conclusion, highest open severity, and key counts.
-2. **Detected problems** — each finding is explained as:
-   - what was detected;
-   - why it matters;
-   - what should be done.
+2. **Detected problems** — what was detected, why it matters, and what should be done.
 3. **Action plan** — prioritized recommendations.
-4. **Scope** — what was actually authorized for checking.
+4. **Scope** — what was authorized for checking.
 5. **Assets and services** — inventory.
-6. **Passive observations** — what WireScope actually observed on the segment.
+6. **Passive observations** — audit-context evidence about the local segment, not a copy of standalone Traffic Analysis.
 7. **Technical data** — evidence, hashes, metadata, and warnings.
-
-Evidence IDs and internal technical detail are intentionally kept out of the opening summary while remaining available for verification.
 
 ## Executive summary
 
-The canonical summary contains:
+The canonical summary contains asset/service/finding counts, open finding count, highest open severity, headline, deterministic conclusion, and only the passive metrics required for audit context.
 
-- asset/service/finding counts;
-- open finding count;
-- highest open severity;
-- a headline token;
-- a deterministic Russian conclusion;
-- core passive metrics.
+Narrative is derived from persisted data. An LLM is not used to invent CVEs, causes, or missing facts.
 
-Narrative text is derived from persisted data. An LLM is not used to invent CVEs, causes, or missing facts.
-
-When no findings exist, the human report explicitly states that this conclusion applies only to checks that actually ran and is not proof of absolute security.
+When no findings exist, the human report states that this applies only to checks that actually ran and is not proof of absolute security.
 
 ## Scope and passive data
 
-The report records the environment snapshot, capture interface, and confirmed active scope.
+The report records environment snapshot, capture interface, and confirmed active scope.
 
-Passive sections include frame count, visibility/segment state, 802.1Q tags actually observed, ARP/DHCP, and other normalized observations.
+Passive sections include frame count, visibility/segment state, observed 802.1Q tags, ARP/DHCP, and other normalized observations relevant to audit context. Untagged traffic never receives an invented VLAN ID.
 
-Untagged traffic does not receive an invented VLAN ID, and the human report explains that limitation directly.
+This section must not become a standalone Traffic Analysis. PCAP-specific rates, top talkers, communications, latency, and detailed protocol intelligence stay with Traffic Analysis.
 
 ## Inventory
 
-Assets and services come from persisted inventory together with available vendor, OS, and device-class hints.
-
-The Russian presentation translates machine values such as:
-
-```text
-server-like          → Сервер
-workstation-like     → Рабочая станция
-network-device-like  → Сетевое устройство
-printer-like         → Принтер / МФУ
-iot-like             → IoT / встроенное устройство
-```
-
-The JSON machine values remain unchanged.
+Assets and services come from persisted inventory together with available vendor, OS, and device-class hints. Human presentation may localize labels while JSON machine values remain unchanged.
 
 ## Findings
 
 Canonical reports retain open, suppressed, and accepted-risk findings so operator decisions are not lost.
 
-HTML and Markdown show severity/confidence/status using clear Russian labels and separate:
+HTML and Markdown separate observed condition, security relevance, and recommended action.
 
-- observed condition;
-- security relevance;
-- recommended action.
+**Security rationale and remediation have one owner: Findings/Audit Report.** Mere Telnet/FTP/HTTP presence in a standalone PCAP remains a Traffic Analysis observation and must not become a second finding solely because the protocol was visible.
 
-Raw provider stdout is not embedded in finding narrative.
+Raw provider stdout is never embedded in finding narrative.
 
 ## Evidence references
 
-PCAP/XML/stdout is not embedded into the main narrative. Evidence metadata includes:
+PCAP/XML/stdout is not embedded into the main narrative. Evidence metadata includes artifact id/type, content type, size, and SHA-256. Public report documents do not expose filesystem `relative_path` values.
 
-- artifact id;
-- artifact type;
-- content type;
-- size;
-- SHA-256.
+## Relationship to other views
 
-Public report documents do not expose filesystem `relative_path` values.
+### Traffic Analysis
+
+Owns one capture window: traffic metrics, conversations, protocol visibility, and network diagnostics. It does not duplicate Audit Findings/rationale/recommendations.
+
+### Network Topology
+
+Owns structure, relationships, and claimability. Finding/service badges are valid context but not a copy of Audit Report.
+
+### Correlated Assessment
+
+Owns cross-source relationships only. It may state that a discovered service was observed in the selected PCAP or that a finding belongs to a traffic-visible asset, while full source detail remains in Audit Report/Traffic Analysis.
+
+### Dashboard
+
+Provides compact status, counts, and navigation. It is not another report renderer.
 
 ## Generation
 
@@ -119,19 +121,7 @@ Public report documents do not expose filesystem `relative_path` values.
 POST /api/v1/audits/{id}/reports
 ```
 
-enqueues a durable `report_generation` job.
-
-The worker:
-
-1. loads persisted audit state;
-2. builds `audit-report` v1;
-3. validates canonical JSON;
-4. renders self-contained HTML;
-5. stores JSON and HTML report artifacts;
-6. appends report history;
-7. records `source_hash`.
-
-Report generation does not require a network/interface lock.
+enqueues a durable `report_generation` job. The worker loads persisted audit state, builds and validates `audit-report` v1, renders self-contained HTML, stores report artifacts/history, and records `source_hash`. Report generation does not require a network/interface lock.
 
 ## Export API
 
@@ -141,42 +131,34 @@ GET /api/v1/audits/{id}/reports/{report_id}/export?format=html
 GET /api/v1/audits/{id}/reports/{report_id}/export?format=markdown
 ```
 
-`format=md` is an alias for Markdown.
+`format=md` aliases Markdown.
 
 ### JSON
 
-Returns the persisted canonical `audit-report v1` document.
+Returns persisted canonical `audit-report v1`.
 
 ### HTML
 
-When opened, HTML is rendered from persisted canonical JSON using the current human-presentation renderer. Therefore **older saved reports automatically receive the current design and localization without re-running the audit**.
-
-The historical HTML artifact created by the report job remains immutable and is not rewritten.
-
-The rendered HTML is self-contained, responsive, print-friendly, and independent of the WireScope frontend bundle. All network-derived values are escaped before insertion.
+HTML is rendered from persisted canonical JSON using the current human-presentation renderer, so old reports can receive presentation improvements without re-running the audit. Historical HTML artifacts remain immutable.
 
 ### Markdown
 
-Markdown is also rendered from canonical JSON and is Russian-first for the appliance operator. It is intended for Git, issue trackers, wiki systems, and technical documentation.
+Markdown is rendered from the same canonical JSON and follows the same ownership model.
 
 ## `source_hash`
 
-`source_hash` reflects persisted audit state rather than CSS, localization, report id, or export time.
-
-Presentation-only changes do not change the factual audit result.
+`source_hash` reflects persisted audit state rather than CSS, localization, report id, or export time. Presentation-only changes do not change the factual audit result.
 
 ## HTML safety
 
-Hostnames, service banners, certificate subjects, finding titles, and similar values may originate from an untrusted network. The renderer escapes dynamic content and never embeds raw provider output as executable HTML.
-
-Tests explicitly cover XSS escaping and filesystem-path boundaries.
+Network-derived values are untrusted. The renderer escapes dynamic content and never embeds raw provider output as executable HTML. Tests cover XSS escaping and filesystem-path boundaries.
 
 ## PDF
 
-PDF is not implemented yet:
+PDF is not implemented:
 
 ```text
 format=pdf → 422 pdf_not_available
 ```
 
-It is not a v1.0 blocker: the self-contained HTML renderer includes a print layout and can be printed through the browser.
+Self-contained HTML already includes print layout and can be printed through the browser.

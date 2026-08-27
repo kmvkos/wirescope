@@ -8,16 +8,73 @@ from typing import Any
 
 _SOURCE_LABELS = {
     "environment": "окружение WireScope",
-    "environment_lease": "DHCP lease интерфейса",
+    "environment_lease": "DHCP-аренда интерфейса",
     "passive": "пассивное наблюдение",
     "passive_dhcp": "DHCP из пассивного наблюдения",
     "traffic": "анализ PCAP",
     "topology": "топология",
 }
 
+_PROFILE_LABELS = {
+    "passive": "Пассивный",
+    "discovery": "Поиск устройств",
+    "standard": "Стандартный",
+    "deep": "Глубокий",
+    "packet_capture": "Запись трафика",
+}
+
+_WARNING_LABELS = {
+    "One or more traffic endpoints matched multiple inventory identities; no automatic merge was performed.": (
+        "Одна или несколько конечных точек PCAP соответствуют нескольким записям инвентаря; автоматическое объединение не выполнялось."
+    ),
+    "Selected traffic analysis does not contain a usable communications graph.": (
+        "Выбранный анализ PCAP не содержит пригодного графа коммуникаций; часть корреляции недоступна."
+    ),
+    "Service-use correlation in this schema is pair-level: traffic-analysis v1 stores destination ports aggregated per endpoint pair, so it does not prove which side owned the matched port.": (
+        "Сопоставление использования служб выполняется на уровне пары узлов: traffic-analysis v1 хранит порты агрегированно для пары, поэтому по этим данным нельзя доказать, какой стороне принадлежал совпавший порт."
+    ),
+    "An inventory asset missing from the selected PCAP is not considered absent from the network; capture-point visibility is limited.": (
+        "Если устройство из инвентаря не наблюдалось в выбранном PCAP, это не означает его отсутствие в сети: видимость ограничена точкой и интервалом захвата."
+    ),
+    "Asset list exceeded the report input limit": (
+        "Список устройств превышает лимит входных данных; корреляция использует только допустимую часть."
+    ),
+    "Service list exceeded the report input limit": (
+        "Список служб превышает лимит входных данных; корреляция использует только допустимую часть."
+    ),
+    "Finding list exceeded the report input limit": (
+        "Список проблем превышает лимит входных данных; корреляция использует только допустимую часть."
+    ),
+    "Evidence reference list exceeded the report input limit": (
+        "Список артефактов доказательств превышает лимит входных данных; используется только допустимая часть."
+    ),
+    "Environment snapshot artifact was not found": (
+        "Снимок окружения не найден; часть инфраструктурной корреляции может быть недоступна."
+    ),
+    "Environment snapshot could not be read": (
+        "Снимок окружения не удалось прочитать; часть инфраструктурной корреляции может быть недоступна."
+    ),
+    "Environment snapshot did not contain an object": (
+        "Снимок окружения имеет неожиданный формат; часть инфраструктурной корреляции может быть недоступна."
+    ),
+    "Passive result artifact could not be read": (
+        "Результат пассивного анализа не удалось прочитать; часть пассивных данных может быть недоступна."
+    ),
+}
+
 
 def _text(value: Any) -> str:
     return str(value if value is not None else "—")
+
+
+def _profile(value: Any) -> str:
+    raw = str(value or "")
+    return _PROFILE_LABELS.get(raw, raw or "—")
+
+
+def _warning(value: Any) -> str:
+    raw = str(value or "")
+    return _WARNING_LABELS.get(raw, raw)
 
 
 def _status(value: Any) -> str:
@@ -93,7 +150,7 @@ def render_text(document: dict[str, Any]) -> str:
         "WIRESCOPE — КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ",
         "=" * 48,
         f"Аудит: {_text(audit.get('id'))}",
-        f"Профиль: {_text(audit.get('profile'))}",
+        f"Профиль: {_profile(audit.get('profile'))}",
         f"Интерфейс: {_text(audit.get('interface'))}",
         f"Сформировано: {_text(document.get('generated_at'))}",
         f"Выбранный анализ PCAP: {_text(inputs.get('traffic_analysis_job_id'))}",
@@ -163,7 +220,7 @@ def render_text(document: dict[str, Any]) -> str:
             f"протоколы: {_protocols(row.get('protocols'))} | порты: {_ports(row.get('ports'))}"
         )
 
-    warnings = [str(item) for item in document.get("warnings") or [] if item]
+    warnings = [_warning(item) for item in document.get("warnings") or [] if item]
     if warnings:
         lines.extend(["", "ОГРАНИЧЕНИЯ И ПРЕДУПРЕЖДЕНИЯ", "---------------------------"])
         lines.extend(f"- {item}" for item in warnings)
@@ -187,7 +244,7 @@ def render_markdown(document: dict[str, Any]) -> str:
         "# WireScope — корреляция результатов",
         "",
         f"- **Аудит:** `{_text(audit.get('id'))}`",
-        f"- **Профиль:** {_text(audit.get('profile'))}",
+        f"- **Профиль:** {_profile(audit.get('profile'))}",
         f"- **Интерфейс:** `{_text(audit.get('interface'))}`",
         f"- **Выбранный анализ PCAP:** `{_text(inputs.get('traffic_analysis_job_id'))}`",
         f"- **Сформировано:** {_text(document.get('generated_at'))}",
@@ -261,7 +318,7 @@ def render_markdown(document: dict[str, Any]) -> str:
     else:
         lines.append("Внешние коммуникации точно сопоставленных устройств не выделены.")
 
-    warnings = [str(item) for item in document.get("warnings") or [] if item]
+    warnings = [_warning(item) for item in document.get("warnings") or [] if item]
     if warnings:
         lines.extend(["", "## Ограничения и предупреждения", ""])
         lines.extend(f"- {item}" for item in warnings)

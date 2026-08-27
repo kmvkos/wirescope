@@ -3,6 +3,7 @@
 from jobs.handlers.active import ActiveDiscoveryHandler
 from jobs.handlers.capture import PacketCaptureHandler
 from jobs.handlers.findings import FindingsEvaluationHandler
+from jobs.handlers.global_analysis import GlobalAnalysisHandler
 from jobs.handlers.passive import PassiveDiscoveryHandler
 from jobs.handlers.protocol import ProtocolAuditHandler
 from jobs.handlers.report import ReportGenerationHandler
@@ -13,6 +14,7 @@ from jobs.handlers.traffic import TrafficAnalysisHandler
 __all__ = [
     "ActiveDiscoveryHandler",
     "FindingsEvaluationHandler",
+    "GlobalAnalysisHandler",
     "PacketCaptureHandler",
     "PassiveDiscoveryHandler",
     "ProtocolAuditHandler",

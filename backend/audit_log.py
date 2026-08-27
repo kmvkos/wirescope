@@ -114,7 +114,11 @@ class AuditLogService:
             ).mappings().all()
             total = session.execute(
                 text(f"SELECT COUNT(*) FROM operational_events{where}"),
-                {key: value for key, value in params.items() if key not in {"limit", "offset"}},
+                {
+                    key: value
+                    for key, value in params.items()
+                    if key not in {"limit", "offset"}
+                },
             ).scalar_one()
 
         return {
@@ -170,6 +174,8 @@ def operational_action(method: str, path: str) -> str | None:
         return "audit.create"
     if method == "DELETE" and re.fullmatch(r"/api/audits/[^/]+", path):
         return "audit.delete"
+    if method == "DELETE" and re.fullmatch(r"/api/captures/[^/]+/pcap", path):
+        return "capture.pcap_delete"
     if path.startswith("/api/captures") and method == "POST":
         return "capture.change"
     if path.endswith("/retry") and path.startswith("/api/jobs/") and method == "POST":

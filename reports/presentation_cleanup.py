@@ -1,6 +1,6 @@
 """Presentation-only terminology cleanup for human report exports.
 
-Canonical audit-report JSON is intentionally untouched.  Replacements here are
+Canonical audit-report JSON is intentionally untouched. Replacements here are
 limited to static WireScope labels and deterministic narrative phrases so an
 old stored report immediately receives the same polished wording when exported.
 """
@@ -12,9 +12,19 @@ _REPLACEMENTS = (
     ("Все findings", "Все проблемы"),
     ("Evidence-артефакты", "Артефакты доказательств"),
     ("**Evidence:**", "**Доказательства:**"),
+    ("Evidence / доказательства", "Доказательства"),
+    ("В evidence", "В артефактах доказательств"),
     ("Scope подтверждён оператором", "Границы проверки подтверждены оператором"),
+    ("Scope подтверждён", "Границы проверки подтверждены"),
     ("подтверждённом scope", "подтверждённых границах проверки"),
+    ("подтверждённого scope", "подтверждённых границ проверки"),
     ("в подтверждённом scope", "в подтверждённых границах проверки"),
+    ("Snapshot scope", "Снимок границ проверки"),
+    ("Исходный audit scope", "Исходные границы аудита"),
+    ("audit scope", "границы аудита"),
+    ("Source hash", "Хэш исходных данных"),
+    ("source hash", "хэш исходных данных"),
+    ("source ", "хэш "),
     ("Access-порт / нетегированный сегмент", "Порт доступа / нетегированный сегмент"),
     ("access-порта", "порта доступа"),
     ("Trunk / несколько VLAN", "Транковый порт / несколько VLAN"),

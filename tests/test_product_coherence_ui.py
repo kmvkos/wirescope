@@ -16,7 +16,7 @@ def test_root_loads_product_coherence_assets(api_context):
     assert response.status_code == 200
     assert "/static/product_coherence.css?v=20260827-ui20" in response.text
     assert "/static/product_coherence.js?v=20260827-ui20" in response.text
-    assert "/static/topology_tab.js?v=20260827-ui20" in response.text
+    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui20" in response.text
 
 
 def test_topology_navigation_treats_management_sources_as_optional():

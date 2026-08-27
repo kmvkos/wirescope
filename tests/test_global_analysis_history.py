@@ -266,7 +266,7 @@ def test_global_analysis_renderers_are_bounded_human_readable_views():
     }
     text = render_text(document)
     markdown = render_markdown(document)
-    assert "Global" in text
+    assert "GLOBAL CORRELATION ANALYSIS" in text
     assert "8.8.8.8" in text
     assert "DNS: расхождение" in text
     assert "## External communications" in markdown

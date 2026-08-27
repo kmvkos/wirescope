@@ -10,7 +10,7 @@ def test_root_loads_versioned_pcap_management_script(api_context):
     app, _jobs, _evidence, _environment = api_context
     response = http_request(app, "GET", "/", auth=False)
     assert response.status_code == 200
-    assert "/static/pcap_management.js?v=20260827-ui27" in response.text
+    assert "/static/pcap_management.js?v=20260827-ui29" in response.text
     assert response.text.index("traffic_analysis.js") < response.text.index("pcap_management.js")
 
 

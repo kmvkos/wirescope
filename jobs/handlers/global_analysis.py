@@ -16,9 +16,8 @@ from jobs.service import JobService
 class GlobalAnalysisHandler:
     def execute(self, context: HandlerContext) -> HandlerResult:
         self._ensure_not_cancelled(context)
-        traffic_job_id = str(
-            context.job.parameters.get("traffic_analysis_job_id") or ""
-        ).strip()
+        parameters = dict(context.job.parameters or {})
+        traffic_job_id = str(parameters.get("traffic_analysis_job_id") or "").strip()
         if not traffic_job_id:
             raise JobExecutionError(
                 JobError(
@@ -63,6 +62,11 @@ class GlobalAnalysisHandler:
                 )
             ) from exc
 
+        document["execution"] = {
+            "job_id": context.job.id,
+            "actor": parameters.get("actor"),
+            "rebuild_of_job_id": parameters.get("rebuild_of_job_id"),
+        }
         self._ensure_not_cancelled(context)
         self._progress(context, 80, "persisting", "Persisting canonical global analysis")
         artifact = context.evidence_store.put_json(
@@ -82,7 +86,9 @@ class GlobalAnalysisHandler:
                 "schema": "global-analysis-summary",
                 "schema_version": 1,
                 "result_reference": artifact.id,
+                "job_id": context.job.id,
                 "traffic_analysis_job_id": traffic_job_id,
+                "rebuild_of_job_id": parameters.get("rebuild_of_job_id"),
                 "partial": bool(document.get("partial")),
             }
         }

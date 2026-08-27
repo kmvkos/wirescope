@@ -191,6 +191,18 @@
         return button;
     }
 
+    function syncDeleteButton(row, session) {
+        const jobId = String(session.job_id);
+        let button = row.querySelector(".pcap-delete-button");
+        if (button && button.dataset.captureJobId !== jobId) {
+            button.remove();
+            button = null;
+        }
+        if (!button) {
+            row.append(makeDeleteButton(session, row));
+        }
+    }
+
     async function enhanceCaptureRows() {
         const list = document.getElementById("listen-session-list");
         if (!list || list.hidden || !(await isAuditor())) return;
@@ -205,15 +217,16 @@
         rows.forEach((row, index) => {
             const session = sessions[index];
             if (!session || !TERMINAL.has(session.status)) return;
-            row.querySelector(".pcap-delete-button")?.remove();
             if (session.pcap_url) {
                 row.querySelector(".pcap-unavailable-note")?.remove();
-                row.append(makeDeleteButton(session, row));
+                syncDeleteButton(row, session);
             } else if (session.result_available) {
                 // This is not a manual deletion: manually-deleted rows are
                 // filtered from /captures. Keep the warning only for an
                 // unexpectedly missing/expired raw file.
                 markRowUnavailable(row);
+            } else {
+                row.querySelector(".pcap-delete-button")?.remove();
             }
         });
     }

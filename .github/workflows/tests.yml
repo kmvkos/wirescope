@@ -43,8 +43,12 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q backend appliance config engine findings global_analysis inventory jobs parsers persistence protocol_audits providers reports storage traffic_analysis topology tests
 
-      - name: Check Global Analysis UI syntax
-        run: node --check frontend/global_analysis.js
+      - name: Check analytical UI syntax
+        run: |
+          node --check frontend/global_analysis.js
+          node --check frontend/topology_tab.js
+          node --check frontend/product_coherence.js
+          node --check frontend/traffic_analysis.js
 
       - name: Run default test suite
         run: pytest -q

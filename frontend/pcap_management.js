@@ -62,7 +62,7 @@
         modal.innerHTML = `
             <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="pcap-delete-title" aria-describedby="pcap-delete-body">
                 <h2 id="pcap-delete-title">Удалить файл PCAP?</h2>
-                <p id="pcap-delete-body">Сырой PCAP будет удалён с устройства. История записи и уже рассчитанные анализы останутся. Повторно анализировать этот захват без файла PCAP будет нельзя.</p>
+                <p id="pcap-delete-body">Сырой PCAP будет удалён с устройства. Запись исчезнет из списка сохранённых PCAP. История захвата и уже рассчитанные анализы останутся. Повторно анализировать этот захват без файла PCAP будет нельзя.</p>
                 <div class="actions">
                     <button type="button" class="secondary" data-pcap-delete-cancel>Отмена</button>
                     <button type="button" class="danger" data-pcap-delete-confirm>Удалить PCAP</button>
@@ -100,7 +100,7 @@
         });
     }
 
-    function markRowUnavailable(row, deleted = false) {
+    function markRowUnavailable(row) {
         row.querySelectorAll(".pcap-delete-button, .traffic-analysis-button").forEach((node) => node.remove());
         row.querySelectorAll("a, button").forEach((node) => {
             if (/скачать\s+pcap/i.test(node.textContent || "")) node.remove();
@@ -111,7 +111,19 @@
             note.className = "muted pcap-unavailable-note";
             row.append(note);
         }
-        note.textContent = deleted ? "PCAP удалён" : "PCAP недоступен";
+        note.textContent = "PCAP недоступен";
+    }
+
+    function showEmptyState(list) {
+        if (!list || list.querySelector(".session-row") || list.querySelector(".pcap-empty-state")) return;
+        const empty = document.createElement("div");
+        empty.className = "list-item pcap-empty-state";
+        const title = document.createElement("strong");
+        title.textContent = "Сохранённых PCAP нет";
+        const detail = document.createElement("span");
+        detail.textContent = "Создайте новую запись трафика, чтобы она появилась здесь.";
+        empty.append(title, detail);
+        list.append(empty);
     }
 
     async function deletePcap(jobId, { row = null, button = null } = {}) {
@@ -123,7 +135,11 @@
         }
         try {
             const result = await request("DELETE", `/captures/${encodeURIComponent(jobId)}/pcap`);
-            if (row) markRowUnavailable(row, true);
+            if (row) {
+                const list = row.parentElement;
+                row.remove();
+                showEmptyState(list);
+            }
             const download = document.getElementById("listen-download-button");
             const analyze = document.getElementById("listen-analyze-button");
             const progressDelete = document.getElementById("listen-delete-pcap-button");
@@ -138,6 +154,8 @@
                         ? "PCAP исключён из WireScope, но файл не удалось удалить с диска. Проверьте диагностику хранилища."
                         : "PCAP удалён. История записи и уже готовые анализы сохранены.";
                 }
+            } else if (result.file_cleanup_pending) {
+                window.alert("PCAP исключён из WireScope, но файл не удалось удалить с диска. Проверьте диагностику хранилища.");
             }
             scheduleRefresh();
             return true;
@@ -192,7 +210,10 @@
                 row.querySelector(".pcap-unavailable-note")?.remove();
                 row.append(makeDeleteButton(session, row));
             } else if (session.result_available) {
-                markRowUnavailable(row, false);
+                // This is not a manual deletion: manually-deleted rows are
+                // filtered from /captures. Keep the warning only for an
+                // unexpectedly missing/expired raw file.
+                markRowUnavailable(row);
             }
         });
     }

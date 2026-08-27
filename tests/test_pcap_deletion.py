@@ -68,6 +68,14 @@ def _completed_capture(api_context):
     return audit, job, pcap, capture_result, downstream
 
 
+def _traffic_jobs(jobs, audit_id):
+    return [
+        row
+        for row in jobs.list_jobs(limit=100, offset=0, audit_id=audit_id).items
+        if row.type == "traffic_analysis"
+    ]
+
+
 def test_delete_pcap_preserves_capture_history_and_normalized_results(api_context):
     app, jobs, evidence, _environment = api_context
     _audit, job, pcap, capture_result, downstream = _completed_capture(api_context)
@@ -103,10 +111,7 @@ def test_delete_pcap_preserves_capture_history_and_normalized_results(api_contex
     analyze = http_request(app, "POST", f"/api/captures/{job.id}/analyze")
     assert analyze.status_code == 409
     assert analyze.json()["detail"]["code"] == "pcap_unavailable"
-    assert not any(
-        row.type == "traffic_analysis"
-        for row in jobs.list_jobs(limit=100, audit_id=job.audit_id).items
-    )
+    assert _traffic_jobs(jobs, job.audit_id) == []
 
 
 def test_delete_pcap_is_idempotent_and_viewer_cannot_delete(api_context):
@@ -165,10 +170,7 @@ def test_capture_listing_does_not_advertise_missing_raw_file(api_context):
     analyze = http_request(app, "POST", f"/api/captures/{job.id}/analyze")
     assert analyze.status_code == 409
     assert analyze.json()["detail"]["code"] == "pcap_unavailable"
-    assert not any(
-        row.type == "traffic_analysis"
-        for row in jobs.list_jobs(limit=100, audit_id=job.audit_id).items
-    )
+    assert _traffic_jobs(jobs, job.audit_id) == []
 
 
 def test_pcap_delete_has_stable_operational_audit_action(api_context):

@@ -8,12 +8,16 @@ from sqlalchemy import select
 
 from jobs.models import AuditStatus, JobStatus
 from persistence.database import Database
-from persistence.models import AuditModel, JobEventModel, JobModel
+from persistence.models import ArtifactModel, AuditModel, JobEventModel, JobModel
 from traffic_analysis import ANALYZER_VERSION
 
 
 class TrafficAnalysisSourceNotReady(RuntimeError):
     pass
+
+
+class TrafficAnalysisPcapUnavailable(RuntimeError):
+    """Raised when the retained source PCAP disappeared before enqueue."""
 
 
 class TrafficAnalysisJobService:
@@ -44,6 +48,34 @@ class TrafficAnalysisJobService:
             audit = session.get(AuditModel, audit_id)
             if audit is None:
                 raise LookupError(f"Audit not found: {audit_id}")
+
+            capture = session.get(JobModel, source_capture_job_id)
+            if (
+                capture is None
+                or capture.audit_id != audit_id
+                or capture.type != "packet_capture"
+            ):
+                raise LookupError(
+                    f"Capture session not found: {source_capture_job_id}"
+                )
+
+            # This check intentionally lives inside the same IMMEDIATE
+            # transaction that creates/reuses the analysis job. The API does a
+            # friendly pre-check too, but DELETE /captures/{id}/pcap may race
+            # with that read. Manual PCAP deletion removes the artifact row in
+            # its own IMMEDIATE transaction, so only one side can win: either
+            # analysis is queued first (and deletion then sees an active job),
+            # or deletion commits first and enqueue rejects the missing source.
+            pcap = session.get(ArtifactModel, pcap_artifact_id)
+            if (
+                pcap is None
+                or pcap.audit_id != audit_id
+                or pcap.job_id != source_capture_job_id
+                or pcap.artifact_type != "packet_capture"
+            ):
+                raise TrafficAnalysisPcapUnavailable(
+                    "Capture PCAP has been deleted or expired"
+                )
 
             existing = session.scalars(
                 select(JobModel)

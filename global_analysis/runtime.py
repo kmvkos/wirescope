@@ -1,6 +1,6 @@
 """Persisted-source runtime for Global Correlation Analysis.
 
-The pure assembler remains in ``global_analysis.builder``.  This module owns
+The pure assembler remains in ``global_analysis.builder``. This module owns
 loading persisted WireScope state and offline topology projection so durable
 jobs and read-only API previews share exactly the same contract.
 """
@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from global_analysis.builder import _traffic_source, assemble_global_analysis
+from global_analysis.builder import (
+    GlobalAnalysisSourceError,
+    _traffic_source,
+    assemble_global_analysis,
+)
 from global_analysis.enrich import enrich_global_analysis
 from reports.passive import project_passive
 from reports.sources import load_report_source
 from topology import TopologySourceError, build_topology
-
-
-class GlobalAnalysisRuntimeError(RuntimeError):
-    pass
 
 
 def build_global_analysis(
@@ -42,7 +42,7 @@ def build_global_analysis(
             traffic_analysis_job_id=traffic_analysis_job_id,
         )
     except TopologySourceError as exc:
-        raise GlobalAnalysisRuntimeError(str(exc)) from exc
+        raise GlobalAnalysisSourceError(str(exc)) from exc
 
     document = assemble_global_analysis(
         audit={

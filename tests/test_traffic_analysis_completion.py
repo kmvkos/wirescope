@@ -111,7 +111,7 @@ def test_comparison_highlights_nodes_edges_rtt_and_diagnostics():
     text = render_comparison_text(comparison)
     assert "СРАВНЕНИЕ ДВУХ PCAP-АНАЛИЗОВ" in text
     assert "TCP ACK RTT p95" in text
-    assert "Новые endpoints" in text
+    assert "Новые конечные точки" in text
 
 
 def _completed_analysis(api_context, *, interface: str, document: dict):

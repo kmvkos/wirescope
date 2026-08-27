@@ -1,5 +1,11 @@
+import pytest
+
 from jobs.models import RetentionClass
 from tests.helpers import http_request
+from traffic_analysis.service import (
+    TrafficAnalysisJobService,
+    TrafficAnalysisPcapUnavailable,
+)
 
 
 def _completed_capture(api_context):
@@ -111,6 +117,17 @@ def test_delete_pcap_preserves_capture_history_and_normalized_results(api_contex
     analyze = http_request(app, "POST", f"/api/captures/{job.id}/analyze")
     assert analyze.status_code == 409
     assert analyze.json()["detail"]["code"] == "pcap_unavailable"
+    assert _traffic_jobs(jobs, job.audit_id) == []
+
+    # Even if an API caller had already read the old artifact id before DELETE
+    # committed, the durable enqueue service must re-check it while holding its
+    # IMMEDIATE transaction and refuse to create a stale analysis job.
+    with pytest.raises(TrafficAnalysisPcapUnavailable):
+        TrafficAnalysisJobService(jobs.database).enqueue(
+            audit_id=job.audit_id,
+            source_capture_job_id=job.id,
+            pcap_artifact_id=pcap.id,
+        )
     assert _traffic_jobs(jobs, job.audit_id) == []
 
 

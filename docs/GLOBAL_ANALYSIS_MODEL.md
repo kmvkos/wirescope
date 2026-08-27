@@ -22,19 +22,39 @@ canonical network-topology
 - private endpoint вне известного topology segment не объявляется Internet/external автоматически;
 - partial/missing source state наследуется результатом;
 - confidence correlation не может быть сильнее исходного evidence;
-- результат полностью offline и deterministic.
+- результат полностью offline и deterministic;
+- evidence lineage содержит ID/hash/type/schema, но не filesystem path.
 
-## API
+## API и durable execution
+
+Preview/rebuild без записи нового результата:
 
 ```text
 GET /api/v1/audits/{audit_id}/global-analysis?traffic_analysis_job_id={job_id}
 ```
 
+Durable stage:
+
+```text
+POST /api/v1/audits/{audit_id}/global-analysis
+{
+  "traffic_analysis_job_id": "...",
+  "priority": 0
+}
+```
+
+POST создаёт обычный durable job типа `global_analysis`. Worker строит тот же canonical contract и сохраняет его как зарегистрированный artifact:
+
+```text
+artifact_type = global_analysis_result
+schema        = global-analysis
+schema_version = 1
+retention     = audit
+```
+
 `audit_id` задаёт inventory/findings/topology audit. `traffic_analysis_job_id` выбирается оператором явно и должен указывать на завершённый `traffic_analysis` job с зарегистрированным `traffic_analysis_result`.
 
 ## Canonical contract
-
-Первый contract имеет:
 
 ```text
 global-analysis v1
@@ -45,8 +65,11 @@ global-analysis v1
 ├── finding_traffic_relevance
 ├── external_communications
 ├── unclassified_communications
+├── infrastructure_consistency
 ├── coverage
 ├── source_health
+├── evidence_references
+├── operator_summary
 ├── partial
 └── warnings
 ```
@@ -55,7 +78,7 @@ global-analysis v1
 
 ## Asset ↔ traffic identity
 
-Текущий rule:
+Rule:
 
 ```text
 GA-ASSET-IDENTITY-001
@@ -92,15 +115,9 @@ Rule:
 GA-SERVICE-USAGE-001
 ```
 
-Первый slice использует pair-level `communications_graph` из `traffic-analysis` v1.
+Текущий slice использует pair-level `communications_graph` из `traffic-analysis` v1.
 
-Если:
-
-- endpoint пары exact-match'ится с asset;
-- inventory содержит service `(protocol, port)` этого asset;
-- такой `protocol/port` присутствует среди агрегированных destination ports пары,
-
-service получает `observed_in_selected_traffic=true`.
+Если endpoint пары exact-match'ится с asset, inventory содержит service `(protocol, port)` этого asset и такой `protocol/port` присутствует среди агрегированных destination ports пары, service получает `observed_in_selected_traffic=true`.
 
 ### Ограничение направления
 
@@ -138,11 +155,7 @@ Rule:
 GA-INVENTORY-TRAFFIC-COVERAGE-001
 ```
 
-WireScope отдельно показывает:
-
-- inventory assets, exact-correlated с traffic;
-- inventory assets, не наблюдавшиеся в выбранном capture;
-- traffic endpoints, не сопоставленные с inventory.
+WireScope отдельно показывает inventory assets, exact-correlated с traffic; inventory assets, не наблюдавшиеся в выбранном capture; и traffic endpoints, не сопоставленные с inventory.
 
 Это visibility comparison, а не оценка полноты реальной сети.
 
@@ -156,15 +169,63 @@ GA-EXTERNAL-COMMUNICATION-001
 
 External communication создаётся только когда одна сторона exact-match'ится с inventory asset, а другая классифицирована как `external_global`.
 
-Сохраняются:
-
-- internal asset ID;
-- external endpoint;
-- packets/bytes;
-- protocols/ports из persisted Traffic Analysis;
-- ссылка на deterministic conversation ID.
+Сохраняются internal asset ID, external endpoint, packets/bytes, protocols/ports из persisted Traffic Analysis и ссылка на deterministic conversation ID.
 
 Private unknown communications выводятся отдельно в `unclassified_communications`.
+
+## Infrastructure consistency
+
+Global Analysis сравнивает независимые persisted observations, а не пытается назначить один источник «истиной».
+
+Rules:
+
+```text
+GA-GATEWAY-CONSISTENCY-001
+GA-DHCP-CONSISTENCY-001
+GA-DNS-CONSISTENCY-001
+```
+
+Источники:
+
+- gateway: interface-specific environment/default route + passive DHCP router + canonical topology;
+- DHCP server: local DHCP lease + passive DHCP + selected Traffic Analysis;
+- DNS server: interface DHCP/environment DNS + selected Traffic Analysis + topology, если topology располагает таким role evidence.
+
+Статусы:
+
+- `consistent` — два или более доступных источника имеют общее подтверждаемое значение;
+- `divergent` — два или более источника есть, но общего значения нет;
+- `insufficient` — для сравнения меньше двух независимых sources.
+
+Расхождение не превращает документ в `partial`: это самостоятельный результат корреляции. `partial` относится к недостаточности/повреждению входных evidence.
+
+## Evidence lineage
+
+`evidence_references` связывает результат с:
+
+- audit;
+- выбранным traffic-analysis job/artifact;
+- inventory asset/service IDs;
+- finding IDs;
+- route/SNMP/SSH topology artifacts;
+- audit evidence metadata.
+
+Для artifacts сохраняются безопасные metadata: ID, type, content type, size, SHA-256, schema/version, timestamp. Internal relative/absolute filesystem paths в canonical document не помещаются.
+
+Correlation rows также получают компактные `evidence_refs` на соответствующие asset/service/finding/job/artifact IDs.
+
+## Operator summary
+
+`operator_summary` — короткая русская deterministic сводка поверх уже рассчитанных фактов. Она показывает:
+
+- сколько inventory assets сопоставилось с выбранным PCAP;
+- сколько service ports наблюдалось;
+- сколько external communications связано с exact-correlated assets;
+- есть ли infrastructure divergence;
+- где источников недостаточно;
+- partial state, если он унаследован от source data.
+
+Summary не является AI-выводом и воспроизводится из canonical data.
 
 ## Source health и partial
 
@@ -179,13 +240,13 @@ Global Analysis наследует качество входов.
 
 Итоговый `partial=true` означает, что документ всё ещё пригоден, но часть корреляционных утверждений ограничена состоянием sources.
 
-## Что первый slice пока не делает
+## Что ещё остаётся в v1.3
 
-- не сохраняет отдельный durable `global_analysis_result` artifact;
-- не имеет собственного job lifecycle;
-- не перечитывает PCAP для более точного directional service mapping;
-- не использует hostname-only identity;
-- не использует AI;
-- не создаёт новые findings автоматически.
+Backend canonical/durable contract уже есть. Следующие продуктовые части:
 
-Следующий slice может добавить durable artifact/job contract поверх уже стабильного `global-analysis v1`, не меняя safety-модель.
+- operator GUI для выбора persisted Traffic Analysis и запуска/просмотра Global Analysis;
+- удобная история durable `global_analysis` jobs/results;
+- rebuild/history semantics поверх сохранённых input references;
+- при необходимости отдельная directional traffic projection для более сильного service-use вывода.
+
+AI в v1.3 не используется и автоматические findings из correlation result не создаются. AI-assisted слой остаётся отдельным v1.4.

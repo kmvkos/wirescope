@@ -287,10 +287,10 @@ def _operator_summary(
     if insufficient:
         lines.append("Для части infrastructure checks недостаточно независимых источников: " + ", ".join(insufficient) + ".")
     if document.get("partial"):
-        lines.append("Анализ частичный: см. source_health, coverage и warnings; отсутствие корреляции не считается доказательством отсутствия объекта или проблемы.")
+        lines.append("Корреляция частичная: см. source_health, coverage и warnings; отсутствие связи с выбранным PCAP не считается доказательством отсутствия объекта или проблемы.")
     return {
         "schema": "global-analysis-summary",
         "schema_version": 1,
-        "headline": "Глобальная корреляция сохранённых результатов WireScope",
+        "headline": "Корреляция сохранённых результатов WireScope",
         "lines": lines,
     }

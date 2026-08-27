@@ -16,6 +16,7 @@ from persistence.models import AuditModel, JobModel
 from traffic_analysis.compare import compare_traffic_analysis, render_comparison_text
 from traffic_analysis.service import (
     TrafficAnalysisJobService,
+    TrafficAnalysisPcapUnavailable,
     TrafficAnalysisSourceNotReady,
 )
 
@@ -146,6 +147,8 @@ def enqueue_traffic_analysis(
             pcap_artifact_id=pcap.id,
         )
         job = services.jobs.get_job(job_id)
+    except TrafficAnalysisPcapUnavailable as exc:
+        raise _pcap_unavailable(str(exc)) from exc
     except TrafficAnalysisSourceNotReady as exc:
         raise HTTPException(
             status_code=409,

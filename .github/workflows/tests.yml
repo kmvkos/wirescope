@@ -59,8 +59,10 @@ jobs:
       - name: Run default test suite
         run: pytest -q
 
-      - name: Kiosk and web layout smoke
-        run: pytest -q tests/test_product_coherence_browser.py -m browser
+      - name: Browser UI smoke
+        run: |
+          pytest -q tests/test_product_coherence_browser.py -m browser
+          pytest -q tests/test_pcap_management_browser.py -m browser
 
       - name: Build wheel
         run: |

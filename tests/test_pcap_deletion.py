@@ -100,6 +100,14 @@ def test_delete_pcap_preserves_capture_history_and_normalized_results(api_contex
     assert download.status_code == 410
     assert download.json()["detail"]["code"] == "pcap_unavailable"
 
+    analyze = http_request(app, "POST", f"/api/captures/{job.id}/analyze")
+    assert analyze.status_code == 409
+    assert analyze.json()["detail"]["code"] == "pcap_unavailable"
+    assert not any(
+        row.type == "traffic_analysis"
+        for row in jobs.list_jobs(limit=100, audit_id=job.audit_id).items
+    )
+
 
 def test_delete_pcap_is_idempotent_and_viewer_cannot_delete(api_context):
     app, _jobs, _evidence, _environment = api_context
@@ -140,7 +148,7 @@ def test_delete_pcap_rejects_active_capture_audit_job(api_context):
 
 
 def test_capture_listing_does_not_advertise_missing_raw_file(api_context):
-    app, _jobs, evidence, _environment = api_context
+    app, jobs, evidence, _environment = api_context
     _audit, job, pcap, _capture_result, _downstream = _completed_capture(api_context)
     evidence.path_for(pcap).unlink()
 
@@ -151,6 +159,16 @@ def test_capture_listing_does_not_advertise_missing_raw_file(api_context):
     listing = http_request(app, "GET", "/api/captures?limit=20")
     item = next(row for row in listing.json()["items"] if row["job_id"] == job.id)
     assert item["pcap_url"] is None
+
+    # A stale metadata row without the actual raw file must not create a
+    # traffic-analysis job that is guaranteed to fail in the worker.
+    analyze = http_request(app, "POST", f"/api/captures/{job.id}/analyze")
+    assert analyze.status_code == 409
+    assert analyze.json()["detail"]["code"] == "pcap_unavailable"
+    assert not any(
+        row.type == "traffic_analysis"
+        for row in jobs.list_jobs(limit=100, audit_id=job.audit_id).items
+    )
 
 
 def test_pcap_delete_has_stable_operational_audit_action(api_context):

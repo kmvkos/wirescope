@@ -59,7 +59,7 @@ def render_text(document: dict[str, Any]) -> str:
     operator = document.get("operator_summary") or {}
     consistency = document.get("infrastructure_consistency") or {}
     lines = [
-        "WIRESCOPE — GLOBAL CORRELATION ANALYSIS",
+        "WIRESCOPE — КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ",
         "=" * 44,
         f"Audit: {_text(audit.get('id'))}",
         f"Profile: {_text(audit.get('profile'))}",
@@ -68,7 +68,7 @@ def render_text(document: dict[str, Any]) -> str:
         f"Traffic Analysis job: {_text(inputs.get('traffic_analysis_job_id'))}",
         f"State: {'PARTIAL' if document.get('partial') else 'COMPLETE'}",
         "",
-        str(operator.get("headline") or "Глобальная корреляция сохранённых результатов WireScope"),
+        str(operator.get("headline") or "Корреляция сохранённых результатов WireScope"),
     ]
     for item in operator.get("lines") or []:
         lines.append(f"- {item}")
@@ -76,8 +76,8 @@ def render_text(document: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "СВОДКА",
-            "------",
+            "СВОДКА СОПОСТАВЛЕНИЯ",
+            "-------------------",
             f"Inventory assets: {int(summary.get('inventory_assets') or 0)}",
             f"Assets observed in selected traffic: {int(summary.get('inventory_assets_observed_in_traffic') or 0)}",
             f"Assets not observed in selected traffic: {int(summary.get('inventory_assets_not_observed_in_traffic') or 0)}",
@@ -88,8 +88,8 @@ def render_text(document: dict[str, Any]) -> str:
             f"Findings: {int(summary.get('findings') or 0)}",
             f"External communications: {int(summary.get('external_communications') or 0)}",
             "",
-            "INFRASTRUCTURE CONSISTENCY",
-            "--------------------------",
+            "СОГЛАСОВАННОСТЬ ИНФРАСТРУКТУРНЫХ ДАННЫХ",
+            "---------------------------------------",
         ]
     )
     for name in ("gateway", "dhcp", "dns"):
@@ -106,14 +106,14 @@ def render_text(document: dict[str, Any]) -> str:
         for row in document.get("finding_traffic_relevance") or []
         if isinstance(row, dict)
     )
-    lines.extend(["", "FINDINGS ↔ TRAFFIC", "------------------"])
+    lines.extend(["", "FINDINGS ↔ НАБЛЮДАЕМЫЙ TRAFFIC", "-----------------------------"])
     if relevance:
         for key, count in sorted(relevance.items()):
             lines.append(f"{_status(key)}: {count}")
     else:
         lines.append("—")
 
-    lines.extend(["", "EXTERNAL COMMUNICATIONS", "-----------------------"])
+    lines.extend(["", "INTERNAL ASSETS ↔ GLOBAL ENDPOINTS", "----------------------------------"])
     external = sorted(
         [row for row in document.get("external_communications") or [] if isinstance(row, dict)],
         key=lambda row: int(row.get("bytes") or 0),
@@ -130,13 +130,13 @@ def render_text(document: dict[str, Any]) -> str:
 
     warnings = [str(item) for item in document.get("warnings") or [] if item]
     if warnings:
-        lines.extend(["", "WARNINGS", "--------"])
+        lines.extend(["", "ОГРАНИЧЕНИЯ ИНТЕРПРЕТАЦИИ", "-------------------------"])
         lines.extend(f"- {item}" for item in warnings)
 
     lines.extend(
         [
             "",
-            "Примечание: отсутствие корреляции с выбранным PCAP не доказывает отсутствие asset, сервиса или finding в сети.",
+            "Примечание: этот документ показывает связи между сохранёнными источниками и не заменяет исходный Audit Report или Traffic Analysis. Отсутствие корреляции с выбранным PCAP не доказывает отсутствие asset, сервиса или finding в сети.",
             "",
         ]
     )
@@ -150,7 +150,7 @@ def render_markdown(document: dict[str, Any]) -> str:
     operator = document.get("operator_summary") or {}
     consistency = document.get("infrastructure_consistency") or {}
     lines = [
-        "# WireScope — Global Correlation Analysis",
+        "# WireScope — Корреляция результатов",
         "",
         f"- **Audit:** `{_text(audit.get('id'))}`",
         f"- **Profile:** {_text(audit.get('profile'))}",
@@ -159,14 +159,14 @@ def render_markdown(document: dict[str, Any]) -> str:
         f"- **Generated:** {_text(document.get('generated_at'))}",
         f"- **State:** {'partial' if document.get('partial') else 'complete'}",
         "",
-        f"## {operator.get('headline') or 'Операторская сводка'}",
+        f"## {operator.get('headline') or 'Что дополнили источники'}",
         "",
     ]
     lines.extend(f"- {item}" for item in operator.get("lines") or [])
     lines.extend(
         [
             "",
-            "## Сводка",
+            "## Сводка сопоставления",
             "",
             "| Показатель | Значение |",
             "|---|---:|",
@@ -180,7 +180,7 @@ def render_markdown(document: dict[str, Any]) -> str:
             f"| Findings | {int(summary.get('findings') or 0)} |",
             f"| External communications | {int(summary.get('external_communications') or 0)} |",
             "",
-            "## Infrastructure consistency",
+            "## Согласованность инфраструктурных данных",
             "",
         ]
     )
@@ -195,7 +195,7 @@ def render_markdown(document: dict[str, Any]) -> str:
             lines.append(f"- common: {', '.join(str(value) for value in common)}")
         lines.append("")
 
-    lines.extend(["## Findings ↔ Traffic", ""])
+    lines.extend(["## Findings ↔ наблюдаемый traffic", ""])
     relevance = Counter(
         str(row.get("traffic_relevance") or "unknown")
         for row in document.get("finding_traffic_relevance") or []
@@ -206,14 +206,14 @@ def render_markdown(document: dict[str, Any]) -> str:
     else:
         lines.append("—")
 
-    lines.extend(["", "## External communications", ""])
+    lines.extend(["", "## Internal assets ↔ global endpoints", ""])
     external = sorted(
         [row for row in document.get("external_communications") or [] if isinstance(row, dict)],
         key=lambda row: int(row.get("bytes") or 0),
         reverse=True,
     )
     if external:
-        lines.extend(["| Asset | External endpoint | Packets | Bytes | Protocols | Ports |", "|---|---|---:|---:|---|---|"])
+        lines.extend(["| Asset | Global endpoint | Packets | Bytes | Protocols | Ports |", "|---|---|---:|---:|---|---|"])
         for row in external[:50]:
             lines.append(
                 f"| `{row.get('asset_id')}` | `{row.get('external_endpoint')}` | "
@@ -225,13 +225,13 @@ def render_markdown(document: dict[str, Any]) -> str:
 
     warnings = [str(item) for item in document.get("warnings") or [] if item]
     if warnings:
-        lines.extend(["", "## Warnings", ""])
+        lines.extend(["", "## Ограничения интерпретации", ""])
         lines.extend(f"- {item}" for item in warnings)
 
     lines.extend(
         [
             "",
-            "> Отсутствие корреляции с выбранным PCAP не доказывает отсутствие asset, сервиса или finding в сети.",
+            "> Этот документ показывает связи между сохранёнными источниками и не заменяет исходный Audit Report или Traffic Analysis. Отсутствие корреляции с выбранным PCAP не доказывает отсутствие asset, сервиса или finding в сети.",
             "",
         ]
     )

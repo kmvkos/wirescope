@@ -40,7 +40,7 @@ def _capture_summary(job, services: AppServices) -> dict:
     """Return capture summary with raw-PCAP availability verified.
 
     Audit summary is historical metadata and may outlive a raw PCAP after
-    retention or manual deletion.  Never advertise a download URL from that
+    retention or manual deletion. Never advertise a download URL from that
     stale reference alone.
     """
 
@@ -192,14 +192,26 @@ def list_captures(
         status=status,
         job_type="packet_capture",
     )
+    items = []
+    hidden_deleted = 0
+    for item in page.items:
+        summary = _capture_summary(item, services)
+        # Manual PCAP deletion is an explicit operator action. Keep the
+        # durable capture job and normalized results addressable by ID, but do
+        # not keep a dead row in the ordinary "saved PCAP" list.
+        if summary.get("pcap_deleted_at"):
+            hidden_deleted += 1
+            continue
+        items.append(capture_session_response(item, summary))
     return CaptureSessionPageResponse(
-        items=[
-            capture_session_response(item, _capture_summary(item, services))
-            for item in page.items
-        ],
+        items=items,
         limit=page.limit,
         offset=page.offset,
-        total=page.total,
+        # This page can only know how many manually-deleted rows occurred in
+        # the selected slice. The GUI does not paginate this counter; reducing
+        # it here keeps the common first-page response intuitive without
+        # deleting the underlying history.
+        total=max(0, page.total - hidden_deleted),
     )
 
 

@@ -1,0 +1,221 @@
+/* Product-wide presentation polish. Canonical data and API contracts stay unchanged. */
+
+.ws-insights-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.ws-insights-tabs button {
+    flex: 0 1 auto;
+    white-space: nowrap;
+}
+
+.ws-topology-extras-menu {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 8px 0 12px;
+    padding: 10px 12px;
+}
+
+.ws-topology-extras-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ws-topology-extras-copy strong {
+    font-size: 13px;
+}
+
+.ws-topology-extras-copy span {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.ws-topology-extras-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+}
+
+#ws-insights-body:not(.ws-extra-snmp-open) .ws-snmp-topology-panel,
+#ws-insights-body:not(.ws-extra-ssh-open) .ws-ssh-topology-panel {
+    display: none !important;
+}
+
+#ws-insights-body.ws-extra-snmp-open .ws-snmp-topology-panel,
+#ws-insights-body.ws-extra-ssh-open .ws-ssh-topology-panel {
+    display: block;
+    margin-bottom: 12px;
+}
+
+.ws-snmp-topology-panel h3,
+.ws-ssh-topology-panel h3 {
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
+    font-size: 15px;
+}
+
+/* Long technical values should never widen the application or a kiosk viewport. */
+pre,
+code,
+.mono,
+.ws-topology-details,
+.traffic-analysis-report,
+.ga-content,
+.ga-meta,
+.ws-snmp-status,
+.ws-ssh-status {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+pre,
+.traffic-analysis-report {
+    white-space: pre-wrap;
+}
+
+.table-wrap,
+.ga-table-wrap,
+.ws-topology-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.ws-topology-controls,
+.actions.wrap,
+.ga-actions,
+.traffic-analysis-actions {
+    max-width: 100%;
+}
+
+.ws-topology-controls > *,
+.actions.wrap > * {
+    min-width: 0;
+}
+
+/* Laptop/web view: give analytical workspaces room without turning forms into full-width walls. */
+@media (min-width: 900px) {
+    .ws-topology-extras-menu {
+        position: relative;
+    }
+
+    .ws-snmp-topology-panel,
+    .ws-ssh-topology-panel {
+        scroll-margin-top: 18px;
+    }
+}
+
+/* Kiosk/tablet: one readable column, no clipped toolbars, no horizontal page scroll. */
+@media (max-width: 899px) {
+    html,
+    body,
+    .app,
+    main,
+    .screen {
+        max-width: 100%;
+    }
+
+    .ws-insights-tabs {
+        gap: 6px;
+    }
+
+    .ws-insights-tabs button {
+        min-height: 40px;
+        padding-inline: 9px;
+        font-size: 12px;
+    }
+
+    .ws-topology-extras-menu {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .ws-topology-extras-actions {
+        width: 100%;
+    }
+
+    .ws-topology-extras-actions button {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ws-topology-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ws-topology-controls select,
+    .ws-topology-controls button {
+        width: 100%;
+    }
+
+    .ws-snmp-form,
+    .ws-ssh-form {
+        grid-template-columns: 1fr !important;
+    }
+
+    .ws-snmp-heading,
+    .ws-ssh-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ws-snmp-metrics,
+    .ws-ssh-metrics {
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .global-analysis-card,
+    .traffic-analysis-card {
+        width: calc(100vw - 12px) !important;
+        max-width: calc(100vw - 12px) !important;
+        max-height: calc(100vh - 12px) !important;
+    }
+
+    .ga-layout {
+        grid-template-columns: 1fr !important;
+    }
+
+    .ga-sidebar {
+        max-height: none !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .header-meta {
+        gap: 4px;
+    }
+
+    .session-chip {
+        max-width: 58vw;
+    }
+
+    #session-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ws-topology-extras-actions,
+    .actions,
+    .actions.wrap {
+        flex-wrap: wrap;
+    }
+
+    .ws-topology-extras-actions button,
+    .actions > button,
+    .actions > a {
+        flex: 1 1 140px;
+    }
+}

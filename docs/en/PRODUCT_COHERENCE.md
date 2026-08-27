@@ -2,6 +2,8 @@
 
 [Русский](../PRODUCT_COHERENCE.md)
 
+Status: **review complete / closed**.
+
 This document defines **which subsystem owns which information** and how WireScope avoids repeating the same data across reports and operator views.
 
 ## Core rule
@@ -64,6 +66,8 @@ A detailed list has one presentation owner. DNS top names belong to Protocol Det
 
 Topology may show finding/traffic badges as node or edge context, but it does not duplicate complete rationale/remediation or full communication reports. Structural view remains infrastructure-first.
 
+SNMP/SSH management sources are explicit optional/lazy sources. Their UI/renderers must not alter normal topology behavior after the operator leaves the advanced management view.
+
 ## Correlated Assessment
 
 Correlated Assessment shows only information created **by the relationship between sources**: service observed in traffic, finding attached to a traffic-visible asset/service, inventory-vs-capture visibility, unmatched traffic endpoints, infrastructure consistency, and exact-correlated internal↔global communication.
@@ -86,4 +90,6 @@ When persisted Traffic Analysis semantics materially change, increment `ANALYZER
 
 ## Acceptance criteria
 
-The review is complete when protocol presence is no longer presented as a Traffic security finding, security rationale/remediation has one owner, repeated DNS/DHCP detail is removed from the current Traffic renderer, Correlated Assessment remains cross-source only, topology remains relationship/claimability focused, docs agree on ownership, and regression tests lock these anti-duplication contracts.
+The review is complete when protocol presence is no longer presented as a Traffic security finding, security rationale/remediation has one owner, repeated DNS/DHCP detail is removed from the current Traffic renderer, Correlated Assessment remains cross-source only, topology remains relationship/claimability focused, docs agree on ownership, regression tests lock these anti-duplication contracts, and optional SNMP/SSH topology modules do not keep issuing management reads after the operator returns to the normal topology view.
+
+**All criteria above are satisfied.** The final code checkpoint passed the complete automated gate: compile, JS syntax, pytest, Chromium kiosk/web smoke, wheel build, and installed-wheel smoke.

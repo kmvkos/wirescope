@@ -14,9 +14,9 @@ def test_root_loads_product_coherence_assets(api_context):
     app, _service, _evidence, _environment = api_context
     response = request(app, "GET", "/", auth=False)
     assert response.status_code == 200
-    assert "/static/product_coherence.css?v=20260827-ui24" in response.text
-    assert "/static/product_coherence.js?v=20260827-ui24" in response.text
-    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui24" in response.text
+    assert "/static/product_coherence.css?v=20260827-ui25" in response.text
+    assert "/static/product_coherence.js?v=20260827-ui25" in response.text
+    assert "/static/topology_tab.js?v=20260825-ui14&feature=20260826-ui17&coherence=20260827-ui25" in response.text
 
 
 def test_topology_navigation_treats_management_sources_as_optional():
@@ -65,6 +65,8 @@ def test_correlated_assessment_machine_warnings_are_localized_only_in_presentati
     assert '[" · Traffic ", " · PCAP "]' in script
     assert '["CA ", "Корреляция "]' in script
     assert '[" · deep ·", " · Глубокий ·"]' in script
+    assert '["Evidence lineage", "Источники и ссылки на доказательства"]' in script
+    assert '["трафик сервиса наблюдался", "трафик службы наблюдался"]' in script
 
 
 def test_human_report_cleanup_does_not_change_canonical_json_contract():

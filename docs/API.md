@@ -90,6 +90,56 @@ SNMP/SSH enrichment — mutating auditor-only operations. Management target до
 
 Полная модель evidence/claimability описана в [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md).
 
+## Global Correlation Analysis
+
+Global Analysis объединяет persisted inventory/findings, явно выбранный Traffic Analysis и canonical Network Topology. Он не запускает scanner, не перечитывает PCAP и не выполняет новый network I/O.
+
+Offline preview без сохранения нового artifact:
+
+```text
+GET /api/v1/audits/{audit_id}/global-analysis?traffic_analysis_job_id={job_id}
+```
+
+Durable запуск:
+
+```text
+POST /api/v1/audits/{audit_id}/global-analysis
+```
+
+```json
+{
+  "traffic_analysis_job_id": "completed-traffic-analysis-job-id",
+  "priority": 0
+}
+```
+
+Worker сохраняет `global_analysis_result` (`global-analysis` v1, retention `audit`). Запуск доступен `auditor`; `viewer` может читать сохранённые результаты.
+
+История и чтение:
+
+```text
+GET /api/v1/audits/{audit_id}/global-analysis/history
+GET /api/v1/jobs/{job_id}/global-analysis
+GET /api/v1/jobs/{job_id}/global-analysis/export?format=json
+GET /api/v1/jobs/{job_id}/global-analysis/export?format=text
+GET /api/v1/jobs/{job_id}/global-analysis/export?format=markdown
+```
+
+History сохраняет immutable lifecycle каждого Global Analysis job, включая failed/cancelled/interrupted состояния. Канонический документ доступен только у `completed` job с зарегистрированным `global_analysis_result` правильного audit/job/schema.
+
+Rebuild создаёт новый job и новый artifact:
+
+```json
+{
+  "traffic_analysis_job_id": "same-traffic-analysis-job-id",
+  "rebuild_of_job_id": "previous-completed-global-analysis-job-id"
+}
+```
+
+Предыдущий result не изменяется. `rebuild_of_job_id` должен ссылаться на завершённый durable Global Analysis того же audit, а выбранный Traffic Analysis должен совпадать с предыдущим source. Это rebuild из текущих persisted normalized inputs, а не resume старого subprocess.
+
+TXT/Markdown exports рендерятся из сохранённого canonical JSON без повторного анализа. Полная correlation/evidence модель описана в [GLOBAL_ANALYSIS_MODEL.md](GLOBAL_ANALYSIS_MODEL.md).
+
 ## Jobs и recovery
 
 ```text
@@ -143,7 +193,7 @@ GET /api/v1/audit-log
 
 Доступно только роли `auditor`. Поддерживаются фильтры `actor`, `action`, `audit_id`, `limit`, `offset`.
 
-В журнал попадают значимые mutating operations: login/logout/password change, создание и запуск audit stages, cancel/retry, network changes, finding changes, report generation и maintenance cleanup.
+В журнал попадают значимые mutating operations: login/logout/password change, создание и запуск audit stages, Global Analysis generation/rebuild, cancel/retry, network changes, finding changes, report generation и maintenance cleanup. Для запуска Global Analysis используется stable action `global_analysis.generate`.
 
 Журнал хранит request metadata, но **не** request body, пароль, session cookie или provider stdout.
 
@@ -184,7 +234,7 @@ Cleanup использует явный двухшаговый контракт:
 - `GET /health`, `/status`, `/ready`;
 - `POST /auth/login`, `/auth/logout`.
 
-Остальные routes требуют локальную session. Обычные mutating endpoints требуют роль `auditor`; `viewer` может читать audits, inventory, findings, reports, diff, topology и evidence. Operational audit log, diagnostics и maintenance доступны только auditor.
+Остальные routes требуют локальную session. Обычные mutating endpoints требуют роль `auditor`; `viewer` может читать audits, inventory, findings, reports, diff, topology, Global Analysis и evidence. Operational audit log, diagnostics и maintenance доступны только auditor.
 
 Сессия хранится в HttpOnly cookie. Подробнее: [SECURITY_MODEL.md](SECURITY_MODEL.md).
 

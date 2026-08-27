@@ -154,9 +154,11 @@ def test_topology_history_ui_renders_changes_and_exports_json():
         assert "10 → 20" in root.inner_text()
         assert "Gi1/0/5 → Gi1/0/8" in root.inner_text()
         assert "10.0.0.77" in root.inner_text()
+        assert "VLAN" in root.inner_text()
+        assert "Порт" in root.inner_text()
 
         with page.expect_download() as download_info:
-            root.get_by_role("button", name="Скачать diff JSON").click()
+            root.get_by_role("button", name="Скачать JSON сравнения").click()
         download = download_info.value
         payload = json.loads(Path(download.path()).read_text(encoding="utf-8"))
         assert payload["schema"] == "network-topology-diff"
@@ -203,7 +205,7 @@ def test_topology_history_ui_warns_when_global_audit_list_is_partial():
             }"""
         )
         text = page.locator("#root").inner_text()
-        assert "Глобальный список topology частичный" in text
+        assert "Список топологий частичный" in text
         assert "Нет другого сохранённого аудита" in text
     finally:
         browser.close()

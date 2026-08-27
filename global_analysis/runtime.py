@@ -20,6 +20,19 @@ from reports.sources import load_report_source
 from topology import TopologySourceError, build_topology
 
 
+def _safe_artifact_reference(artifact) -> dict[str, Any]:
+    return {
+        "id": artifact.id,
+        "artifact_type": artifact.artifact_type,
+        "content_type": artifact.content_type,
+        "size": artifact.size,
+        "sha256": artifact.sha256,
+        "schema_name": artifact.schema_name,
+        "schema_version": artifact.schema_version,
+        "created_at": artifact.created_at.isoformat(),
+    }
+
+
 def build_global_analysis(
     services,
     audit_id: str,
@@ -82,7 +95,7 @@ def build_global_analysis(
         if traffic_artifact is not None and not any(
             str(item.get("id")) == traffic_artifact.id for item in evidence_references
         ):
-            evidence_references.append(traffic_artifact.model_dump(mode="json"))
+            evidence_references.append(_safe_artifact_reference(traffic_artifact))
 
     return enrich_global_analysis(
         document,

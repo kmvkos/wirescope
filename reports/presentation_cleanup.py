@@ -43,6 +43,17 @@ _REPLACEMENTS = (
     ("активный хост", "активное устройство"),
     ("активных хоста", "активных устройства"),
     ("активных хостов", "активных устройств"),
+
+    # Persisted source warnings are stable machine strings. Translate them only
+    # in human-facing HTML/Markdown exports; canonical JSON remains unchanged.
+    ("Asset list exceeded the report input limit", "Список устройств превышает лимит данных отчёта; показана только допустимая часть."),
+    ("Service list exceeded the report input limit", "Список служб превышает лимит данных отчёта; показана только допустимая часть."),
+    ("Finding list exceeded the report input limit", "Список проблем превышает лимит данных отчёта; показана только допустимая часть."),
+    ("Evidence reference list exceeded the report input limit", "Список артефактов доказательств превышает лимит отчёта; показана только допустимая часть."),
+    ("Environment snapshot artifact was not found", "Снимок окружения не найден; часть сведений об окружении недоступна."),
+    ("Environment snapshot could not be read", "Снимок окружения не удалось прочитать; часть сведений об окружении недоступна."),
+    ("Environment snapshot did not contain an object", "Снимок окружения имеет неожиданный формат; часть сведений об окружении недоступна."),
+    ("Passive result artifact could not be read", "Результат пассивного анализа не удалось прочитать; пассивные данные в отчёте могут быть неполными."),
 )
 
 

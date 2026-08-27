@@ -135,8 +135,8 @@ def test_global_analysis_history_read_and_exports_are_viewer_accessible(api_cont
         as_role="viewer",
     )
     assert text_export.status_code == 200
-    assert "GLOBAL CORRELATION ANALYSIS" in text_export.text
-    assert "INFRASTRUCTURE CONSISTENCY" in text_export.text
+    assert "КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ" in text_export.text
+    assert "СОГЛАСОВАННОСТЬ ИНФРАСТРУКТУРНЫХ ДАННЫХ" in text_export.text
 
     md_export = request(
         app,
@@ -145,7 +145,7 @@ def test_global_analysis_history_read_and_exports_are_viewer_accessible(api_cont
         as_role="viewer",
     )
     assert md_export.status_code == 200
-    assert "# WireScope — Global Correlation Analysis" in md_export.text
+    assert "# WireScope — Корреляция результатов" in md_export.text
 
 
 def test_global_analysis_rebuild_creates_new_immutable_result_with_lineage(api_context):
@@ -247,7 +247,7 @@ def test_global_analysis_renderers_are_bounded_human_readable_views():
             "external_communications": 1,
         },
         "operator_summary": {
-            "headline": "Глобальная корреляция",
+            "headline": "Корреляция результатов",
             "lines": ["С выбранным PCAP сопоставлен один asset."],
         },
         "infrastructure_consistency": {
@@ -266,10 +266,10 @@ def test_global_analysis_renderers_are_bounded_human_readable_views():
     }
     text = render_text(document)
     markdown = render_markdown(document)
-    assert "GLOBAL CORRELATION ANALYSIS" in text
+    assert "КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ" in text
     assert "8.8.8.8" in text
     assert "DNS: расхождение" in text
-    assert "## External communications" in markdown
+    assert "## Internal assets ↔ global endpoints" in markdown
     assert "8.8.8.8" in markdown
 
 

@@ -71,8 +71,8 @@ def _load_workspace(page) -> dict[str, int]:
         """
         <!doctype html><html lang="ru"><head><base href="http://wirescope.test/"></head><body>
         <div class="app"><main><section class="screen">
-          <div id="legacy-findings-label">Слабые места</div>
-          <div id="legacy-vlan-note">Тегов 802.1Q не видно. Access-порт часто без тега — ID неизвестен.</div>
+          <div id="legacy-findings-label" data-i18n="nav.findings">Слабые места</div>
+          <div id="legacy-vlan-note" data-i18n="summary.vlanTagNote">Тегов 802.1Q не видно. Access-порт часто без тега — ID неизвестен.</div>
           <div class="ws-insights-tabs"><button class="primary">Сводка</button></div>
           <select id="ws-audit-select"><option value="audit-1" selected>audit-1</option></select>
           <div id="ws-insights-body">
@@ -84,7 +84,7 @@ def _load_workspace(page) -> dict[str, int]:
           <section class="traffic-analysis-card">
             <div class="traffic-analysis-head"><h2>Анализ сетевого трафика</h2><button>Закрыть</button></div>
             <div class="traffic-analysis-actions actions wrap"><button>TXT</button><button>Markdown</button><button>JSON</button></div>
-            <pre class="traffic-analysis-report">very-long-traffic-value-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</pre>
+            <pre class="traffic-analysis-report">Traffic Asset deep completed SNMP enrichment</pre>
           </section>
         </div>
 
@@ -92,8 +92,13 @@ def _load_workspace(page) -> dict[str, int]:
           <section class="global-analysis-card">
             <header class="ga-head"><h2>Корреляция результатов</h2><button>Закрыть</button></header>
             <div class="ga-layout">
-              <aside class="ga-sidebar"><select><option>very-long-selected-analysis-cccccccccccccccccccccccccccccccccccccccc</option></select></aside>
-              <main class="ga-main"><div class="ga-content">very-long-correlation-value-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd</div></main>
+              <aside class="ga-sidebar"><select><option>Traffic Asset deep completed SNMP enrichment</option></select></aside>
+              <main class="ga-main">
+                <div class="ga-content">
+                  <div id="raw-network-value">Traffic Asset deep completed SNMP enrichment</div>
+                  <code id="raw-code-value">Traffic Analysis deep completed</code>
+                </div>
+              </main>
             </div>
           </section>
         </div>
@@ -144,6 +149,13 @@ def _assert_element_inside_viewport(page, selector: str, width: int) -> None:
     assert box["x"] + box["width"] <= width + 1
 
 
+def _assert_network_values_untouched(page) -> None:
+    assert page.locator("#raw-network-value").inner_text() == "Traffic Asset deep completed SNMP enrichment"
+    assert page.locator("#raw-code-value").inner_text() == "Traffic Analysis deep completed"
+    assert page.locator("#traffic-analysis-modal .traffic-analysis-report").inner_text() == "Traffic Asset deep completed SNMP enrichment"
+    assert page.locator("#global-analysis-modal option").inner_text() == "Traffic Asset deep completed SNMP enrichment"
+
+
 @pytest.mark.parametrize("viewport", [(480, 320), (1280, 900)])
 def test_topology_optional_sources_fit_kiosk_and_web(viewport):
     width, height = viewport
@@ -154,6 +166,7 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
 
         assert page.locator("#legacy-findings-label").inner_text() == "Проблемы"
         assert "Порт доступа" in page.locator("#legacy-vlan-note").inner_text()
+        _assert_network_values_untouched(page)
         assert page.get_by_role("button", name="Топология").count() == 1
         assert page.get_by_role("button", name="История топологии").count() == 1
         extras = page.get_by_role("button", name="Дополнительно")
@@ -167,6 +180,7 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
         assert page.get_by_role("button", name="SNMP-опрос").is_visible()
         assert page.get_by_role("button", name="SSH-сбор данных").is_visible()
         assert calls == {"snmp_script": 0, "ssh_script": 0, "api": 0}
+        _assert_network_values_untouched(page)
         _assert_no_page_overflow(page, width)
 
         page.get_by_role("button", name="SNMP-опрос").click()
@@ -177,6 +191,7 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
         assert not page.locator(".ws-ssh-topology-panel").is_visible()
         assert "SNMP — данные сетевого оборудования" in page.locator(".ws-snmp-topology-panel h3").inner_text()
         assert page.evaluate("window.WireScopeTopology.render === window.__wsBaseTopologyRender")
+        _assert_network_values_untouched(page)
         _assert_no_page_overflow(page, width)
 
         extras.click()
@@ -187,6 +202,7 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
         assert not page.locator(".ws-snmp-topology-panel").is_visible()
         assert "SSH — данные Linux/OpenWrt" in page.locator(".ws-ssh-topology-panel h3").inner_text()
         assert page.evaluate("window.WireScopeTopology.render === window.__wsBaseTopologyRender")
+        _assert_network_values_untouched(page)
         _assert_no_page_overflow(page, width)
 
         management_api_calls = calls["api"]
@@ -196,6 +212,7 @@ def test_topology_optional_sources_fit_kiosk_and_web(viewport):
         assert not page.locator(".ws-ssh-topology-panel").is_visible()
         assert page.evaluate("window.WireScopeTopology.render === window.__wsBaseTopologyRender")
         assert calls["api"] == management_api_calls
+        _assert_network_values_untouched(page)
         _assert_no_page_overflow(page, width)
     finally:
         browser.close()
@@ -213,12 +230,14 @@ def test_analysis_workspaces_stay_inside_kiosk_and_web_viewports(viewport):
         traffic = page.locator("#traffic-analysis-modal")
         traffic.evaluate("node => { node.hidden = false; }")
         _assert_element_inside_viewport(page, ".traffic-analysis-card", width)
+        _assert_network_values_untouched(page)
         _assert_no_page_overflow(page, width)
         traffic.evaluate("node => { node.hidden = true; }")
 
         correlated = page.locator("#global-analysis-modal")
         correlated.evaluate("node => { node.hidden = false; }")
         _assert_element_inside_viewport(page, ".global-analysis-card", width)
+        _assert_network_values_untouched(page)
         _assert_no_page_overflow(page, width)
     finally:
         browser.close()

@@ -149,11 +149,11 @@ See [TOPOLOGY_MODEL.md](TOPOLOGY_MODEL.md) for the full evidence contract.
 
 ## v1.3 — Global Correlation Analysis
 
-Status: **next stage**.
+Status: **implementation in progress; deterministic slice 1 implemented**.
 
 Goal: combine Deep/active audit results, selected PCAP Traffic Analysis, findings, and Network Topology into one deterministic analytical package.
 
-The first required correlation rules are:
+The required correlation rules are:
 
 1. **Asset ↔ traffic identity** — exact IP/MAC, never hostname-only merge.
 2. **Service ↔ observed traffic** — which discovered services/ports were actually seen in the selected capture.
@@ -163,11 +163,33 @@ The first required correlation rules are:
 6. **Infrastructure consistency** — compare gateway/DHCP/DNS observations across environment, passive evidence, and topology.
 7. **Evidence quality** — partial/missing input propagates to the global result; correlation never raises confidence above the source evidence.
 
-Outputs:
+### Slice 1 — deterministic correlation core ✓
 
-- canonical `global-analysis` JSON;
+Implemented without new network I/O:
+
+- dedicated `global_analysis` package;
+- canonical `global-analysis` schema v1;
+- read-only `GET /api/v1/audits/{audit_id}/global-analysis?traffic_analysis_job_id=...` endpoint;
+- exact IP/MAC traffic identity and explicit hostname non-merge;
+- stable deterministic correlation IDs and versioned rule IDs;
+- conservative endpoint classes: `internal_asset / internal_segment / external_global / private_unknown / special / unknown`;
+- pair-level service-use correlation;
+- finding-to-traffic relevance states;
+- inventory-vs-capture visibility;
+- internal asset ↔ globally routable endpoint correlation;
+- separate private-unknown communication handling;
+- propagation of topology/report partial state and identity conflicts;
+- fixture-based regression and CI coverage through compile/default pytest/wheel/installed-wheel smoke.
+
+The current `traffic-analysis` v1 aggregates destination ports per communication pair. Service-use matches therefore use `observed_pair_destination_port`: this shows that the service port appeared in a pair containing the asset, but does not overclaim which endpoint owned the socket. Directional service mapping requires a later traffic-contract extension or a dedicated persisted directional projection.
+
+See [GLOBAL_ANALYSIS_MODEL.md](GLOBAL_ANALYSIS_MODEL.md) for the contract and limits.
+
+The completed v1.3 output still needs:
+
+- canonical `global-analysis` JSON as a durable result;
 - deterministic rule IDs;
-- evidence references across audits/assets/services/findings/traffic/topology;
+- complete evidence references across audits/assets/services/findings/traffic/topology;
 - readable Russian operator summary;
 - warnings and partial state for incomplete sources;
 - reproducible offline output without external AI.
@@ -199,6 +221,6 @@ Non-blocking future work includes PDF export, additional protocol modules, local
 
 ## Current next step
 
-**v1.3 — Global Correlation Analysis.**
+**v1.3 — Global Correlation Analysis, slice 2.**
 
-First implementation slice: persisted inventory/report source + explicitly selected `traffic-analysis` + canonical `network-topology` → deterministic `global-analysis`, starting with exact asset identity, observed service use, inventory-vs-traffic coverage, and external-endpoint correlation.
+Next implementation slice: durable `global_analysis_result` artifact/job semantics + infrastructure consistency (gateway/DHCP/DNS cross-source correlation) + complete evidence references/operator summary. History/rebuild semantics and GUI can then be added without weakening the existing safety contracts.

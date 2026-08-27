@@ -302,22 +302,19 @@ def enqueue_global_analysis(
 
     rebuild_of_job_id = payload.rebuild_of_job_id
     if rebuild_of_job_id:
-        try:
-            previous = services.jobs.get_job(rebuild_of_job_id)
-        except EntityNotFound as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={"code": "not_found", "message": "Previous global analysis job not found"},
-            ) from exc
-        previous_parameters = dict(previous.parameters or {})
-        if previous.type != "global_analysis" or previous.audit_id != audit.id:
+        previous, _previous_artifact = _global_analysis_artifact(
+            rebuild_of_job_id,
+            services,
+        )
+        if previous.audit_id != audit.id:
             raise HTTPException(
                 status_code=422,
                 detail={
                     "code": "invalid_global_analysis_rebuild_source",
-                    "message": "Rebuild source must be a global analysis job from the same audit",
+                    "message": "Rebuild source must be a completed Global Analysis result from the same audit",
                 },
             )
+        previous_parameters = dict(previous.parameters or {})
         previous_traffic = str(previous_parameters.get("traffic_analysis_job_id") or "")
         if previous_traffic and previous_traffic != traffic_job.id:
             raise HTTPException(

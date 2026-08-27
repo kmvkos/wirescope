@@ -183,7 +183,7 @@ SNMP-observed subnet остаётся `active_scope=false`: management evidence 
 
 ## v1.3 — Global Correlation Analysis
 
-Статус: **следующий этап**.
+Статус: **implementation in progress; deterministic slice 1 реализован**.
 
 Цель — объединить результаты Deep/active audit, PCAP Traffic Analysis, findings и Network Topology в один детерминированный аналитический пакет.
 
@@ -220,7 +220,33 @@ Global Analysis должен отвечать не «что лежит в чет
    - partial/missing input должен наследоваться в Global Analysis;
    - correlation не должна усиливать confidence сверх исходных evidence.
 
-Выход v1.3:
+### Slice 1 — deterministic correlation core ✓
+
+Первый slice работает полностью поверх persisted data и не выполняет network I/O.
+
+Реализованы:
+
+- отдельный пакет `global_analysis`;
+- canonical `global-analysis` schema v1;
+- read-only API `GET /api/v1/audits/{audit_id}/global-analysis?traffic_analysis_job_id=...`;
+- exact IP/MAC asset↔traffic identity;
+- явный запрет hostname-only merge;
+- stable deterministic correlation IDs и versioned rule IDs;
+- conservative endpoint classification `internal_asset / internal_segment / external_global / private_unknown / special / unknown`;
+- pair-level service-use correlation;
+- finding↔traffic relevance (`service_traffic_observed / asset_traffic_observed / uncorrelated`);
+- inventory-vs-capture visibility;
+- internal asset ↔ globally routable external endpoint correlation;
+- отдельный `private_unknown` path вместо ложного объявления private address «внешним»;
+- наследование topology/report partial state и identity conflicts;
+- fixture-based regression для exact IP/MAC, hostname non-merge, service matching, private/external classification, coverage и stable IDs;
+- CI compile/default pytest/wheel/installed-wheel smoke для нового package.
+
+Текущий `traffic-analysis` v1 хранит destination ports агрегированно на communication pair. Поэтому service-use match в этом slice имеет basis `observed_pair_destination_port`: он подтверждает наблюдение service port внутри пары с asset, но не утверждает без доказательств, какая сторона пары владела socket. Directional service mapping требует расширения traffic contract или отдельного persisted directional projection.
+
+Подробная модель: [GLOBAL_ANALYSIS_MODEL.md](GLOBAL_ANALYSIS_MODEL.md).
+
+Выход v1.3 в завершённом виде должен включать:
 
 - canonical `global-analysis` JSON;
 - deterministic rule IDs;
@@ -266,6 +292,6 @@ Global Analysis **не перечитывает PCAP и не запускает 
 
 ## Текущий следующий шаг
 
-**v1.3 — Global Correlation Analysis.**
+**v1.3 — Global Correlation Analysis, slice 2.**
 
-Первый implementation slice: persisted inventory/report source + явно выбранный `traffic-analysis` + canonical `network-topology` → deterministic `global-analysis`, начиная с exact asset identity, observed service use, inventory-vs-traffic coverage и external endpoint correlation.
+Следующий implementation slice: durable `global_analysis_result` artifact/job contract + infrastructure consistency (gateway/DHCP/DNS cross-source correlation) + полные evidence references/operator summary. После этого можно добавлять history/rebuild semantics и GUI, не меняя базовые safety-контракты.

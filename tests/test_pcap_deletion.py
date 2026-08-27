@@ -23,6 +23,7 @@ def _completed_capture(api_context):
     claimed = jobs.claim_next("pcap-delete-test")
     assert claimed is not None and claimed.id == job.id
 
+    # Real PacketCaptureHandler stores the raw capture under AUDIT retention.
     pcap = evidence.put_bytes(
         audit_id=audit.id,
         job_id=job.id,
@@ -30,7 +31,7 @@ def _completed_capture(api_context):
         payload=b"pcap-test-payload",
         content_type="application/vnd.tcpdump.pcap",
         extension=".pcap",
-        retention_class=RetentionClass.PCAP,
+        retention_class=RetentionClass.AUDIT,
     )
     capture_result = evidence.put_json(
         audit_id=audit.id,

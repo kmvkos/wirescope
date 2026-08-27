@@ -23,7 +23,7 @@ class GlobalAnalysisHandler:
             raise JobExecutionError(
                 JobError(
                     code="global_analysis_input_missing",
-                    category=ErrorCategory.INVALID_INPUT,
+                    category=ErrorCategory.VALIDATION,
                     message="traffic_analysis_job_id is required",
                     component="global_analysis",
                     retryable=False,
@@ -56,7 +56,7 @@ class GlobalAnalysisHandler:
             raise JobExecutionError(
                 JobError(
                     code="global_analysis_source_invalid",
-                    category=ErrorCategory.INVALID_INPUT,
+                    category=ErrorCategory.VALIDATION,
                     message=str(exc),
                     component="global_analysis",
                     retryable=False,

@@ -85,6 +85,23 @@ def test_capture_row_disappears_after_raw_pcap_delete_while_history_is_preserved
         row = page.locator("#listen-session-list .session-row")
         delete_button = row.get_by_role("button", name="Удалить PCAP")
         delete_button.wait_for(state="visible")
+
+        # Regression for the real UI failure: the list MutationObserver used
+        # to remove/recreate this button every ~80 ms. Hover visibly jittered
+        # and a click could target an element that had already been detached.
+        page.evaluate(
+            "() => { window.__pcapDeleteButton = document.querySelector('.pcap-delete-button'); }"
+        )
+        page.wait_for_timeout(350)
+        assert page.evaluate(
+            "() => window.__pcapDeleteButton === document.querySelector('.pcap-delete-button')"
+        )
+        delete_button.hover()
+        page.wait_for_timeout(200)
+        assert page.evaluate(
+            "() => window.__pcapDeleteButton === document.querySelector('.pcap-delete-button')"
+        )
+
         delete_button.click()
         page.locator("#pcap-delete-modal").wait_for(state="visible")
         page.locator("#pcap-delete-modal").get_by_role("button", name="Удалить PCAP").click()

@@ -39,7 +39,7 @@ class CapturePcapDeletionService:
 
     The capture job, immutable ``capture_result`` metadata, completed Traffic
     Analysis artifacts and any downstream Correlated Assessment results are
-    intentionally retained.  This makes deletion a storage/privacy operation,
+    intentionally retained. This makes deletion a storage/privacy operation,
     not history deletion.
     """
 
@@ -58,21 +58,28 @@ class CapturePcapDeletionService:
             ) from exc
         return candidate
 
-    def delete(self, job_id: str, *, actor: str | None = None) -> CapturePcapDeletionResult:
+    def delete(
+        self,
+        job_id: str,
+        *,
+        actor: str | None = None,
+    ) -> CapturePcapDeletionResult:
         paths: list[Path] = []
         artifact_count = 0
         historical_bytes = 0
         changed = False
         already_absent = False
+        audit_id = ""
 
         with self.database.immediate_session() as session:
             job = session.get(JobModel, job_id)
             if job is None or job.type != "packet_capture":
                 raise EntityNotFound(f"Capture session not found: {job_id}")
+            audit_id = str(job.audit_id)
 
             active = session.scalars(
                 select(JobModel).where(
-                    JobModel.audit_id == job.audit_id,
+                    JobModel.audit_id == audit_id,
                     JobModel.status.in_(
                         (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
                     ),
@@ -83,19 +90,19 @@ class CapturePcapDeletionService:
                     "Finish or stop the capture/analysis before deleting its PCAP"
                 )
 
-            audit = session.get(AuditModel, job.audit_id)
+            audit = session.get(AuditModel, audit_id)
             if audit is None:
-                raise EntityNotFound(f"Audit not found: {job.audit_id}")
+                raise EntityNotFound(f"Audit not found: {audit_id}")
 
             artifacts = session.scalars(
                 select(ArtifactModel).where(
-                    ArtifactModel.audit_id == job.audit_id,
-                    ArtifactModel.job_id == job.id,
+                    ArtifactModel.audit_id == audit_id,
+                    ArtifactModel.job_id == job_id,
                     ArtifactModel.artifact_type == "packet_capture",
                 )
             ).all()
 
-            # Validate every path before mutating the database.  A malformed
+            # Validate every path before mutating the database. A malformed
             # metadata row must never turn this endpoint into an arbitrary-file
             # deletion primitive.
             paths = [self._safe_path(row.relative_path) for row in artifacts]
@@ -133,7 +140,7 @@ class CapturePcapDeletionService:
 
         return CapturePcapDeletionResult(
             job_id=job_id,
-            audit_id=job.audit_id,
+            audit_id=audit_id,
             deleted=changed,
             already_absent=already_absent,
             artifact_count=artifact_count,

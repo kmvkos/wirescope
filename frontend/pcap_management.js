@@ -62,7 +62,7 @@
         modal.innerHTML = `
             <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="pcap-delete-title" aria-describedby="pcap-delete-body">
                 <h2 id="pcap-delete-title">Удалить файл PCAP?</h2>
-                <p id="pcap-delete-body">Сырой PCAP будет удалён с устройства. История записи и уже рассчитанные анализы останутся, но повторно анализировать этот захват без файла PCAP будет нельзя.</p>
+                <p id="pcap-delete-body">Сырой PCAP будет удалён с устройства. История записи и уже рассчитанные анализы останутся. Повторно анализировать этот захват без файла PCAP будет нельзя.</p>
                 <div class="actions">
                     <button type="button" class="secondary" data-pcap-delete-cancel>Отмена</button>
                     <button type="button" class="danger" data-pcap-delete-confirm>Удалить PCAP</button>

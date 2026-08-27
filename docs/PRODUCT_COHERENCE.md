@@ -2,6 +2,8 @@
 
 [English](en/PRODUCT_COHERENCE.md)
 
+Статус: **review complete / closed**.
+
 Этот документ фиксирует, **какая подсистема владеет каким типом информации** и как WireScope избегает повторения одних и тех же данных в разных отчётах и экранах.
 
 ## Базовое правило
@@ -75,6 +77,8 @@ Topology может показывать badge/count finding или traffic rela
 
 Structural view остаётся infrastructure-first. Traffic-only endpoints и связи живут в Traffic view/явном overlay и не превращаются в инфраструктурные факты без дополнительного evidence.
 
+Management sources SNMP/SSH являются явными optional/lazy источниками. Их UI и renderer не должны изменять поведение обычной topology view после закрытия дополнительного режима.
+
 ## Correlated Assessment
 
 Correlated Assessment показывает только то, что появляется **на пересечении источников**:
@@ -125,4 +129,7 @@ Product Coherence Review считается завершённым, когда:
 - Correlated Assessment остаётся cross-source view, а не composite report;
 - topology остаётся relationship/claimability view;
 - README/reporting/GUI docs описывают одинаковую ownership-модель;
-- regression tests фиксируют основные anti-duplication contracts.
+- regression tests фиксируют основные anti-duplication contracts;
+- optional SNMP/SSH topology modules не продолжают выполнять management reads после возврата к обычной topology view.
+
+**Все критерии выше выполнены.** Финальный кодовый checkpoint review прошёл полный automated gate: compile, JS syntax, pytest, Chromium kiosk/web smoke, wheel build и installed-wheel smoke.

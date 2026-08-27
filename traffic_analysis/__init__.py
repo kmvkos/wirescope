@@ -3,7 +3,7 @@
 # Increment whenever the persisted diagnostic semantics materially change.
 # The enqueue service uses this value so an old completed analysis does not
 # mask improved diagnostics for the same retained PCAP after an upgrade.
-ANALYZER_VERSION = 5
+ANALYZER_VERSION = 6
 
 from traffic_analysis.analyzer import TrafficAnalyzer
 from traffic_analysis.render_v5 import render_markdown, render_text

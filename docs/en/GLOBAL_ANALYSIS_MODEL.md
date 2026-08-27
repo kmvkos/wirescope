@@ -22,40 +22,89 @@ canonical network-topology
 - a private endpoint outside known topology segments is not automatically labelled external/Internet;
 - partial/missing input state is inherited by the result;
 - correlation confidence cannot exceed the underlying evidence;
-- the result is offline and deterministic.
+- evidence lineage contains ID/hash/type/schema metadata but no filesystem path;
+- preview, durable execution, and rebuild use the same canonical correlation contract;
+- rebuild creates a new immutable job/artifact and never rewrites an older result.
 
 ## API
+
+### Offline preview
 
 ```text
 GET /api/v1/audits/{audit_id}/global-analysis?traffic_analysis_job_id={job_id}
 ```
 
-`audit_id` selects the inventory/findings/topology audit. `traffic_analysis_job_id` is explicitly selected by the operator and must reference a completed `traffic_analysis` job with a registered `traffic_analysis_result` artifact.
+Preview uses current persisted sources without creating a new artifact.
+
+### Durable stage
+
+```text
+POST /api/v1/audits/{audit_id}/global-analysis
+{
+  "traffic_analysis_job_id": "...",
+  "priority": 0
+}
+```
+
+The worker persists the canonical result as:
+
+```text
+artifact_type  = global_analysis_result
+schema         = global-analysis
+schema_version = 1
+retention      = audit
+```
+
+### History and result access
+
+```text
+GET /api/v1/audits/{audit_id}/global-analysis/history
+GET /api/v1/jobs/{job_id}/global-analysis
+GET /api/v1/jobs/{job_id}/global-analysis/export?format=json
+GET /api/v1/jobs/{job_id}/global-analysis/export?format=text
+GET /api/v1/jobs/{job_id}/global-analysis/export?format=markdown
+```
+
+History includes durable jobs for the selected audit, including queued/running/failed/cancelled/interrupted states. A canonical result is readable only for a completed job with a valid registered `global_analysis_result` artifact.
+
+### Rebuild
+
+```text
+POST /api/v1/audits/{audit_id}/global-analysis
+{
+  "traffic_analysis_job_id": "...",
+  "rebuild_of_job_id": "previous-global-analysis-job-id"
+}
+```
+
+Rebuild creates a new job. The previous artifact remains unchanged. `rebuild_of_job_id` must reference Global Analysis from the same audit, and the selected Traffic Analysis must match the previous result. Rebuild is not stage resume and not an in-place update.
 
 ## Canonical contract
-
-The first contract contains:
 
 ```text
 global-analysis v1
 ├── inputs
+├── execution
 ├── summary
 ├── asset_traffic_identity
 ├── service_usage
 ├── finding_traffic_relevance
 ├── external_communications
 ├── unclassified_communications
+├── infrastructure_consistency
 ├── coverage
 ├── source_health
+├── evidence_references
+├── operator_summary
 ├── partial
 └── warnings
 ```
 
-Each correlation row has a deterministic ID and a versioned `rule_id`.
+Each correlation row has a deterministic ID and a versioned `rule_id`. Durable `execution` adds job/rebuild lineage without changing identity or correlation semantics.
 
 ## Asset ↔ traffic identity
 
-Current rule:
+Rule:
 
 ```text
 GA-ASSET-IDENTITY-001
@@ -92,13 +141,13 @@ Rule:
 GA-SERVICE-USAGE-001
 ```
 
-The first slice uses the pair-level `communications_graph` from `traffic-analysis` v1.
+The current contract uses the pair-level `communications_graph` from `traffic-analysis` v1.
 
 If an endpoint exact-matches an asset, inventory contains `(protocol, port)` for that asset, and the same `protocol/port` appears among the pair's aggregated destination ports, the service gets `observed_in_selected_traffic=true`.
 
 ### Direction limitation
 
-The current communications graph aggregates destination ports per endpoint pair and does not retain which endpoint owned the matching port. The match basis is therefore:
+The communications graph aggregates destination ports per endpoint pair and does not retain which endpoint owned the matching port. The match basis is therefore:
 
 ```text
 observed_pair_destination_port
@@ -146,16 +195,79 @@ GA-EXTERNAL-COMMUNICATION-001
 
 An external communication is created only when one side exact-matches an inventory asset and the other side is classified `external_global`.
 
-The row preserves internal asset ID, external endpoint, packets/bytes, persisted protocols/ports, and the deterministic conversation ID. Private unknown communications are kept separately in `unclassified_communications`.
+The row preserves internal asset ID, external endpoint, packets/bytes, persisted protocols/ports, and the deterministic conversation ID. Private unknown communications remain separate in `unclassified_communications`.
+
+## Infrastructure consistency
+
+Rules:
+
+```text
+GA-GATEWAY-CONSISTENCY-001
+GA-DHCP-CONSISTENCY-001
+GA-DNS-CONSISTENCY-001
+```
+
+Global Analysis compares independent persisted observations:
+
+- gateway: interface-specific environment/default route + passive DHCP router + canonical topology;
+- DHCP server: local DHCP lease + passive DHCP + selected Traffic Analysis;
+- DNS server: interface DHCP/environment DNS + selected Traffic Analysis + topology role evidence.
+
+States:
+
+- `consistent` — at least two available sources share a common value;
+- `divergent` — at least two sources exist but share no value;
+- `insufficient` — fewer than two independent sources are available.
+
+Divergence does not make the document `partial`; it is a correlation result. `partial` is reserved for incomplete or damaged source evidence.
+
+## Evidence lineage
+
+`evidence_references` links the result to the audit, selected traffic-analysis job/artifact, inventory asset/service IDs, finding IDs, and route/SNMP/SSH topology artifacts.
+
+Artifact references contain safe metadata only: ID, type, content type, size, SHA-256, schema/version, and timestamp. Internal relative or absolute filesystem paths are excluded from the canonical document.
+
+Correlation rows also carry compact `evidence_refs`.
+
+## Operator summary and exports
+
+`operator_summary` is a deterministic Russian-language operational summary over canonical data. TXT and Markdown exports are rendered from the same persisted JSON and do not run the analysis again.
+
+The summary covers matched inventory assets, observed service ports, finding ↔ traffic relevance, external communications, gateway/DHCP/DNS consistency, and partial/source-health limitations.
+
+## Operator GUI
+
+The WireScope home screen exposes **Global Analysis**. The workspace lets the operator:
+
+- select a retained audit;
+- explicitly select a completed Traffic Analysis;
+- start a durable Global Analysis job (auditor);
+- observe queued/running progress and cancel the job;
+- browse historical results (auditor/viewer);
+- open an older immutable result;
+- rebuild with the same Traffic Analysis while retaining `rebuild_of_job_id` lineage;
+- export JSON/TXT/Markdown;
+- inspect summary, infrastructure consistency, coverage/source health, finding relevance, external communications, warnings, and evidence lineage.
+
+The GUI does not modify active scope and does not initiate network I/O.
 
 ## Source health and partial state
 
-Global Analysis inherits source quality. A truncated report source produces `inventory=partial`; topology `partial=true` produces `topology=partial`; a missing communications graph produces `traffic=missing`; identity conflicts produce `identity=partial`.
+Examples:
 
-Overall `partial=true` means the document remains useful, but some correlations are constrained by source quality.
+- truncated report/inventory source → `inventory=partial`;
+- topology `partial=true` → `topology=partial`;
+- missing communications graph → `traffic=missing`;
+- identity conflict → `identity=partial`.
 
-## First-slice limits
+Overall `partial=true` means the document remains useful, but some claims are constrained by source quality.
 
-The first slice does not persist a dedicated `global_analysis_result` artifact, has no separate job lifecycle, does not re-read PCAP for directional service mapping, does not use hostname-only identity, does not use AI, and does not create new findings automatically.
+## Remaining work before v1.3 closure
 
-A later slice can add durable artifact/job semantics on top of the stable `global-analysis v1` contract without changing the safety model.
+- automated regression and installed-wheel smoke for history/rebuild/UI contracts;
+- live install/upgrade on a WireScope VM;
+- a real durable Global Analysis run over an existing Deep audit and retained Traffic Analysis;
+- operator validation of GUI, history, rebuild, and exports on the installed appliance;
+- an optional directional traffic projection for stronger service-use claims if needed; this is an enhancement, not a safety requirement for the current contract.
+
+v1.3 does not use AI and does not automatically create findings from correlation output. AI-assisted analysis remains a separate v1.4 layer.

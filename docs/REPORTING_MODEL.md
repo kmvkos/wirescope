@@ -33,6 +33,28 @@ JSON содержит стабильные machine values и является so
 
 Это позволяет улучшать интерфейс отчёта, не ломая API-контракт и интеграции.
 
+## Место Audit Report в продукте
+
+Audit Report — **source-of-truth для результатов самого аудита**. Он владеет:
+
+- inventory и discovered services;
+- protocol-audit observations;
+- findings, severity/confidence/status;
+- rationale и recommendations;
+- audit evidence и подтверждённым scope;
+- краткой passive visibility, собранной в рамках этого audit pipeline.
+
+Отдельный PCAP Traffic Analysis не встраивается в Audit Report автоматически и не должен пересказываться в нём целиком. Его задача другая: описать конкретное capture window, communications и сетевую диагностику.
+
+Краткий passive-раздел Audit Report и отдельный Traffic Analysis могут использовать похожие сетевые primitives (например ARP/DHCP), но их назначение различается:
+
+- **Audit passive** объясняет, какое evidence помогло определить среду и безопасный scope аудита;
+- **Traffic Analysis** владеет подробной диагностикой и протокольной видимостью конкретного сохранённого PCAP.
+
+Подробные top talkers, communications graph, TCP health, DNS latency, protocol intelligence и подобные PCAP-specific блоки не принадлежат Audit Report.
+
+Product-wide ownership и правила дедупликации зафиксированы в [PRODUCT_COHERENCE.md](PRODUCT_COHERENCE.md).
+
 ## Что видит оператор
 
 HTML отчёт построен в порядке принятия решения:
@@ -45,7 +67,7 @@ HTML отчёт построен в порядке принятия решени
 3. **План действий** — рекомендации в порядке важности.
 4. **Scope** — что именно было разрешено проверять.
 5. **Устройства и службы** — инвентаризация.
-6. **Пассивное наблюдение** — что WireScope реально видел в сегменте.
+6. **Пассивное наблюдение** — evidence аудита о локальном сегменте, а не повтор отдельного PCAP Traffic Analysis.
 7. **Технические данные** — evidence, hashes, metadata и warnings.
 
 Evidence и служебные UUID не выносятся в начало отчёта и не мешают чтению результата, но остаются доступны для проверки воспроизводимости.
@@ -59,7 +81,7 @@ Evidence и служебные UUID не выносятся в начало от
 - highest open severity;
 - headline;
 - детерминированное русское заключение;
-- основные passive показатели.
+- основные passive показатели, необходимые для контекста аудита.
 
 Narrative строится из persisted data. LLM не используется для придумывания CVE, причин или отсутствующих фактов.
 
@@ -69,9 +91,11 @@ Narrative строится из persisted data. LLM не используетс�
 
 Отчёт фиксирует environment snapshot, capture interface и подтверждённый active scope.
 
-В passive-раздел попадают frame count, visibility/segment state, реально увиденные 802.1Q tags, ARP/DHCP и другие нормализованные observations.
+В passive-раздел попадают frame count, visibility/segment state, реально увиденные 802.1Q tags, ARP/DHCP и другие нормализованные observations, которые относятся к audit context.
 
 Untagged traffic не получает выдуманный VLAN ID. В отчёте это объясняется человеческим текстом.
+
+Этот раздел не должен превращаться в самостоятельный Traffic Analysis: PCAP-specific rates, top talkers, communications, latency и детальный protocol intelligence остаются у Traffic Analysis.
 
 ## Inventory
 
@@ -99,6 +123,8 @@ HTML и Markdown показывают severity/confidence/status понятны�
 - объяснение риска;
 - рекомендацию.
 
+**Security rationale и remediation имеют одного владельца — Findings/Audit Report.** Сам факт присутствия Telnet/FTP/HTTP или другого протокола в отдельном PCAP остаётся observation Traffic Analysis и не должен становиться вторым finding только из-за присутствия протокола.
+
 Raw provider stdout в finding body не вставляется.
 
 ## Evidence references
@@ -112,6 +138,24 @@ PCAP/XML/stdout не встраиваются в основной narrative. С�
 - SHA-256.
 
 Внешний report не раскрывает filesystem `relative_path`.
+
+## Связь с другими представлениями
+
+### Traffic Analysis
+
+Владеет данными конкретного capture window: traffic metrics, conversations, protocol visibility и network diagnostics. Он не дублирует Audit Findings/rationale/recommendations.
+
+### Network Topology
+
+Владеет структурой сети, relationships и claimability. Finding/service badges допустимы как контекст узла, но не как копия полного Audit Report.
+
+### Корреляция результатов
+
+Владеет только cross-source relationships. Она может сказать, что discovered service наблюдался в выбранном PCAP или finding относится к asset, видимому в traffic, но полное описание service/finding остаётся у Audit Report.
+
+### Dashboard
+
+Показывает compact status/counters/navigation. Он не является ещё одним полноценным report renderer.
 
 ## Генерация
 
@@ -179,4 +223,4 @@ PDF пока не реализован:
 format=pdf → 422 pdf_not_available
 ```
 
-Он не является блокирующим условием для v1.0: HTML уже содержит print layout и может штатно печататься средствами браузера.
+Он не является блокирующим условием: HTML уже содержит print layout и может штатно печататься средствами браузера.

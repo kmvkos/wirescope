@@ -14,13 +14,21 @@ Only the `packet_capture` artifact and its file are removed.
 
 **Preserved:**
 
-- capture-session history and status;
+- durable capture-session history and status;
 - immutable `capture_result` historical metadata;
 - completed `traffic_analysis_result` artifacts;
 - comparison/correlation results already built from normalized persisted data;
 - the operational audit log.
 
-After deletion, the original PCAP can no longer be downloaded or re-analyzed, while already-completed Traffic Analysis results remain readable and exportable.
+After manual deletion:
+
+- the entry disappears from the ordinary retained-PCAP list in the GUI;
+- the original PCAP can no longer be downloaded;
+- Traffic Analysis cannot be started again from that capture;
+- already-completed Traffic Analysis remains readable and exportable;
+- the historical capture job remains addressable by ID and is not deleted from durable history.
+
+This distinction is intentional: **Delete PCAP** removes the retained raw capture and its working-list entry, not the normalized results that were already produced from it.
 
 ## Race protection
 
@@ -32,6 +40,8 @@ The API returns `409 pcap_delete_busy`.
 
 `audit.summary` is historical state and can outlive a raw artifact removed by retention. Capture responses therefore verify both the registered artifact and the actual file instead of trusting an old `pcap_artifact_id` alone.
 
+If a raw artifact/file becomes unavailable without an explicit operator deletion, its capture history may still be shown as **PCAP unavailable**. This differs from manual deletion: explicitly deleted entries are hidden from the ordinary retained-PCAP list.
+
 If the artifact/file is already unavailable, the download endpoint returns:
 
 ```text
@@ -39,6 +49,8 @@ If the artifact/file is already unavailable, the download endpoint returns:
 ```
 
 Repeated `DELETE` calls are safe and idempotent.
+
+If WireScope metadata has already been removed but the physical file unlink fails, the API returns `file_cleanup_pending > 0` and the GUI surfaces an explicit storage-cleanup warning.
 
 ## Safety
 

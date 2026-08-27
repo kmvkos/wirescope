@@ -3,6 +3,54 @@
 
     const API = "/api/v1";
 
+    const PROFILE_LABELS = {
+        passive: "Пассивный",
+        discovery: "Поиск устройств",
+        standard: "Стандартный",
+        deep: "Глубокий",
+        packet_capture: "Запись трафика",
+    };
+
+    const FIELD_LABELS = {
+        kind: "Тип",
+        label: "Имя",
+        roles: "Роли",
+        addresses: "Адреса",
+        names: "Имена",
+        vlan_ids: "VLAN",
+        segment_ids: "Сегменты",
+        connected_segments: "Подключённые сегменты",
+        confidence: "Уверенность",
+        provenance: "Источники данных",
+        port_name: "Порт",
+        port_id: "ID порта",
+        local_port: "Локальный порт",
+        remote_port: "Удалённый порт",
+        ttl: "TTL",
+    };
+
+    const RELATION_LABELS = {
+        communication: "обмен трафиком",
+        default_gateway: "шлюз по умолчанию",
+        route_hop: "переход маршрута",
+        route_target: "цель маршрута",
+        segment_gateway: "шлюз сегмента",
+        layer2_neighbor: "L2-сосед",
+        stp_observed: "STP-наблюдение",
+        dhcp_observed: "DHCP-наблюдение",
+    };
+
+    const WARNING_LABELS = new Map([
+        [
+            "В одном из topology обнаружены повторяющиеся стабильные identity keys; такие узлы не были автоматически склеены.",
+            "В одной из топологий обнаружены повторяющиеся стабильные идентификаторы; такие узлы не объединялись автоматически.",
+        ],
+        [
+            "Multicast groups и route-gap placeholders исключены из historical diff как нестабильные визуальные сущности.",
+            "Multicast-группы и служебные разрывы маршрута исключены из исторического сравнения как нестабильные визуальные сущности.",
+        ],
+    ]);
+
     const el = (tag, text, cls) => {
         const node = document.createElement(tag);
         if (text !== undefined && text !== null) node.textContent = String(text);
@@ -24,12 +72,29 @@
         return data;
     }
 
+    function profileLabel(value) {
+        return PROFILE_LABELS[String(value || "")] || value || "—";
+    }
+
+    function fieldLabel(value) {
+        return FIELD_LABELS[String(value || "")] || value || "—";
+    }
+
+    function relationLabel(value) {
+        return RELATION_LABELS[String(value || "")] || value || "связь";
+    }
+
+    function warningLabel(value) {
+        const text = String(value || "");
+        return WARNING_LABELS.get(text) || text;
+    }
+
     function auditLabel(audit) {
         const created = audit.created_at ? new Date(audit.created_at) : null;
         const stamp = created && !Number.isNaN(created.getTime())
             ? created.toLocaleString("ru-RU")
             : "дата неизвестна";
-        return `${String(audit.id || "").slice(0, 8)} · ${audit.profile || "—"} · ${audit.interface || "—"} · ${stamp}`;
+        return `${String(audit.id || "").slice(0, 8)} · ${profileLabel(audit.profile)} · ${audit.interface || "—"} · ${stamp}`;
     }
 
     function metric(label, value, cls = "") {
@@ -94,7 +159,7 @@
             card.append(el("strong", label));
             const fields = el("dl");
             Object.entries(item.changes || {}).forEach(([field, change]) => {
-                fields.append(el("dt", field), el("dd", changeText(change)));
+                fields.append(el("dt", fieldLabel(field)), el("dd", changeText(change)));
             });
             card.append(fields);
             list.append(card);
@@ -112,7 +177,7 @@
             el("h3", "Изменения топологии"),
             el(
                 "p",
-                `База: ${String(baseline.audit_id || "").slice(0, 8)} → текущий: ${String(current.audit_id || "").slice(0, 8)}. Сопоставление устройств консервативное: MAC/IP используются как identity, hostname сам по себе — нет.`,
+                `Базовый аудит: ${String(baseline.audit_id || "").slice(0, 8)} → текущий: ${String(current.audit_id || "").slice(0, 8)}. Устройства сопоставляются консервативно: совпадение подтверждается MAC или IP. Одинаковое имя хоста само по себе не считается идентичностью.`,
                 "muted"
             ),
             renderSummary(result)
@@ -123,8 +188,8 @@
         const nodeAdded = simpleSection("Новые узлы", (result.nodes || {}).added || []);
         const nodeRemoved = simpleSection("Исчезнувшие узлы", (result.nodes || {}).removed || []);
         const nodeChanged = changedSection("Изменившиеся узлы", (result.nodes || {}).changed || []);
-        const edgeAdded = simpleSection("Новые связи", (result.edges || {}).added || [], (item) => `${item.relation || "связь"} · ${item.source || "?"} → ${item.target || "?"}`);
-        const edgeRemoved = simpleSection("Исчезнувшие связи", (result.edges || {}).removed || [], (item) => `${item.relation || "связь"} · ${item.source || "?"} → ${item.target || "?"}`);
+        const edgeAdded = simpleSection("Новые связи", (result.edges || {}).added || [], (item) => `${relationLabel(item.relation)} · ${item.source || "?"} → ${item.target || "?"}`);
+        const edgeRemoved = simpleSection("Исчезнувшие связи", (result.edges || {}).removed || [], (item) => `${relationLabel(item.relation)} · ${item.source || "?"} → ${item.target || "?"}`);
         const edgeChanged = changedSection("Изменившиеся связи", (result.edges || {}).changed || []);
         [segmentAdded, segmentRemoved, nodeAdded, nodeRemoved, nodeChanged, edgeAdded, edgeRemoved, edgeChanged]
             .filter(Boolean)
@@ -141,10 +206,10 @@
             summary.edges_removed,
             summary.edges_changed,
         ].reduce((sum, value) => sum + (Number(value) || 0), 0);
-        if (!totalChanges) host.append(el("p", "Структурных изменений по доступному evidence не обнаружено.", "success"));
-        (result.warnings || []).forEach((warning) => host.append(el("p", warning, "warning")));
+        if (!totalChanges) host.append(el("p", "По доступным данным структурных изменений не обнаружено.", "success"));
+        (result.warnings || []).forEach((warning) => host.append(el("p", warningLabel(warning), "warning")));
 
-        const download = el("button", "Скачать diff JSON", "secondary");
+        const download = el("button", "Скачать JSON сравнения", "secondary");
         download.type = "button";
         download.addEventListener("click", () => {
             const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
@@ -161,17 +226,17 @@
     }
 
     async function render(body, auditId) {
-        body.replaceChildren(el("p", "Загружаем сохранённые topology для сравнения…"));
+        body.replaceChildren(el("p", "Загружаем сохранённые топологии для сравнения…"));
         const global = await request("/topology/global?limit=100");
         body.replaceChildren();
 
         const intro = el("div", null, "ws-topology-compare-intro");
         intro.append(
             el("h3", "История топологии"),
-            el("p", "Сравнение строится только по уже сохранённым evidence двух аудитов и не запускает сканирование, SNMP или traceroute.", "muted")
+            el("p", "Сравнение использует только сохранённые данные двух аудитов и не запускает сканирование, SNMP или трассировку маршрута.", "muted")
         );
         if (global.partial) {
-            intro.append(el("p", "Глобальный список topology частичный: некоторые сохранённые аудиты не удалось построить. Они не предлагаются как база сравнения.", "warning"));
+            intro.append(el("p", "Список топологий частичный: некоторые сохранённые аудиты не удалось построить. Они не предлагаются как база сравнения.", "warning"));
         }
 
         const controls = el("div", null, "ws-topology-compare-controls");
@@ -215,7 +280,7 @@
 
         body.append(intro);
         if (!candidates.length) {
-            body.append(el("p", "Нет другого сохранённого аудита с topology, который можно использовать как базу сравнения.", "muted"));
+            body.append(el("p", "Нет другого сохранённого аудита с построенной топологией, который можно использовать как базу сравнения.", "muted"));
             return;
         }
         body.append(controls, resultHost);

@@ -49,7 +49,7 @@ def test_operator_terminology_cleanup_is_loaded_for_legacy_saved_results():
     assert '"inventory assets", "устройств инвентаря"' in script
     assert '"source_health, coverage и warnings"' in script
     assert '["Слабые места", "Проблемы"]' in script
-    assert '"порт доступа коммутатора"' in script
+    assert "порт доступа коммутатора" in script
     assert '["L3-адрес на NIC захвата", "L3-адрес на интерфейсе захвата"]' in script
 
 

@@ -81,7 +81,7 @@
             missing: "нет данных",
             unknown: "неизвестно",
             service_traffic_observed: "трафик сервиса наблюдался",
-            asset_traffic_observed: "трафик asset наблюдался",
+            asset_traffic_observed: "трафик узла наблюдался",
             uncorrelated: "не сопоставлено с PCAP",
         };
         const raw = String(value || "unknown");
@@ -108,9 +108,9 @@
             <section class="global-analysis-card" role="dialog" aria-modal="true" aria-labelledby="global-analysis-title">
                 <header class="ga-head">
                     <div>
-                        <span class="ga-kicker">GLOBAL CORRELATION ANALYSIS</span>
-                        <h2 id="global-analysis-title">Глобальный анализ</h2>
-                        <p class="ga-subtitle">Inventory + Findings + выбранный PCAP Traffic Analysis + Network Topology</p>
+                        <span class="ga-kicker">CORRELATED ASSESSMENT</span>
+                        <h2 id="global-analysis-title">Корреляция результатов</h2>
+                        <p class="ga-subtitle">Что результаты аудита, PCAP и topology подтверждают или дополняют друг в друге</p>
                     </div>
                     <button type="button" class="secondary ga-close">Закрыть</button>
                 </header>
@@ -122,8 +122,8 @@
                         <div id="ga-audit-meta" class="ga-meta"></div>
                         <label for="ga-traffic-select">Traffic Analysis</label>
                         <select id="ga-traffic-select"></select>
-                        <p class="ga-note">PCAP выбирается явно. Global Analysis не запускает scanner и не перечитывает PCAP.</p>
-                        <button id="ga-run" type="button" class="primary">Запустить анализ</button>
+                        <p class="ga-note">PCAP выбирается явно. Корреляция использует только сохранённые результаты, не запускает scanner и не перечитывает PCAP.</p>
+                        <button id="ga-run" type="button" class="primary">Сопоставить результаты</button>
                         <div class="ga-history-head">
                             <h3>История</h3>
                             <button id="ga-refresh-history" type="button" class="secondary compact">Обновить</button>
@@ -134,7 +134,7 @@
                         <section class="ga-status-panel">
                             <div>
                                 <strong id="ga-state">Выберите аудит</strong>
-                                <span id="ga-message">Здесь появится сохранённый результат или можно запустить новый.</span>
+                                <span id="ga-message">Здесь появится сохранённый результат корреляции.</span>
                             </div>
                             <div class="ga-progress"><span id="ga-progress-fill"></span></div>
                         </section>
@@ -258,13 +258,13 @@
     async function openWorkspace() {
         openModal();
         document.getElementById("ga-state").textContent = "Загрузка…";
-        document.getElementById("ga-message").textContent = "Читаем сохранённые audits и Traffic Analysis.";
+        document.getElementById("ga-message").textContent = "Читаем сохранённые аудиты и Traffic Analysis.";
         try {
             await bootUser();
             await Promise.all([populateAudits(), populateTraffic()]);
             await loadAuditWorkspace();
         } catch (error) {
-            setError(`Не удалось открыть Global Analysis: ${error.message}`);
+            setError(`Не удалось открыть корреляцию результатов: ${error.message}`);
             document.getElementById("ga-state").textContent = "Ошибка";
         }
     }
@@ -294,7 +294,7 @@
         const meta = el(
             "span",
             "",
-            `GA ${shortId(item.job_id)} · Traffic ${shortId(item.traffic_analysis_job_id)}${item.rebuild_of_job_id ? ` · rebuild ${shortId(item.rebuild_of_job_id)}` : ""}`
+            `CA ${shortId(item.job_id)} · Traffic ${shortId(item.traffic_analysis_job_id)}${item.rebuild_of_job_id ? ` · rebuild ${shortId(item.rebuild_of_job_id)}` : ""}`
         );
         button.append(title, meta);
         if (item.partial === true) button.append(el("em", "ga-history-partial", "partial"));
@@ -319,8 +319,8 @@
             const page = await request("GET", `/audits/${encodeURIComponent(activeAuditId)}/global-analysis/history?limit=50`);
             const items = (page && page.items) || [];
             if (!items.length) {
-                container.append(el("div", "ga-empty-small", "Сохранённых Global Analysis пока нет."));
-                resetResult("Выберите Traffic Analysis и запустите первый анализ.");
+                container.append(el("div", "ga-empty-small", "Сохранённых результатов корреляции пока нет."));
+                resetResult("Выберите Traffic Analysis и сопоставьте результаты.");
                 return;
             }
             items.forEach((item) => container.append(historyButton(item)));
@@ -344,7 +344,7 @@
         document.getElementById("ga-actions").hidden = true;
         document.getElementById("ga-cancel").hidden = true;
         document.getElementById("ga-progress-fill").style.width = "0%";
-        document.getElementById("ga-state").textContent = "Global Analysis не запускался";
+        document.getElementById("ga-state").textContent = "Корреляция не запускалась";
         document.getElementById("ga-message").textContent = message || "";
         const content = document.getElementById("ga-content");
         content.replaceChildren(el("div", "ga-empty", message || "Нет результата"));
@@ -353,7 +353,7 @@
     async function startAnalysis(rebuildOfJobId) {
         if (!activeAuditId) return;
         if (!currentUser || currentUser.role !== "auditor") {
-            setError("Viewer может читать Global Analysis, но не запускать новый job.");
+            setError("Viewer может читать результаты корреляции, но не запускать новый job.");
             return;
         }
         const trafficJobId = String(document.getElementById("ga-traffic-select").value || "");
@@ -383,7 +383,7 @@
             await loadHistory();
             await pollJob(activeJobId);
         } catch (error) {
-            setError(`Не удалось запустить Global Analysis: ${error.message}`);
+            setError(`Не удалось запустить корреляцию: ${error.message}`);
         }
     }
 
@@ -398,7 +398,7 @@
 
     function updateJob(job) {
         const percent = Math.max(0, Math.min(100, Number(job.progress) || 0));
-        document.getElementById("ga-state").textContent = `Global Analysis · ${statusLabel(job.status)}`;
+        document.getElementById("ga-state").textContent = `Корреляция результатов · ${statusLabel(job.status)}`;
         document.getElementById("ga-message").textContent = job.message || job.stage || "";
         document.getElementById("ga-progress-fill").style.width = `${job.status === "completed" ? 100 : percent}%`;
         const cancel = document.getElementById("ga-cancel");
@@ -413,7 +413,7 @@
             try {
                 job = await request("GET", `/jobs/${encodeURIComponent(jobId)}`);
             } catch (error) {
-                setError(`Не удалось получить состояние Global Analysis: ${error.message}`);
+                setError(`Не удалось получить состояние корреляции: ${error.message}`);
                 return;
             }
             if (token !== pollToken) return;
@@ -436,7 +436,7 @@
         currentDocument = null;
         document.getElementById("ga-actions").hidden = true;
         document.getElementById("ga-cancel").hidden = true;
-        document.getElementById("ga-state").textContent = `Global Analysis · ${statusLabel(job.status)}`;
+        document.getElementById("ga-state").textContent = `Корреляция результатов · ${statusLabel(job.status)}`;
         const detail = job.error && job.error.message ? job.error.message : (job.message || "Результат не создан");
         document.getElementById("ga-message").textContent = detail;
         const content = document.getElementById("ga-content");
@@ -462,7 +462,7 @@
             currentDocument = documentData;
             renderDocument(documentData);
         } catch (error) {
-            setError(`Не удалось прочитать Global Analysis: ${error.message}`);
+            setError(`Не удалось прочитать результат корреляции: ${error.message}`);
         }
     }
 
@@ -481,12 +481,12 @@
 
     function renderSummary(documentData, content) {
         const summary = documentData.summary || {};
-        const box = section("Сводка");
+        const box = section("Сводка сопоставления");
         const grid = el("div", "ga-metrics");
         grid.append(
-            metric("Assets", Number(summary.inventory_assets) || 0, `${Number(summary.inventory_assets_observed_in_traffic) || 0} видны в PCAP`),
-            metric("Services", Number(summary.services) || 0, `${Number(summary.services_observed_in_traffic) || 0} наблюдались`),
-            metric("Findings", Number(summary.findings) || 0, "сопоставление с traffic ниже"),
+            metric("Узлы", Number(summary.inventory_assets) || 0, `${Number(summary.inventory_assets_observed_in_traffic) || 0} сопоставлены с PCAP`),
+            metric("Сервисы", Number(summary.services) || 0, `${Number(summary.services_observed_in_traffic) || 0} наблюдались`),
+            metric("Findings", Number(summary.findings) || 0, "связь с наблюдаемым трафиком ниже"),
             metric("External", Number(summary.external_communications) || 0, "только global IP"),
             metric("Traffic endpoints", Number(summary.traffic_endpoints) || 0, `${Number(summary.unmatched_traffic_endpoints) || 0} не сопоставлены`),
             metric("State", documentData.partial ? "PARTIAL" : "COMPLETE", documentData.network_io === false ? "offline / no network I/O" : "")
@@ -497,16 +497,16 @@
 
     function renderOperatorSummary(documentData, content) {
         const operator = documentData.operator_summary || {};
-        const box = section(operator.headline || "Операторская сводка");
+        const box = section(operator.headline || "Что дополнили источники");
         const list = el("ul", "ga-summary-lines");
         (operator.lines || []).forEach((line) => list.append(el("li", "", line)));
-        if (!list.children.length) list.append(el("li", "", "Сводка отсутствует."));
+        if (!list.children.length) list.append(el("li", "", "Дополнительные связи не сформированы."));
         box.append(list);
         content.append(box);
     }
 
     function renderConsistency(documentData, content) {
-        const box = section("Infrastructure consistency");
+        const box = section("Согласованность инфраструктурных данных");
         const grid = el("div", "ga-consistency-grid");
         const consistency = documentData.infrastructure_consistency || {};
         ["gateway", "dhcp", "dns"].forEach((name) => {
@@ -552,13 +552,13 @@
         const coverage = documentData.coverage || {};
         const inventoryMissing = (coverage.inventory_assets_not_observed || []).length;
         const trafficUnknown = (coverage.unmatched_traffic_endpoints || []).length;
-        const note = el("p", "ga-note", `Inventory assets вне visibility выбранного capture: ${inventoryMissing}. Traffic endpoints без exact inventory identity: ${trafficUnknown}.`);
+        const note = el("p", "ga-note", `Узлы inventory вне visibility выбранного capture: ${inventoryMissing}. Traffic endpoints без exact inventory identity: ${trafficUnknown}.`);
         box.append(note);
         content.append(box);
     }
 
     function renderFindingRelevance(documentData, content) {
-        const box = section("Findings ↔ Traffic relevance");
+        const box = section("Findings ↔ наблюдаемый трафик");
         const counts = countBy(documentData.finding_traffic_relevance || [], "traffic_relevance");
         const grid = el("div", "ga-relevance-grid");
         ["service_traffic_observed", "asset_traffic_observed", "uncorrelated"].forEach((key) => {
@@ -602,12 +602,12 @@
     }
 
     function renderExternal(documentData, content) {
-        const box = section("Internal ↔ External communications");
+        const box = section("Внутренние узлы ↔ глобальные адреса");
         const rows = [...(documentData.external_communications || [])].sort(
             (a, b) => (Number(b.bytes) || 0) - (Number(a.bytes) || 0)
         );
         if (!rows.length) {
-            box.append(el("p", "ga-note", "Exact-correlated assets с global external endpoints в выбранном PCAP не обнаружены."));
+            box.append(el("p", "ga-note", "Для exact-correlated assets обмен с global external endpoints в выбранном PCAP не обнаружен."));
             content.append(box);
             return;
         }
@@ -632,7 +632,7 @@
     function renderWarnings(documentData, content) {
         const warnings = (documentData.warnings || []).filter(Boolean);
         if (!warnings.length) return;
-        const box = section("Warnings и ограничения");
+        const box = section("Ограничения интерпретации");
         const list = el("ul", "ga-warnings");
         warnings.forEach((warning) => list.append(el("li", "", warning)));
         box.append(list);
@@ -657,8 +657,8 @@
         const content = document.getElementById("ga-content");
         content.replaceChildren();
         const inputs = documentData.inputs || {};
-        document.getElementById("ga-state").textContent = documentData.partial ? "Global Analysis · PARTIAL" : "Global Analysis · COMPLETE";
-        document.getElementById("ga-message").textContent = `Generated ${formatDate(documentData.generated_at)} · Traffic ${shortId(inputs.traffic_analysis_job_id)}`;
+        document.getElementById("ga-state").textContent = documentData.partial ? "Корреляция · PARTIAL" : "Корреляция · COMPLETE";
+        document.getElementById("ga-message").textContent = `Сформировано ${formatDate(documentData.generated_at)} · Traffic ${shortId(inputs.traffic_analysis_job_id)}`;
         document.getElementById("ga-progress-fill").style.width = "100%";
         const actions = document.getElementById("ga-actions");
         actions.hidden = false;
@@ -687,7 +687,7 @@
     function installHomeButton() {
         const actions = document.querySelector("#screen-home .actions");
         if (!actions || document.getElementById("global-analysis-button")) return;
-        const button = el("button", "secondary", "Глобальный анализ");
+        const button = el("button", "secondary", "Корреляция результатов");
         button.id = "global-analysis-button";
         button.type = "button";
         button.addEventListener("click", openWorkspace);

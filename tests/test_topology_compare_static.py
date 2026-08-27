@@ -10,6 +10,7 @@ def test_topology_history_assets_are_versioned_and_ordered(api_context):
     assert body.count("topology_compare.css?v=20260825-ui15") == 1
     assert body.count("topology_compare.js?v=20260825-ui15") == 1
     assert body.count("topology_tab.js?v=20260825-ui14&feature=20260826-ui17") == 1
+    assert "&coherence=20260827-ui20" in body
     assert body.index("topology.js?v=20260825-ui14") < body.index("topology_compare.js?v=20260825-ui15")
     assert body.index("topology_compare.js?v=20260825-ui15") < body.index("topology_tab.js?v=20260825-ui14")
 
@@ -29,7 +30,8 @@ def test_topology_history_frontend_uses_versioned_read_only_compare_api(api_cont
     assert "Скачать diff JSON" in javascript.text
 
     assert tab.status_code == 200
-    assert "История topology" in tab.text
+    assert "История топологии" in tab.text
+    assert "Дополнительно" in tab.text
     assert "WireScopeTopologyCompare.render" in tab.text
 
     assert css.status_code == 200

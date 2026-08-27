@@ -6,6 +6,8 @@
         ssh: "/static/ssh_topology.js?v=20260826-ui18",
     };
     const extraLoads = new Map();
+    const extraRenderers = new Map();
+    let baseTopologyRender = null;
 
     let activeView = null;
     let activeExtra = null;
@@ -13,6 +15,13 @@
 
     function insightsBody() {
         return document.getElementById("ws-insights-body");
+    }
+
+    function rememberBaseTopologyRender() {
+        if (!baseTopologyRender && window.WireScopeTopology && typeof window.WireScopeTopology.render === "function") {
+            baseTopologyRender = window.WireScopeTopology.render;
+        }
+        return baseTopologyRender;
     }
 
     function renameEnrichmentPanels(body) {
@@ -36,15 +45,35 @@
         if (!EXTRA_SCRIPTS[kind]) return Promise.reject(new Error("Неизвестный дополнительный источник топологии"));
         if (extraLoads.has(kind)) return extraLoads.get(kind);
 
+        const baseRenderer = rememberBaseTopologyRender();
+        if (!baseRenderer) return Promise.reject(new Error("Базовый модуль топологии недоступен"));
+
         const promise = new Promise((resolve, reject) => {
             const script = document.createElement("script");
             script.src = EXTRA_SCRIPTS[kind];
             script.async = true;
             script.dataset.wsTopologyExtra = kind;
-            script.addEventListener("load", () => resolve(), { once: true });
+            script.addEventListener("load", () => {
+                const registered = window.WireScopeTopology && window.WireScopeTopology.render;
+                // Legacy SNMP/SSH modules register themselves by wrapping the
+                // shared topology renderer. Capture that wrapper as the
+                // renderer for this optional source, then immediately restore
+                // the clean base renderer. This prevents wrappers from
+                // stacking and keeps management reads out of normal topology.
+                if (typeof registered !== "function" || registered === baseRenderer) {
+                    extraLoads.delete(kind);
+                    script.remove();
+                    reject(new Error(`Модуль ${kind.toUpperCase()} не зарегистрировал renderer`));
+                    return;
+                }
+                extraRenderers.set(kind, registered);
+                window.WireScopeTopology.render = baseRenderer;
+                resolve();
+            }, { once: true });
             script.addEventListener("error", () => {
                 extraLoads.delete(kind);
                 script.remove();
+                window.WireScopeTopology.render = baseRenderer;
                 reject(new Error(`Не удалось загрузить модуль ${kind.toUpperCase()}`));
             }, { once: true });
             document.head.append(script);
@@ -61,8 +90,10 @@
         if (!body || !auditId) return;
         try {
             if (activeView === "topology") {
-                if (!window.WireScopeTopology) return;
-                await window.WireScopeTopology.render(body, auditId);
+                const baseRenderer = rememberBaseTopologyRender();
+                const renderer = activeExtra ? extraRenderers.get(activeExtra) : baseRenderer;
+                if (typeof renderer !== "function") return;
+                await renderer.call(window.WireScopeTopology, body, auditId);
                 syncExtraPanels();
             } else if (activeView === "compare") {
                 activeExtra = null;
@@ -83,6 +114,7 @@
         const tabs = document.querySelector(".ws-insights-tabs");
         const auditSelect = document.getElementById("ws-audit-select");
         if (!tabs || !auditSelect || document.getElementById("ws-topology-tab")) return false;
+        rememberBaseTopologyRender();
 
         const topologyButton = document.createElement("button");
         topologyButton.id = "ws-topology-tab";

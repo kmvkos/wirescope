@@ -53,6 +53,20 @@ def test_operator_terminology_cleanup_is_loaded_for_legacy_saved_results():
     assert '["L3-адрес на NIC захвата", "L3-адрес на интерфейсе захвата"]' in script
 
 
+def test_correlated_assessment_machine_warnings_are_localized_only_in_presentation():
+    script = _text("frontend/product_coherence.js")
+    builder = _text("global_analysis/builder.py")
+
+    warning = "Selected traffic analysis does not contain a usable communications graph."
+    assert warning in builder
+    assert warning in script
+    assert "Выбранный анализ PCAP не содержит пригодного графа коммуникаций" in script
+    assert "Список устройств превышает лимит входных данных" in script
+    assert '[" · Traffic ", " · PCAP "]' in script
+    assert '["CA ", "Корреляция "]' in script
+    assert '[" · deep ·", " · Глубокий ·"]' in script
+
+
 def test_human_report_cleanup_does_not_change_canonical_json_contract():
     router = _text("backend/routers/reports.py")
     cleanup = _text("reports/presentation_cleanup.py")

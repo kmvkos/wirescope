@@ -169,6 +169,26 @@ def test_delete_pcap_rejects_active_capture_audit_job(api_context):
     assert response.json()["detail"]["code"] == "pcap_delete_busy"
 
 
+def test_delete_pcap_rejects_queued_traffic_analysis(api_context):
+    app, jobs, evidence, _environment = api_context
+    _audit, job, pcap, _capture_result, _downstream = _completed_capture(api_context)
+    raw_path = evidence.path_for(pcap)
+
+    accepted = http_request(app, "POST", f"/api/captures/{job.id}/analyze")
+    assert accepted.status_code == 202
+    traffic_jobs = _traffic_jobs(jobs, job.audit_id)
+    assert len(traffic_jobs) == 1
+    assert traffic_jobs[0].status.value == "queued"
+
+    blocked = http_request(app, "DELETE", f"/api/captures/{job.id}/pcap")
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "pcap_delete_busy"
+    assert raw_path.is_file()
+    session = http_request(app, "GET", f"/api/captures/{job.id}")
+    assert session.status_code == 200
+    assert session.json()["pcap_url"]
+
+
 def test_capture_listing_does_not_advertise_missing_raw_file(api_context):
     app, jobs, evidence, _environment = api_context
     _audit, job, pcap, _capture_result, _downstream = _completed_capture(api_context)

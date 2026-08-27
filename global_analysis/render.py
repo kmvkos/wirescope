@@ -6,6 +6,16 @@ from collections import Counter
 from typing import Any
 
 
+_SOURCE_LABELS = {
+    "environment": "окружение WireScope",
+    "environment_lease": "DHCP lease интерфейса",
+    "passive": "пассивное наблюдение",
+    "passive_dhcp": "DHCP из пассивного наблюдения",
+    "traffic": "анализ PCAP",
+    "topology": "топология",
+}
+
+
 def _text(value: Any) -> str:
     return str(value if value is not None else "—")
 
@@ -13,14 +23,15 @@ def _text(value: Any) -> str:
 def _status(value: Any) -> str:
     labels = {
         "consistent": "согласовано",
-        "divergent": "расхождение",
+        "divergent": "есть расхождение",
         "insufficient": "недостаточно данных",
-        "sufficient": "достаточно",
+        "sufficient": "достаточно данных",
         "partial": "частично",
         "missing": "нет данных",
-        "service_traffic_observed": "наблюдался трафик сервиса",
-        "asset_traffic_observed": "наблюдался трафик asset",
+        "service_traffic_observed": "трафик связанной службы наблюдался",
+        "asset_traffic_observed": "трафик связанного устройства наблюдался",
         "uncorrelated": "не сопоставлено с выбранным PCAP",
+        "unknown": "не определено",
     }
     raw = str(value or "unknown")
     return labels.get(raw, raw)
@@ -28,7 +39,8 @@ def _status(value: Any) -> str:
 
 def _source_line(name: str, values: Any) -> str:
     items = [str(item) for item in (values or []) if item]
-    return f"{name}: {', '.join(items) if items else '—'}"
+    label = _SOURCE_LABELS.get(name, name)
+    return f"{label}: {', '.join(items) if items else '—'}"
 
 
 def _protocols(rows: Any) -> str:
@@ -52,91 +64,114 @@ def _ports(rows: Any) -> str:
     return ", ".join(result) or "—"
 
 
+def _operator_lines(document: dict[str, Any]) -> list[str]:
+    operator = document.get("operator_summary") or {}
+    lines = [str(item) for item in operator.get("lines") or [] if item]
+    replacements = {
+        "inventory assets": "устройств инвентаря",
+        "inventory services": "служб инвентаря",
+        "exact-correlated assets": "точно сопоставленными устройствами",
+        "infrastructure evidence": "данных об инфраструктуре",
+        "infrastructure checks": "проверок инфраструктурных данных",
+        "source_health, coverage и warnings": "состояние источников, покрытие и предупреждения",
+    }
+    result: list[str] = []
+    for line in lines:
+        polished = line
+        for old, new in replacements.items():
+            polished = polished.replace(old, new)
+        result.append(polished)
+    return result
+
+
 def render_text(document: dict[str, Any]) -> str:
     summary = document.get("summary") or {}
     audit = document.get("audit") or {}
     inputs = document.get("inputs") or {}
-    operator = document.get("operator_summary") or {}
     consistency = document.get("infrastructure_consistency") or {}
     lines = [
         "WIRESCOPE — КОРРЕЛЯЦИЯ РЕЗУЛЬТАТОВ",
-        "=" * 44,
-        f"Audit: {_text(audit.get('id'))}",
-        f"Profile: {_text(audit.get('profile'))}",
-        f"Interface: {_text(audit.get('interface'))}",
-        f"Generated: {_text(document.get('generated_at'))}",
-        f"Traffic Analysis job: {_text(inputs.get('traffic_analysis_job_id'))}",
-        f"State: {'PARTIAL' if document.get('partial') else 'COMPLETE'}",
+        "=" * 48,
+        f"Аудит: {_text(audit.get('id'))}",
+        f"Профиль: {_text(audit.get('profile'))}",
+        f"Интерфейс: {_text(audit.get('interface'))}",
+        f"Сформировано: {_text(document.get('generated_at'))}",
+        f"Выбранный анализ PCAP: {_text(inputs.get('traffic_analysis_job_id'))}",
+        f"Полнота результата: {'частичный' if document.get('partial') else 'полный'}",
         "",
-        str(operator.get("headline") or "Корреляция сохранённых результатов WireScope"),
+        "КРАТКИЙ ИТОГ",
+        "-------------",
     ]
-    for item in operator.get("lines") or []:
-        lines.append(f"- {item}")
+    operator_lines = _operator_lines(document)
+    if operator_lines:
+        lines.extend(f"- {item}" for item in operator_lines)
+    else:
+        lines.append("Сопоставление выполнено по сохранённым результатам аудита, анализа PCAP и топологии.")
 
     lines.extend(
         [
             "",
             "СВОДКА СОПОСТАВЛЕНИЯ",
-            "-------------------",
-            f"Inventory assets: {int(summary.get('inventory_assets') or 0)}",
-            f"Assets observed in selected traffic: {int(summary.get('inventory_assets_observed_in_traffic') or 0)}",
-            f"Assets not observed in selected traffic: {int(summary.get('inventory_assets_not_observed_in_traffic') or 0)}",
-            f"Traffic endpoints: {int(summary.get('traffic_endpoints') or 0)}",
-            f"Unmatched traffic endpoints: {int(summary.get('unmatched_traffic_endpoints') or 0)}",
-            f"Inventory services: {int(summary.get('services') or 0)}",
-            f"Services observed in selected traffic: {int(summary.get('services_observed_in_traffic') or 0)}",
-            f"Findings: {int(summary.get('findings') or 0)}",
-            f"External communications: {int(summary.get('external_communications') or 0)}",
+            "---------------------",
+            f"Устройств в инвентаре: {int(summary.get('inventory_assets') or 0)}",
+            f"Устройств, наблюдавшихся в выбранном PCAP: {int(summary.get('inventory_assets_observed_in_traffic') or 0)}",
+            f"Устройств, не наблюдавшихся в выбранном PCAP: {int(summary.get('inventory_assets_not_observed_in_traffic') or 0)}",
+            f"Конечных точек трафика в PCAP: {int(summary.get('traffic_endpoints') or 0)}",
+            f"Конечных точек PCAP без сопоставления с инвентарём: {int(summary.get('unmatched_traffic_endpoints') or 0)}",
+            f"Служб в инвентаре: {int(summary.get('services') or 0)}",
+            f"Служб, использование которых наблюдалось в PCAP: {int(summary.get('services_observed_in_traffic') or 0)}",
+            f"Проблем аудита: {int(summary.get('findings') or 0)}",
+            f"Внешних коммуникаций у точно сопоставленных устройств: {int(summary.get('external_communications') or 0)}",
             "",
-            "СОГЛАСОВАННОСТЬ ИНФРАСТРУКТУРНЫХ ДАННЫХ",
-            "---------------------------------------",
+            "СОГЛАСОВАННОСТЬ ДАННЫХ ОБ ИНФРАСТРУКТУРЕ",
+            "-----------------------------------------",
         ]
     )
-    for name in ("gateway", "dhcp", "dns"):
+    for name, label in (("gateway", "Шлюз"), ("dhcp", "DHCP"), ("dns", "DNS")):
         row = consistency.get(name) or {}
-        lines.append(f"{name.upper()}: {_status(row.get('status'))} [{_text(row.get('rule_id'))}]")
+        lines.append(f"{label}: {_status(row.get('status'))} [{_text(row.get('rule_id'))}]")
         for source, values in (row.get("sources") or {}).items():
             lines.append(f"  {_source_line(str(source), values)}")
         common = row.get("common_values") or []
         if common:
-            lines.append(f"  common: {', '.join(str(value) for value in common)}")
+            lines.append(f"  Совпавшие значения: {', '.join(str(value) for value in common)}")
 
     relevance = Counter(
         str(row.get("traffic_relevance") or "unknown")
         for row in document.get("finding_traffic_relevance") or []
         if isinstance(row, dict)
     )
-    lines.extend(["", "FINDINGS ↔ НАБЛЮДАЕМЫЙ TRAFFIC", "-----------------------------"])
+    lines.extend(["", "ПРОБЛЕМЫ АУДИТА И НАБЛЮДАЕМЫЙ ТРАФИК", "--------------------------------------"])
     if relevance:
         for key, count in sorted(relevance.items()):
             lines.append(f"{_status(key)}: {count}")
     else:
-        lines.append("—")
+        lines.append("Связей между проблемами аудита и выбранным PCAP не выделено.")
 
-    lines.extend(["", "INTERNAL ASSETS ↔ GLOBAL ENDPOINTS", "----------------------------------"])
+    lines.extend(["", "СВЯЗИ УСТРОЙСТВ С ВНЕШНИМИ АДРЕСАМИ", "------------------------------------"])
     external = sorted(
         [row for row in document.get("external_communications") or [] if isinstance(row, dict)],
         key=lambda row: int(row.get("bytes") or 0),
         reverse=True,
     )
     if not external:
-        lines.append("—")
+        lines.append("Внешние коммуникации точно сопоставленных устройств не выделены.")
     for row in external[:50]:
         lines.append(
-            f"asset {row.get('asset_id')} ↔ {row.get('external_endpoint')} | "
-            f"{int(row.get('packets') or 0)} packets | {int(row.get('bytes') or 0)} bytes | "
-            f"protocols: {_protocols(row.get('protocols'))} | ports: {_ports(row.get('ports'))}"
+            f"устройство {row.get('asset_id')} ↔ {row.get('external_endpoint')} | "
+            f"пакетов: {int(row.get('packets') or 0)} | байт: {int(row.get('bytes') or 0)} | "
+            f"протоколы: {_protocols(row.get('protocols'))} | порты: {_ports(row.get('ports'))}"
         )
 
     warnings = [str(item) for item in document.get("warnings") or [] if item]
     if warnings:
-        lines.extend(["", "ОГРАНИЧЕНИЯ ИНТЕРПРЕТАЦИИ", "-------------------------"])
+        lines.extend(["", "ОГРАНИЧЕНИЯ И ПРЕДУПРЕЖДЕНИЯ", "---------------------------"])
         lines.extend(f"- {item}" for item in warnings)
 
     lines.extend(
         [
             "",
-            "Примечание: этот документ показывает связи между сохранёнными источниками и не заменяет исходный Audit Report или Traffic Analysis. Отсутствие корреляции с выбранным PCAP не доказывает отсутствие asset, сервиса или finding в сети.",
+            "Важно: корреляция показывает только связи между уже сохранёнными источниками. Она не заменяет отчёт аудита и отдельный анализ PCAP. Отсутствие связи с выбранным PCAP не означает, что устройство, служба или проблема отсутствуют в сети.",
             "",
         ]
     )
@@ -147,22 +182,25 @@ def render_markdown(document: dict[str, Any]) -> str:
     summary = document.get("summary") or {}
     audit = document.get("audit") or {}
     inputs = document.get("inputs") or {}
-    operator = document.get("operator_summary") or {}
     consistency = document.get("infrastructure_consistency") or {}
     lines = [
-        "# WireScope — Корреляция результатов",
+        "# WireScope — корреляция результатов",
         "",
-        f"- **Audit:** `{_text(audit.get('id'))}`",
-        f"- **Profile:** {_text(audit.get('profile'))}",
-        f"- **Interface:** `{_text(audit.get('interface'))}`",
-        f"- **Traffic Analysis job:** `{_text(inputs.get('traffic_analysis_job_id'))}`",
-        f"- **Generated:** {_text(document.get('generated_at'))}",
-        f"- **State:** {'partial' if document.get('partial') else 'complete'}",
+        f"- **Аудит:** `{_text(audit.get('id'))}`",
+        f"- **Профиль:** {_text(audit.get('profile'))}",
+        f"- **Интерфейс:** `{_text(audit.get('interface'))}`",
+        f"- **Выбранный анализ PCAP:** `{_text(inputs.get('traffic_analysis_job_id'))}`",
+        f"- **Сформировано:** {_text(document.get('generated_at'))}",
+        f"- **Полнота результата:** {'частичный' if document.get('partial') else 'полный'}",
         "",
-        f"## {operator.get('headline') or 'Что дополнили источники'}",
+        "## Краткий итог",
         "",
     ]
-    lines.extend(f"- {item}" for item in operator.get("lines") or [])
+    operator_lines = _operator_lines(document)
+    lines.extend(f"- {item}" for item in operator_lines)
+    if not operator_lines:
+        lines.append("- Сопоставление выполнено по сохранённым результатам аудита, анализа PCAP и топологии.")
+
     lines.extend(
         [
             "",
@@ -170,32 +208,32 @@ def render_markdown(document: dict[str, Any]) -> str:
             "",
             "| Показатель | Значение |",
             "|---|---:|",
-            f"| Inventory assets | {int(summary.get('inventory_assets') or 0)} |",
-            f"| Assets observed in selected traffic | {int(summary.get('inventory_assets_observed_in_traffic') or 0)} |",
-            f"| Assets not observed in selected traffic | {int(summary.get('inventory_assets_not_observed_in_traffic') or 0)} |",
-            f"| Traffic endpoints | {int(summary.get('traffic_endpoints') or 0)} |",
-            f"| Unmatched traffic endpoints | {int(summary.get('unmatched_traffic_endpoints') or 0)} |",
-            f"| Inventory services | {int(summary.get('services') or 0)} |",
-            f"| Services observed in selected traffic | {int(summary.get('services_observed_in_traffic') or 0)} |",
-            f"| Findings | {int(summary.get('findings') or 0)} |",
-            f"| External communications | {int(summary.get('external_communications') or 0)} |",
+            f"| Устройства в инвентаре | {int(summary.get('inventory_assets') or 0)} |",
+            f"| Устройства, наблюдавшиеся в выбранном PCAP | {int(summary.get('inventory_assets_observed_in_traffic') or 0)} |",
+            f"| Устройства, не наблюдавшиеся в выбранном PCAP | {int(summary.get('inventory_assets_not_observed_in_traffic') or 0)} |",
+            f"| Конечные точки трафика в PCAP | {int(summary.get('traffic_endpoints') or 0)} |",
+            f"| Конечные точки PCAP без сопоставления с инвентарём | {int(summary.get('unmatched_traffic_endpoints') or 0)} |",
+            f"| Службы в инвентаре | {int(summary.get('services') or 0)} |",
+            f"| Службы, использование которых наблюдалось в PCAP | {int(summary.get('services_observed_in_traffic') or 0)} |",
+            f"| Проблемы аудита | {int(summary.get('findings') or 0)} |",
+            f"| Внешние коммуникации точно сопоставленных устройств | {int(summary.get('external_communications') or 0)} |",
             "",
-            "## Согласованность инфраструктурных данных",
+            "## Согласованность данных об инфраструктуре",
             "",
         ]
     )
-    for name in ("gateway", "dhcp", "dns"):
+    for name, label in (("gateway", "Шлюз"), ("dhcp", "DHCP"), ("dns", "DNS")):
         row = consistency.get(name) or {}
-        lines.append(f"### {name.upper()} — {_status(row.get('status'))}")
+        lines.append(f"### {label} — {_status(row.get('status'))}")
         lines.append("")
         for source, values in (row.get("sources") or {}).items():
             lines.append(f"- {_source_line(str(source), values)}")
         common = row.get("common_values") or []
         if common:
-            lines.append(f"- common: {', '.join(str(value) for value in common)}")
+            lines.append(f"- Совпавшие значения: {', '.join(str(value) for value in common)}")
         lines.append("")
 
-    lines.extend(["## Findings ↔ наблюдаемый traffic", ""])
+    lines.extend(["## Проблемы аудита и наблюдаемый трафик", ""])
     relevance = Counter(
         str(row.get("traffic_relevance") or "unknown")
         for row in document.get("finding_traffic_relevance") or []
@@ -204,16 +242,16 @@ def render_markdown(document: dict[str, Any]) -> str:
     if relevance:
         lines.extend(f"- **{_status(key)}:** {count}" for key, count in sorted(relevance.items()))
     else:
-        lines.append("—")
+        lines.append("Связей между проблемами аудита и выбранным PCAP не выделено.")
 
-    lines.extend(["", "## Internal assets ↔ global endpoints", ""])
+    lines.extend(["", "## Связи устройств с внешними адресами", ""])
     external = sorted(
         [row for row in document.get("external_communications") or [] if isinstance(row, dict)],
         key=lambda row: int(row.get("bytes") or 0),
         reverse=True,
     )
     if external:
-        lines.extend(["| Asset | Global endpoint | Packets | Bytes | Protocols | Ports |", "|---|---|---:|---:|---|---|"])
+        lines.extend(["| Устройство | Внешний адрес | Пакеты | Байты | Протоколы | Порты |", "|---|---|---:|---:|---|---|"])
         for row in external[:50]:
             lines.append(
                 f"| `{row.get('asset_id')}` | `{row.get('external_endpoint')}` | "
@@ -221,17 +259,17 @@ def render_markdown(document: dict[str, Any]) -> str:
                 f"{_protocols(row.get('protocols'))} | {_ports(row.get('ports'))} |"
             )
     else:
-        lines.append("—")
+        lines.append("Внешние коммуникации точно сопоставленных устройств не выделены.")
 
     warnings = [str(item) for item in document.get("warnings") or [] if item]
     if warnings:
-        lines.extend(["", "## Ограничения интерпретации", ""])
+        lines.extend(["", "## Ограничения и предупреждения", ""])
         lines.extend(f"- {item}" for item in warnings)
 
     lines.extend(
         [
             "",
-            "> Этот документ показывает связи между сохранёнными источниками и не заменяет исходный Audit Report или Traffic Analysis. Отсутствие корреляции с выбранным PCAP не доказывает отсутствие asset, сервиса или finding в сети.",
+            "> Корреляция показывает только связи между уже сохранёнными источниками. Она не заменяет отчёт аудита и отдельный анализ PCAP. Отсутствие связи с выбранным PCAP не означает, что устройство, служба или проблема отсутствуют в сети.",
             "",
         ]
     )

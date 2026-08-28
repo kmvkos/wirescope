@@ -3,7 +3,7 @@
 # Increment whenever the persisted diagnostic semantics materially change.
 # The enqueue service uses this value so an old completed analysis does not
 # mask improved diagnostics for the same retained PCAP after an upgrade.
-ANALYZER_VERSION = 7
+ANALYZER_VERSION = 8
 
 # Import the legacy module first, then install the milestone-12 analyzer as the
 # package/default analyzer. Some existing modules still import

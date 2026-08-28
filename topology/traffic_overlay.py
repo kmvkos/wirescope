@@ -118,10 +118,14 @@ def _correlation_summary(
         headline = "PCAP совместим со scope аудита, но точных inventory identity совпадений пока нет."
     elif status == "partial":
         result_status = "partial"
-        headline = "Источники частично совместимы; автоматические merge должны оставаться консервативными."
+        headline = (
+            "Источники частично совместимы; structural enrichment отключён до статуса compatible."
+        )
     else:
         result_status = "insufficient_evidence"
-        headline = "Недостаточно evidence для надёжной PCAP↔inventory correlation."
+        headline = (
+            "Недостаточно evidence для надёжной PCAP↔inventory correlation; structural enrichment отключён."
+        )
 
     resolution = document.get("identity_resolution") or {}
     return {
@@ -137,6 +141,17 @@ def _correlation_summary(
         "ip_mac_conflicts": list(matches.get("ip_mac_conflicts") or []),
         "zero_match_is_failure": False if status == "different_domain" else None,
     }
+
+
+def _enrichment_policy(compatibility: dict[str, Any]) -> tuple[bool, str, str | None]:
+    status = str(compatibility.get("status") or "insufficient_evidence")
+    if status == "compatible":
+        return True, "allowed", None
+    if status == "different_domain":
+        return False, "skipped_different_domain", "different_observation_domain"
+    if status == "partial":
+        return False, "skipped_unconfirmed_domain", "partial_observation_domain"
+    return False, "skipped_unconfirmed_domain", "insufficient_observation_domain"
 
 
 def _aliases(topology: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -313,10 +328,12 @@ def decorate_traffic_overlay(
         document=document,
     )
 
-    different_domain = compatibility.get("status") == "different_domain"
+    enrichment_allowed, enrichment_status, enrichment_reason = _enrichment_policy(
+        compatibility
+    )
     discovery_nodes_added = 0
     endpoint_annotation_applied = False
-    if not different_domain:
+    if enrichment_allowed:
         _annotate_endpoint_states(topology, document)
         endpoint_annotation_applied = True
         discovery_nodes_added = _enrich_discovery_devices(
@@ -329,9 +346,9 @@ def decorate_traffic_overlay(
     overlay["compatibility"] = compatibility
     overlay["correlation"] = correlation
     overlay["topology_enrichment"] = {
-        "allowed": not different_domain,
-        "status": "allowed" if not different_domain else "skipped_different_domain",
-        "reason": None if not different_domain else "different_observation_domain",
+        "allowed": enrichment_allowed,
+        "status": enrichment_status,
+        "reason": enrichment_reason,
         "endpoint_annotation_applied": endpoint_annotation_applied,
         "discovery_nodes_added": discovery_nodes_added,
     }
@@ -347,18 +364,23 @@ def decorate_traffic_overlay(
         "lldp_devices": len(((document.get("discovery_evidence") or {}).get("lldp") or {}).get("devices") or []),
         "mndp_devices": len(((document.get("discovery_evidence") or {}).get("mndp") or {}).get("devices") or []),
         "topology_nodes_added": discovery_nodes_added,
-        "topology_enrichment_skipped": different_domain,
-        "topology_enrichment_skip_reason": (
-            "different_observation_domain" if different_domain else None
-        ),
+        "topology_enrichment_skipped": not enrichment_allowed,
+        "topology_enrichment_skip_reason": enrichment_reason,
     }
     topology["overlay"] = overlay
 
-    if different_domain:
-        warning = (
-            "Выбранный PCAP относится к другому observation domain. Traffic evidence сохранён отдельно, "
-            "но отсутствие прямых совпадений с inventory не считается ошибкой корреляции."
-        )
+    if not enrichment_allowed:
+        status = str(compatibility.get("status") or "insufficient_evidence")
+        if status == "different_domain":
+            warning = (
+                "Выбранный PCAP относится к другому observation domain. Traffic evidence сохранён отдельно, "
+                "но отсутствие прямых совпадений с inventory не считается ошибкой корреляции."
+            )
+        else:
+            warning = (
+                f"Observation domain выбранного PCAP имеет статус {status}; structural enrichment пропущён "
+                "до подтверждения compatible. Raw Traffic/Evidence сохранены отдельно."
+            )
         warnings = list(topology.get("warnings") or [])
         if warning not in warnings:
             warnings.append(warning)

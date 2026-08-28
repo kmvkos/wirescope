@@ -48,6 +48,7 @@ jobs:
           node --check frontend/app.js
           node --check frontend/i18n.js
           node --check frontend/global_analysis.js
+          node --check frontend/global_analysis_gaps.js
           node --check frontend/topology_tab.js
           node --check frontend/snmp_topology.js
           node --check frontend/ssh_topology.js
@@ -63,6 +64,7 @@ jobs:
         run: |
           pytest -q tests/test_product_coherence_browser.py -m browser
           pytest -q tests/test_pcap_management_browser.py -m browser
+          pytest -q tests/test_global_analysis_gaps_browser.py -m browser
 
       - name: Build wheel
         run: |

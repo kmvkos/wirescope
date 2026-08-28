@@ -41,6 +41,14 @@
     background: rgba(219, 105, 105, 0.11);
 }
 
+.ws-topology-enrichment-blocked {
+    margin: 10px 0;
+    padding: 9px 11px;
+    border-left: 3px solid rgba(219, 105, 105, 0.72);
+    border-radius: 6px;
+    background: rgba(219, 105, 105, 0.08);
+}
+
 .ws-topology-pcap-metrics {
     margin: 10px 0;
 }

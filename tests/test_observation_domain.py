@@ -119,6 +119,44 @@ def test_candidate_inside_confirmed_scope_is_compatible():
     assert result["matches"]["pcap_candidates_in_scope"] == ["10.11.11.124"]
 
 
+def test_same_private_ip_with_different_known_mac_is_not_compatible_identity_evidence():
+    result = assess_observation_domain(
+        assets=[_asset("10.11.11.37", "00:11:22:33:44:55")],
+        confirmed_scope={"targets": ["10.11.11.0/24"]},
+        audit_scope={},
+        audit_interface="ens37",
+        traffic_document=_traffic(
+            [
+                {
+                    "candidate_id": "mac:66:77:88:99:aa:bb",
+                    "status": "resolved",
+                    "confidence": "high",
+                    "addresses": ["10.11.11.37"],
+                    "mac": "66:77:88:99:aa:bb",
+                    "basis": "mac_identity",
+                }
+            ],
+            interface="ens37",
+            hints=["10.11.11.0/24"],
+        ),
+    )
+
+    assert result["status"] == "partial"
+    assert result["matches"]["exact_ips"] == []
+    assert result["matches"]["raw_ip_overlaps"] == ["10.11.11.37"]
+    assert result["matches"]["exact_macs"] == []
+    assert result["matches"]["pcap_candidates_in_scope"] == []
+    assert result["matches"]["ip_mac_conflicts"] == [
+        {
+            "ip": "10.11.11.37",
+            "inventory_macs": ["00:11:22:33:44:55"],
+            "pcap_macs": ["66:77:88:99:aa:bb"],
+            "reason": "IP совпал, но известные MAC различаются; IP reuse не считается доказательством общего observation domain.",
+        }
+    ]
+    assert any("IP/MAC конфликтов: 1" in reason for reason in result["reasons"])
+
+
 def test_probe_targets_do_not_make_domains_compatible():
     result = assess_observation_domain(
         assets=[_asset("10.11.11.37")],

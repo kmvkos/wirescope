@@ -11,6 +11,7 @@ from storage.pcap_import import (
     PcapImportValidationError,
     import_staging_path,
     inspect_pcap_file,
+    materialize_capture_file,
     sanitize_original_filename,
 )
 
@@ -34,11 +35,14 @@ class ImportedPacketCaptureHandler:
         )
         expected_sha256 = str(context.job.parameters.get("upload_sha256") or "")
         expected_size = int(context.job.parameters.get("uploaded_bytes") or 0)
+        expected_compression = context.job.parameters.get("source_compression")
+        max_bytes = _max_import_bytes()
         staging = None
+        normalized = None
         try:
             try:
                 staging = import_staging_path(context.evidence_store.root, token)
-                info = inspect_pcap_file(staging, max_bytes=_max_import_bytes())
+                info = inspect_pcap_file(staging, max_bytes=max_bytes)
             except PcapImportValidationError as exc:
                 raise self._validation_error(exc) from exc
 
@@ -56,6 +60,13 @@ class ImportedPacketCaptureHandler:
                         "Uploaded PCAP checksum changed before worker processing",
                     )
                 )
+            if expected_compression != info.compression:
+                raise self._validation_error(
+                    PcapImportValidationError(
+                        "pcap_import_compression_mismatch",
+                        "Uploaded PCAP compression changed before worker processing",
+                    )
+                )
 
             context.report_progress(
                 JobProgress(
@@ -66,6 +77,26 @@ class ImportedPacketCaptureHandler:
             )
             if context.cancellation_token.cancelled:
                 return HandlerResult()
+
+            source = staging
+            if info.compression:
+                context.report_progress(
+                    JobProgress(
+                        percentage=55,
+                        stage="normalizing_import",
+                        message="Decompressing imported PCAP",
+                    )
+                )
+                normalized = staging.with_name(f"{staging.name}.normalized")
+                try:
+                    source = materialize_capture_file(
+                        staging,
+                        normalized,
+                        info=info,
+                        max_bytes=max_bytes,
+                    )
+                except PcapImportValidationError as exc:
+                    raise self._validation_error(exc) from exc
 
             context.report_progress(
                 JobProgress(
@@ -78,19 +109,34 @@ class ImportedPacketCaptureHandler:
                 audit_id=context.audit.id,
                 job_id=context.job.id,
                 artifact_type="packet_capture",
-                source=staging,
+                source=source,
                 content_type=info.content_type,
                 extension=info.extension,
                 retention_class=RetentionClass.AUDIT,
             )
+            if (
+                capture_artifact.size != info.capture_size
+                or capture_artifact.sha256 != info.capture_sha256
+            ):
+                raise self._validation_error(
+                    PcapImportValidationError(
+                        "pcap_import_normalization_mismatch",
+                        "Canonical capture changed while being stored",
+                    )
+                )
+
             document = {
                 "schema": "packet-capture-result",
                 "schema_version": 1,
                 "audit_id": context.audit.id,
                 "job_id": context.job.id,
                 "source_origin": "imported",
+                "source_compression": info.compression,
                 "original_filename": original_name,
                 "capture_format": info.format,
+                "uploaded_bytes": info.size,
+                "upload_sha256": info.sha256,
+                "capture_sha256": info.capture_sha256,
                 "interface": None,
                 "filter": None,
                 "promiscuous": False,
@@ -122,8 +168,11 @@ class ImportedPacketCaptureHandler:
                     "schema_version": 1,
                     "result_reference": result_artifact.id,
                     "source_origin": "imported",
+                    "source_compression": info.compression,
                     "original_filename": original_name,
                     "capture_format": info.format,
+                    "uploaded_bytes": info.size,
+                    "capture_sha256": info.capture_sha256,
                     "interface": None,
                     "filter": None,
                     "promiscuous": False,
@@ -140,6 +189,8 @@ class ImportedPacketCaptureHandler:
                 },
             )
         finally:
+            if normalized is not None:
+                normalized.unlink(missing_ok=True)
             if staging is not None:
                 staging.unlink(missing_ok=True)
 

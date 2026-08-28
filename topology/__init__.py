@@ -2,6 +2,7 @@
 
 from topology.builder import TopologySourceError
 from topology.completeness import decorate_completeness
+from topology.correlation_overlay import decorate_correlation_v2
 from topology.findings import decorate_findings
 from topology.global_view import build_global_topology as _build_global_topology
 from topology.interface_gateway import decorate_interface_gateway
@@ -44,6 +45,12 @@ def build_topology(services, audit_id: str, *, traffic_analysis_job_id: str | No
     topology = decorate_findings(services, audit_id, topology)
     topology = decorate_source_health(services, topology, audit_ids=[audit_id])
     topology = decorate_traffic_overlay(
+        services,
+        audit_id,
+        topology,
+        traffic_analysis_job_id=traffic_analysis_job_id,
+    )
+    topology = decorate_correlation_v2(
         services,
         audit_id,
         topology,

@@ -38,6 +38,7 @@ _GLOBAL_ANALYSIS_ASSET_VERSION = "20260827-ui19"
 _GLOBAL_ANALYSIS_GAPS_ASSET_VERSION = "20260828-ui32"
 _PRODUCT_COHERENCE_ASSET_VERSION = "20260827-ui28"
 _PCAP_MANAGEMENT_ASSET_VERSION = "20260827-ui31"
+_PCAP_IMPORT_ASSET_VERSION = "20260828-ui33"
 
 
 def create_app(
@@ -221,6 +222,7 @@ def create_app(
                 f'<script src="/static/audit_management.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/traffic_analysis.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/pcap_management.js?v={_PCAP_MANAGEMENT_ASSET_VERSION}"></script>\n'
+                f'<script src="/static/pcap_import.js?v={_PCAP_IMPORT_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology.js?v={_UI_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_hardening.js?v={_TOPOLOGY_HARDENING_ASSET_VERSION}"></script>\n'
                 f'<script src="/static/topology_compare.js?v={_TOPOLOGY_HISTORY_ASSET_VERSION}"></script>\n'

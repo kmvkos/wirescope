@@ -1,8 +1,8 @@
 """Milestone-12 traffic analyzer composition.
 
-Version 7 composes the mature traffic diagnostics, additive packet evidence,
-conservative identity resolution and a separate discovery-protocol pass. Discovery
-metadata can strengthen identity, but communications are still not topology.
+Version 8 composes mature traffic diagnostics, additive packet evidence,
+conservative identity resolution, discovery-protocol evidence and explainable
+L3 next-hop inference. Communications remain distinct from topology evidence.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from jobs.models import ErrorCategory
 from providers.tools import CancellationToken
 from traffic_analysis.analyzer_v6 import TrafficAnalyzer as _EvidenceTrafficAnalyzer
 from traffic_analysis.discovery import DiscoveryEvidenceAnalyzer, merge_discovery_evidence
+from traffic_analysis.gateway import derive_next_hop_evidence
 from traffic_analysis.identity import build_identity_candidates
 
 
@@ -28,6 +29,7 @@ class TrafficAnalyzer(_EvidenceTrafficAnalyzer):
     ) -> dict[str, Any]:
         document = super().analyze_tsv(lines, source=source, progress=progress)
         document["identity_resolution"] = build_identity_candidates(document)
+        document["next_hop_evidence"] = derive_next_hop_evidence(document)
         return document
 
     def analyze(
@@ -70,4 +72,9 @@ class TrafficAnalyzer(_EvidenceTrafficAnalyzer):
             document.setdefault("limitations", []).append(
                 "Discovery/topology evidence pass was unavailable; base traffic and identity evidence were preserved."
             )
+
+        # Run after discovery so CDP/LLDP/MNDP/ND can strengthen the MAC->IP
+        # identity used for next-hop resolution. ARP reply evidence from the
+        # base pass is enough when discovery protocols are absent.
+        document["next_hop_evidence"] = derive_next_hop_evidence(document)
         return document

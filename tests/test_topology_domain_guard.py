@@ -159,3 +159,71 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_
         == "different_observation_domain"
     )
     assert any("другому observation domain" in item for item in result["warnings"])
+
+
+def test_same_ip_different_mac_does_not_overwrite_inventory_identity_during_pcap_enrichment():
+    topology = {
+        "nodes": [
+            {
+                "id": "asset:inventory-host",
+                "kind": "asset",
+                "label": "10.11.11.37",
+                "addresses": ["10.11.11.37"],
+                "mac": "00:11:22:33:44:55",
+                "roles": [],
+                "provenance": ["inventory"],
+            }
+        ],
+        "edges": [],
+    }
+    document = {
+        "identity_resolution": {
+            "candidates": [
+                {
+                    "candidate_id": "pcap-conflict",
+                    "status": "resolved",
+                    "confidence": "high",
+                    "mac": "66:77:88:99:aa:bb",
+                    "addresses": ["10.11.11.37"],
+                }
+            ]
+        },
+        "endpoint_evidence": [
+            {"endpoint": "10.11.11.37", "state": "confirmed_responder"}
+        ],
+        "discovery_evidence": {
+            "devices": [
+                {
+                    "protocol": "lldp",
+                    "source_mac": "66:77:88:99:aa:bb",
+                    "addresses": ["10.11.11.37"],
+                    "names": ["pcap-switch"],
+                    "roles": ["network-neighbor"],
+                }
+            ]
+        },
+    }
+
+    traffic_overlay._annotate_endpoint_states(topology, document)
+    added = traffic_overlay._enrich_discovery_devices(
+        topology,
+        document,
+        "pcap-job",
+    )
+
+    assert added == 1
+    assert len(topology["nodes"]) == 2
+
+    inventory = next(node for node in topology["nodes"] if node["id"] == "asset:inventory-host")
+    assert inventory["mac"] == "00:11:22:33:44:55"
+    assert inventory["kind"] == "asset"
+    assert inventory["provenance"] == ["inventory"]
+    assert "pcap_state" not in inventory
+    assert "pcap_local_identity" not in inventory
+
+    pcap_device = next(node for node in topology["nodes"] if node["id"] != "asset:inventory-host")
+    assert pcap_device["kind"] == "network-device"
+    assert pcap_device["mac"] == "66:77:88:99:aa:bb"
+    assert pcap_device["addresses"] == ["10.11.11.37"]
+    assert pcap_device["names"] == ["pcap-switch"]
+    assert "pcap-discovery" in pcap_device["provenance"]

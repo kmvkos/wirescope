@@ -176,6 +176,8 @@ def operational_action(method: str, path: str) -> str | None:
         return "audit.delete"
     if method == "DELETE" and re.fullmatch(r"/api/captures/[^/]+/pcap", path):
         return "capture.pcap_delete"
+    if path == "/api/captures/import" and method == "POST":
+        return "capture.pcap_import"
     if path.startswith("/api/captures") and method == "POST":
         return "capture.change"
     if path.endswith("/retry") and path.startswith("/api/jobs/") and method == "POST":

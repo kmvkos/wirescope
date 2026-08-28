@@ -122,11 +122,30 @@ def decorate_pcap_next_hops(
     document = _load_document(services, traffic_analysis_job_id)
     evidence = document.get("next_hop_evidence") or {}
     candidates = evidence.get("candidates") or []
-    if not isinstance(candidates, list) or not candidates:
-        overlay = dict(topology.get("overlay") or {})
+    candidate_count = int(evidence.get("candidate_count") or 0)
+    high_confidence_count = int(evidence.get("high_confidence_count") or 0)
+
+    overlay = dict(topology.get("overlay") or {})
+    compatibility = overlay.get("compatibility") or {}
+    if compatibility.get("status") == "different_domain":
         overlay["next_hop"] = {
-            "candidate_count": int(evidence.get("candidate_count") or 0),
-            "high_confidence_count": int(evidence.get("high_confidence_count") or 0),
+            "candidate_count": candidate_count,
+            "high_confidence_count": high_confidence_count,
+            "topology_edges_added": 0,
+            "ambiguous_count": len(evidence.get("ambiguous") or []),
+            "topology_projection_skipped": True,
+            "topology_projection_skip_reason": "different_observation_domain",
+        }
+        topology["overlay"] = overlay
+        return topology
+
+    if not isinstance(candidates, list) or not candidates:
+        overlay["next_hop"] = {
+            "candidate_count": candidate_count,
+            "high_confidence_count": high_confidence_count,
+            "topology_edges_added": 0,
+            "ambiguous_count": len(evidence.get("ambiguous") or []),
+            "topology_projection_skipped": False,
         }
         topology["overlay"] = overlay
         return topology
@@ -186,12 +205,12 @@ def decorate_pcap_next_hops(
         )
         added_edges += 1
 
-    overlay = dict(topology.get("overlay") or {})
     overlay["next_hop"] = {
-        "candidate_count": int(evidence.get("candidate_count") or 0),
-        "high_confidence_count": int(evidence.get("high_confidence_count") or 0),
+        "candidate_count": candidate_count,
+        "high_confidence_count": high_confidence_count,
         "topology_edges_added": added_edges,
         "ambiguous_count": len(evidence.get("ambiguous") or []),
+        "topology_projection_skipped": False,
     }
     topology["overlay"] = overlay
     return topology

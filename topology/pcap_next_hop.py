@@ -73,6 +73,28 @@ def _aliases(topology: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _resolve_node(
+    aliases: dict[str, dict[str, Any]],
+    *,
+    address: str,
+    mac: str | None,
+) -> dict[str, Any] | None:
+    parsed_mac = _mac(mac)
+
+    # Exact MAC is stronger than IP. This also handles a host/router whose IP
+    # changed between inventory and the retained PCAP.
+    node = aliases.get(parsed_mac) if parsed_mac else None
+    if node is not None:
+        return node
+
+    address_node = aliases.get(address.lower())
+    if address_node is not None and parsed_mac:
+        known_mac = _mac(address_node.get("mac"))
+        if known_mac and known_mac != parsed_mac:
+            return None
+    return address_node
+
+
 def _ensure_node(
     topology: dict[str, Any],
     aliases: dict[str, dict[str, Any]],
@@ -83,17 +105,7 @@ def _ensure_node(
     job_id: str,
 ) -> dict[str, Any]:
     parsed_mac = _mac(mac)
-
-    # Exact MAC is stronger than IP. This also handles a host/router whose IP
-    # changed between inventory and the retained PCAP.
-    node = aliases.get(parsed_mac) if parsed_mac else None
-    if node is None:
-        address_node = aliases.get(address.lower())
-        if address_node is not None and parsed_mac:
-            known_mac = _mac(address_node.get("mac"))
-            if known_mac and known_mac != parsed_mac:
-                address_node = None
-        node = address_node
+    node = _resolve_node(aliases, address=address, mac=parsed_mac)
 
     if node is None:
         node = {
@@ -160,6 +172,7 @@ def decorate_pcap_next_hops(
             "high_confidence_count": high_confidence_count,
             "topology_edges_added": 0,
             "ambiguous_count": len(evidence.get("ambiguous") or []),
+            "identity_collision_count": 0,
             "topology_projection_skipped": True,
             "topology_projection_skip_reason": "different_observation_domain",
         }
@@ -172,6 +185,7 @@ def decorate_pcap_next_hops(
             "high_confidence_count": high_confidence_count,
             "topology_edges_added": 0,
             "ambiguous_count": len(evidence.get("ambiguous") or []),
+            "identity_collision_count": 0,
             "topology_projection_skipped": False,
         }
         topology["overlay"] = overlay
@@ -179,6 +193,7 @@ def decorate_pcap_next_hops(
 
     aliases = _aliases(topology)
     added_edges = 0
+    identity_collisions = 0
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
@@ -187,6 +202,22 @@ def decorate_pcap_next_hops(
         next_hop_ip = _bare(candidate.get("next_hop_ip"))
         next_hop_mac = _mac(candidate.get("next_hop_mac"))
         if not source_ip or not next_hop_ip or source_ip == next_hop_ip:
+            continue
+
+        # A candidate that resolves source and next-hop to one identity cannot
+        # describe a meaningful L3 hop. Detect it before mutating either node so
+        # the rejected evidence cannot accidentally add host/router roles.
+        if source_mac and next_hop_mac and source_mac == next_hop_mac:
+            identity_collisions += 1
+            continue
+        resolved_source = _resolve_node(aliases, address=source_ip, mac=source_mac)
+        resolved_hop = _resolve_node(aliases, address=next_hop_ip, mac=next_hop_mac)
+        if (
+            resolved_source is not None
+            and resolved_hop is not None
+            and str(resolved_source.get("id")) == str(resolved_hop.get("id"))
+        ):
+            identity_collisions += 1
             continue
 
         source_node = _ensure_node(
@@ -205,6 +236,9 @@ def decorate_pcap_next_hops(
             role="router",
             job_id=traffic_analysis_job_id,
         )
+        if str(source_node["id"]) == str(hop_node["id"]):
+            identity_collisions += 1
+            continue
         if _edge_exists(topology, str(source_node["id"]), str(hop_node["id"])):
             continue
 
@@ -238,6 +272,7 @@ def decorate_pcap_next_hops(
         "high_confidence_count": high_confidence_count,
         "topology_edges_added": added_edges,
         "ambiguous_count": len(evidence.get("ambiguous") or []),
+        "identity_collision_count": identity_collisions,
         "topology_projection_skipped": False,
     }
     topology["overlay"] = overlay

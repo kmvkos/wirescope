@@ -108,7 +108,7 @@ async def import_pcap(
         info = inspect_pcap_file(staging, max_bytes=max_bytes)
         actor = getattr(getattr(http_request.state, "user", None), "username", None)
         audit = services.jobs.create_audit(
-            profile="pcap_import",
+            profile="packet_capture",
             interface=None,
             scope={
                 "source_origin": "imported",

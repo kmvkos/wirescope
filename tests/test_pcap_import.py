@@ -105,9 +105,10 @@ def test_import_classic_pcap_becomes_normal_capture_source(api_context):
     assert traffic_job.parameters["pcap_artifact_id"] == raw.id
 
 
-def test_import_pcapng_preserves_format_and_sanitizes_filename(api_context):
+def test_import_pcapng_preserves_format_filename_and_download(api_context):
     app, jobs, evidence, _environment = api_context
-    accepted = _upload(app, _pcapng(), "%2E%2E%2F%2E%2E%2Foffice%20capture.pcapng")
+    payload = _pcapng()
+    accepted = _upload(app, payload, "%2E%2E%2F%2E%2E%2Foffice%20capture.pcapng")
     assert accepted.status_code == 202, accepted.text
     _run_worker(api_context)
 
@@ -121,6 +122,12 @@ def test_import_pcapng_preserves_format_and_sanitizes_filename(api_context):
     raw = jobs.artifact(result["pcap_artifact_id"])
     assert raw.content_type == "application/x-pcapng"
     assert raw.relative_path.endswith(".pcapng")
+
+    download = http_request(app, "GET", f"/api/v1/jobs/{job.id}/pcap")
+    assert download.status_code == 200
+    assert download.content == payload
+    assert download.headers["content-type"].startswith("application/x-pcapng")
+    assert ".pcapng" in download.headers["content-disposition"].lower()
 
 
 def test_import_rejects_invalid_empty_and_viewer_uploads(api_context):
@@ -178,3 +185,20 @@ def test_worker_rechecks_staged_checksum_before_registering_raw_artifact(api_con
             )
         ) or 0
     assert raw_count == 0
+
+
+def test_import_has_stable_operational_audit_action(api_context):
+    app, _jobs, _evidence, _environment = api_context
+    accepted = _upload(app, _classic_pcap(), "audit-trail.pcap")
+    assert accepted.status_code == 202
+
+    events = http_request(
+        app,
+        "GET",
+        "/api/audit-log",
+        params={"action": "capture.pcap_import"},
+    )
+    assert events.status_code == 200
+    assert events.json()["total"] >= 1
+    assert events.json()["items"][0]["action"] == "capture.pcap_import"
+    assert events.json()["items"][0]["path"] == "/api/captures/import"

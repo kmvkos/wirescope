@@ -113,11 +113,51 @@ See [PRODUCT_COHERENCE.md](PRODUCT_COHERENCE.md) and [REPORTING_MODEL.md](REPORT
 
 ---
 
-## Ideas after the coherence review
+## v1.4 — Manual PCAP Import
+
+Status: **implementation complete; installed-VM/live UX validation is still required**.
+
+The goal is to let an operator manually supply an external PCAP/PCAPNG to the existing offline Traffic Analysis pipeline without introducing a second analyzer or a parallel storage model.
+
+Implemented:
+
+- manual `.pcap` and `.pcapng` upload from the operator UI;
+- raw streaming upload without buffering the complete file in RAM;
+- configurable import limit, default 256 MiB;
+- confined staging under the evidence root;
+- magic/header, size, and SHA-256 validation before durable job creation;
+- worker-side size/SHA-256 re-validation before final artifact registration;
+- reuse of the existing `packet_capture` lifecycle with `source_origin=imported`;
+- preservation of PCAP/PCAPNG format and media type on download;
+- existing download/delete/re-analysis operations for imported captures;
+- normal Traffic Analysis only after explicit operator action;
+- explicit selection of completed Traffic Analysis for later correlation;
+- dedicated `capture.pcap_import` operational audit event;
+- API, worker, and Chromium regression coverage.
+
+### v1.4 trust boundary
+
+An external PCAP is a **historical untrusted observation source**.
+
+Import:
+
+- performs no network I/O;
+- does not start live capture, discovery, or protocol probes;
+- does not create or extend confirmed active scope;
+- does not imply that the network represented in the file is currently attached to WireScope;
+- does not authorize active scanning of addresses or VLANs found only in the external file;
+- is not automatically mixed into a current audit or correlation run.
+
+The durable result records `source_origin=imported`, `network_io_performed=false`, and `active_scope_authorized=false`.
+
+See [PCAP_MANAGEMENT.md](PCAP_MANAGEMENT.md).
+
+---
+
+## Ideas after v1.4
 
 These are not current commitments and require separate design:
 
-- external PCAP import and safe integration with the existing Traffic Analysis pipeline;
 - PDF export;
 - additional protocol-audit modules;
 - controlled/local CVE enrichment;
@@ -128,8 +168,6 @@ These are not current commitments and require separate design:
 - vendor-specific management-plane adapters;
 - broader distro/architecture/tshark compatibility coverage.
 
-External PCAP import is intentionally not specified yet; its UX, ownership, limits, and trust model will be designed separately.
-
 ## Current next step
 
-**Product Coherence Review is closed. The next major direction has not been selected; any new stage should be designed explicitly rather than silently expanding WireScope scope.**
+**Manual PCAP Import is implemented. Before v1.4 is closed, the installed VM should validate the real upload → Traffic Analysis → optional Correlated Assessment path. The next major direction after that has not been selected.**

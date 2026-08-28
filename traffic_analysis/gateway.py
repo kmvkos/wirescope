@@ -84,6 +84,7 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
             "flows": 0,
             "packets": 0,
             "bytes": 0,
+            "source_macs": set(),
             "remote_destinations": set(),
             "protocols": set(),
             "first_seen": None,
@@ -96,6 +97,7 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(flow, dict):
             continue
         source_ip = str(flow.get("src_ip") or "")
+        source_mac = _mac(flow.get("src_mac"))
         destination_ip = str(flow.get("dst_ip") or "")
         destination_mac = _mac(flow.get("dst_mac"))
         if (
@@ -110,6 +112,8 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
         item["flows"] += 1
         item["packets"] += int(flow.get("packets") or 0)
         item["bytes"] += int(flow.get("bytes") or 0)
+        if source_mac:
+            item["source_macs"].add(source_mac)
         item["remote_destinations"].add(destination_ip)
         for protocol in flow.get("protocols") or []:
             if isinstance(protocol, dict):
@@ -148,9 +152,20 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
         else:
             confidence = "medium"
 
+        source_macs = sorted(item["source_macs"])
+        source_mac = source_macs[0] if len(source_macs) == 1 else None
+        evidence_types = [
+            "ethernet_destination_mac_for_routed_flows",
+            "strong_ip_mac_identity_for_next_hop",
+        ]
+        if source_mac:
+            evidence_types.append("stable_ethernet_source_mac_for_local_host")
+
         candidates.append(
             {
                 "source_ip": source_ip,
+                "source_mac": source_mac,
+                "source_mac_count": len(source_macs),
                 "next_hop_ip": mapped_ips[0],
                 "next_hop_mac": next_hop_mac,
                 "remote_destination_count": remote_count,
@@ -161,10 +176,7 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
                 "first_seen": item["first_seen"],
                 "last_seen": item["last_seen"],
                 "confidence": confidence,
-                "evidence": [
-                    "ethernet_destination_mac_for_routed_flows",
-                    "strong_ip_mac_identity_for_next_hop",
-                ],
+                "evidence": evidence_types,
                 "relation": "l3_next_hop",
             }
         )
@@ -179,7 +191,7 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "schema": "traffic-next-hop-evidence",
-        "schema_version": 1,
+        "schema_version": 2,
         "eligible_routed_flow_count": eligible_flows,
         "candidate_count": len(candidates),
         "high_confidence_count": sum(1 for item in candidates if item["confidence"] == "high"),
@@ -189,6 +201,7 @@ def derive_next_hop_evidence(document: dict[str, Any]) -> dict[str, Any]:
             "Next-hop inference is limited to private/link-local source IP traffic toward globally routable destinations in this version.",
             "The evidence proves the Ethernet next hop visible at the capture point, not the complete routed path or ownership of the remote destination.",
             "A next-hop MAC must resolve to exactly one strong local IP identity; ambiguous MAC/IP mappings are not promoted.",
+            "A source MAC is attached only when the source IP used one stable unicast Ethernet source MAC across the grouped flows.",
         ],
     }
 

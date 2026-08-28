@@ -8,6 +8,7 @@ hairball.
 
 from __future__ import annotations
 
+from collections import defaultdict
 import ipaddress
 from typing import Any
 
@@ -31,6 +32,20 @@ def _network(value: Any) -> ipaddress._BaseNetwork | None:
         return ipaddress.ip_network(str(value or ""), strict=False)
     except ValueError:
         return None
+
+
+def _mac(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    parts = text.split(":")
+    if len(parts) != 6:
+        return None
+    try:
+        octets = [int(part, 16) for part in parts]
+    except ValueError:
+        return None
+    if text in {"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"} or octets[0] & 0x01:
+        return None
+    return text
 
 
 def _node_in_network(
@@ -113,6 +128,58 @@ def _primary_label(node: dict[str, Any]) -> str:
     return label[:36] or str(node.get("id") or "узел")[:36]
 
 
+def _disambiguate_identity_labels(
+    node_by_id: dict[str, dict[str, Any]],
+    labels: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Make intentionally separate same-label identities readable in the UI.
+
+    The common case is RFC1918 IP reuse: inventory knows MAC A while PCAP knows
+    MAC B for the same address.  Those nodes must remain separate identities;
+    presentation should therefore not render two visually identical cards.
+    """
+
+    by_label: defaultdict[str, list[str]] = defaultdict(list)
+    for node_id, label in labels.items():
+        by_label[str(label)].append(node_id)
+
+    conflicts: list[dict[str, Any]] = []
+    for label, node_ids in sorted(by_label.items()):
+        if len(node_ids) < 2:
+            continue
+        mac_by_id = {
+            node_id: _mac(node_by_id.get(node_id, {}).get("mac"))
+            for node_id in node_ids
+        }
+        distinct_macs = sorted({value for value in mac_by_id.values() if value})
+        if len(distinct_macs) < 2:
+            continue
+
+        disambiguated: dict[str, str] = {}
+        for node_id in node_ids:
+            mac = mac_by_id.get(node_id)
+            if not mac:
+                continue
+            suffix = ":".join(mac.split(":")[-4:])
+            rendered = f"{label[:24]} · …{suffix}"
+            labels[node_id] = rendered
+            disambiguated[node_id] = rendered
+
+        conflicts.append(
+            {
+                "label": label,
+                "node_ids": sorted(node_ids),
+                "macs": distinct_macs,
+                "rendered_labels": disambiguated,
+                "reason": (
+                    "Несколько topology identities имеют одинаковую основную подпись, "
+                    "но разные известные MAC; они намеренно не объединены."
+                ),
+            }
+        )
+    return conflicts
+
+
 def _importance(node: dict[str, Any], nontraffic_degree: dict[str, int]) -> int:
     roles = _roles(node)
     score = nontraffic_degree.get(str(node.get("id")), 0) * 30
@@ -177,6 +244,7 @@ def decorate_presentation(topology: dict[str, Any]) -> dict[str, Any]:
                 nontraffic_degree[key] = nontraffic_degree.get(key, 0) + 1
 
     labels = {node_id: _primary_label(node) for node_id, node in node_by_id.items()}
+    identity_label_conflicts = _disambiguate_identity_labels(node_by_id, labels)
     broadcast_ids = {
         node_id for node_id, node in node_by_id.items() if _is_broadcast_node(node, broadcasts)
     }
@@ -295,6 +363,7 @@ def decorate_presentation(topology: dict[str, Any]) -> dict[str, Any]:
         "schema_version": 1,
         "default_view": "structural",
         "labels": labels,
+        "identity_label_conflicts": identity_label_conflicts,
         "views": {
             "structural": {
                 "title": "Схема сети",

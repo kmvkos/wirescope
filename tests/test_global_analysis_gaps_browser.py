@@ -21,10 +21,38 @@ def _browser():
     return instance, browser
 
 
+def _page(browser, payload, calls):
+    page = browser.new_page(viewport={"width": 480, "height": 320})
+
+    def api(route):
+        if route.request.url.endswith("/api/v1/jobs/job-1/global-analysis"):
+            calls["result"] += 1
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+            return
+        route.fulfill(status=404, content_type="application/json", body="{}")
+
+    page.route("http://wirescope.test/api/v1/**", api)
+    page.set_content(
+        """
+        <!doctype html><html><head><base href="http://wirescope.test/"></head><body>
+          <a id="ga-export-json" href="/api/v1/jobs/job-1/global-analysis/export?format=json">JSON</a>
+          <section id="ga-content" class="ga-content">
+            <section class="ga-section"><h3>Сводка сопоставления</h3></section>
+            <section class="ga-section"><h3>Корреляция сохранённых результатов WireScope</h3></section>
+            <section class="ga-section"><h3>Согласованность инфраструктурных данных</h3></section>
+          </section>
+        </body></html>
+        """
+    )
+    page.add_style_tag(path=str(ROOT / "frontend/global_analysis.css"))
+    page.add_style_tag(path=str(ROOT / "frontend/global_analysis_gaps.css"))
+    page.add_script_tag(path=str(ROOT / "frontend/global_analysis_gaps.js"))
+    return page
+
+
 def test_evidence_gap_cards_render_once_and_fit_kiosk_viewport():
     instance, browser = _browser()
     try:
-        page = browser.new_page(viewport={"width": 480, "height": 320})
         calls = {"result": 0}
         payload = {
             "schema": "global-analysis",
@@ -46,30 +74,7 @@ def test_evidence_gap_cards_render_once_and_fit_kiosk_viewport():
                 }
             ],
         }
-
-        def api(route):
-            if route.request.url.endswith("/api/v1/jobs/job-1/global-analysis"):
-                calls["result"] += 1
-                route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
-                return
-            route.fulfill(status=404, content_type="application/json", body="{}")
-
-        page.route("http://wirescope.test/api/v1/**", api)
-        page.set_content(
-            """
-            <!doctype html><html><head><base href="http://wirescope.test/"></head><body>
-              <a id="ga-export-json" href="/api/v1/jobs/job-1/global-analysis/export?format=json">JSON</a>
-              <section id="ga-content" class="ga-content">
-                <section class="ga-section"><h3>Сводка сопоставления</h3></section>
-                <section class="ga-section"><h3>Корреляция сохранённых результатов WireScope</h3></section>
-                <section class="ga-section"><h3>Согласованность инфраструктурных данных</h3></section>
-              </section>
-            </body></html>
-            """
-        )
-        page.add_style_tag(path=str(ROOT / "frontend/global_analysis.css"))
-        page.add_style_tag(path=str(ROOT / "frontend/global_analysis_gaps.css"))
-        page.add_script_tag(path=str(ROOT / "frontend/global_analysis_gaps.js"))
+        page = _page(browser, payload, calls)
 
         section = page.locator(".ga-evidence-gaps")
         section.wait_for(state="visible")
@@ -79,16 +84,44 @@ def test_evidence_gap_cards_render_once_and_fit_kiosk_viewport():
         assert section.get_by_text("Как добрать данные").is_visible()
         assert section.get_by_text("Пока корректно утверждать").is_visible()
 
-        headings = page.locator("#ga-content > .ga-section > h3")
-        assert headings.nth(0).inner_text() == "Сводка сопоставления"
-        assert headings.nth(1).inner_text() == "Корреляция сохранённых результатов WireScope"
-        assert headings.nth(2).inner_text() == "Что ещё нужно подтвердить"
+        sections = page.locator("#ga-content > .ga-section")
+        assert "Сводка сопоставления" in sections.nth(0).inner_text()
+        assert "Корреляция сохранённых результатов WireScope" in sections.nth(1).inner_text()
+        assert "Что ещё нужно подтвердить" in sections.nth(2).inner_text()
+        assert "Согласованность инфраструктурных данных" in sections.nth(3).inner_text()
 
         page.wait_for_timeout(250)
         assert calls["result"] == 1
         assert page.locator(".ga-evidence-gaps").count() == 1
         overflow = page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
         assert overflow is False
+    finally:
+        browser.close()
+        instance.stop()
+
+
+def test_zero_gap_result_is_cached_without_repeat_fetch_on_other_ui_mutations():
+    instance, browser = _browser()
+    try:
+        calls = {"result": 0}
+        page = _page(browser, {"schema": "global-analysis", "evidence_gaps": []}, calls)
+        page.wait_for_timeout(150)
+        assert calls["result"] == 1
+        assert page.locator(".ga-evidence-gaps").count() == 0
+
+        page.evaluate(
+            """
+            () => {
+                const section = document.createElement('section');
+                section.className = 'ga-section';
+                section.textContent = 'Другая часть интерфейса обновилась';
+                document.getElementById('ga-content').append(section);
+            }
+            """
+        )
+        page.wait_for_timeout(150)
+        assert calls["result"] == 1
+        assert page.locator(".ga-evidence-gaps").count() == 0
     finally:
         browser.close()
         instance.stop()

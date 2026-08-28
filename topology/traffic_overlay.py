@@ -276,11 +276,14 @@ def decorate_traffic_overlay(
     )
 
     _annotate_endpoint_states(topology, document)
-    discovery_nodes_added = _enrich_discovery_devices(
-        topology,
-        document,
-        traffic_analysis_job_id,
-    )
+    different_domain = compatibility.get("status") == "different_domain"
+    discovery_nodes_added = 0
+    if not different_domain:
+        discovery_nodes_added = _enrich_discovery_devices(
+            topology,
+            document,
+            traffic_analysis_job_id,
+        )
 
     overlay = dict(topology.get("overlay") or {})
     overlay["compatibility"] = compatibility
@@ -297,10 +300,14 @@ def decorate_traffic_overlay(
         "lldp_devices": len(((document.get("discovery_evidence") or {}).get("lldp") or {}).get("devices") or []),
         "mndp_devices": len(((document.get("discovery_evidence") or {}).get("mndp") or {}).get("devices") or []),
         "topology_nodes_added": discovery_nodes_added,
+        "topology_enrichment_skipped": different_domain,
+        "topology_enrichment_skip_reason": (
+            "different_observation_domain" if different_domain else None
+        ),
     }
     topology["overlay"] = overlay
 
-    if compatibility.get("status") == "different_domain":
+    if different_domain:
         warning = (
             "Выбранный PCAP относится к другому observation domain. Traffic evidence сохранён отдельно, "
             "но отсутствие прямых совпадений с inventory не считается ошибкой корреляции."

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
 import struct
 
+from sqlalchemy import func, select
+
 from jobs.worker import JobWorker, build_registry
+from persistence.models import ArtifactModel
 from tests.helpers import http_request
 
 
@@ -167,9 +168,13 @@ def test_worker_rechecks_staged_checksum_before_registering_raw_artifact(api_con
     assert failed.status.value == "failed"
     assert failed.error.code in {"pcap_import_size_mismatch", "pcap_import_checksum_mismatch"}
     assert not staging.exists()
-    artifacts = [
-        row
-        for row in jobs.artifacts_for_audit(job.audit_id)
-        if row.artifact_type == "packet_capture"
-    ]
-    assert artifacts == []
+    with jobs.database.session() as session:
+        raw_count = session.scalar(
+            select(func.count())
+            .select_from(ArtifactModel)
+            .where(
+                ArtifactModel.audit_id == job.audit_id,
+                ArtifactModel.artifact_type == "packet_capture",
+            )
+        ) or 0
+    assert raw_count == 0

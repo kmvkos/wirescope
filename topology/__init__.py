@@ -5,6 +5,7 @@ from topology.completeness import decorate_completeness
 from topology.findings import decorate_findings
 from topology.global_view import build_global_topology as _build_global_topology
 from topology.interface_gateway import decorate_interface_gateway
+from topology.pcap_next_hop import decorate_pcap_next_hops
 from topology.presentation import decorate_presentation
 from topology.routing import decorate_global_routing_topology, decorate_routed_topology
 from topology.segmented import build_topology as _build_segmented_topology
@@ -45,6 +46,11 @@ def build_topology(services, audit_id: str, *, traffic_analysis_job_id: str | No
     topology = decorate_traffic_overlay(
         services,
         audit_id,
+        topology,
+        traffic_analysis_job_id=traffic_analysis_job_id,
+    )
+    topology = decorate_pcap_next_hops(
+        services,
         topology,
         traffic_analysis_job_id=traffic_analysis_job_id,
     )

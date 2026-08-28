@@ -7,6 +7,7 @@ does not promote ARP request targets or arbitrary traffic destinations.
 
 from __future__ import annotations
 
+from collections import defaultdict
 import ipaddress
 from typing import Any, Iterable
 
@@ -120,6 +121,28 @@ def _pcap_candidates(document: dict[str, Any]) -> tuple[list[str], list[str], li
     return _unique_ips(addresses), sorted(macs), normalized
 
 
+def _inventory_ip_macs(assets: list[dict[str, Any]]) -> dict[str, set[str]]:
+    result: defaultdict[str, set[str]] = defaultdict(set)
+    for asset in assets:
+        parsed_mac = _mac(asset.get("mac"))
+        if not parsed_mac:
+            continue
+        for address in _unique_ips(asset.get("addresses") or []):
+            result[address].add(parsed_mac)
+    return dict(result)
+
+
+def _pcap_ip_macs(candidates: list[dict[str, Any]]) -> dict[str, set[str]]:
+    result: defaultdict[str, set[str]] = defaultdict(set)
+    for candidate in candidates:
+        parsed_mac = _mac(candidate.get("mac"))
+        if not parsed_mac:
+            continue
+        for address in _unique_ips(candidate.get("addresses") or []):
+            result[address].add(parsed_mac)
+    return dict(result)
+
+
 def _scope_networks(confirmed_scope: dict[str, Any] | None, audit_scope: dict[str, Any] | None) -> list[ipaddress._BaseNetwork]:
     raw_values: list[Any] = []
     if confirmed_scope:
@@ -173,13 +196,33 @@ def assess_observation_domain(
     inventory_mac_set = set(inventory_macs)
     pcap_ip_set = set(pcap_ips)
     pcap_mac_set = set(pcap_macs)
-    exact_ips = sorted(inventory_ip_set & pcap_ip_set)
+    raw_exact_ips = sorted(inventory_ip_set & pcap_ip_set)
     exact_macs = sorted(inventory_mac_set & pcap_mac_set)
+
+    inventory_ip_macs = _inventory_ip_macs(assets)
+    pcap_ip_macs = _pcap_ip_macs(pcap_candidates)
+    ip_mac_conflicts: list[dict[str, Any]] = []
+    conflicted_ips: set[str] = set()
+    for address in raw_exact_ips:
+        inventory_known = inventory_ip_macs.get(address) or set()
+        pcap_known = pcap_ip_macs.get(address) or set()
+        if inventory_known and pcap_known and inventory_known.isdisjoint(pcap_known):
+            conflicted_ips.add(address)
+            ip_mac_conflicts.append(
+                {
+                    "ip": address,
+                    "inventory_macs": sorted(inventory_known),
+                    "pcap_macs": sorted(pcap_known),
+                    "reason": "IP совпал, но известные MAC различаются; IP reuse не считается доказательством общего observation domain.",
+                }
+            )
+    exact_ips = [address for address in raw_exact_ips if address not in conflicted_ips]
 
     pcap_in_scope = sorted(
         address
         for address in pcap_ips
-        if any(
+        if address not in conflicted_ips
+        and any(
             (parsed := _ip(address)) is not None
             and parsed.version == network.version
             and parsed in network
@@ -229,16 +272,16 @@ def assess_observation_domain(
         confidence = "high"
         reasons.append(f"Совпали MAC-идентификаторы: {len(exact_macs)}.")
         if exact_ips:
-            reasons.append(f"Совпали IP-адреса: {len(exact_ips)}.")
+            reasons.append(f"Совпали IP-адреса без MAC-конфликта: {len(exact_ips)}.")
     elif exact_ips:
         status = "compatible"
         confidence = "medium"
-        reasons.append(f"Совпали IP-адреса: {len(exact_ips)}.")
+        reasons.append(f"Совпали IP-адреса без противоречащего MAC evidence: {len(exact_ips)}.")
     elif pcap_in_scope:
         status = "compatible"
         confidence = "medium"
         reasons.append(
-            f"В PCAP есть {len(pcap_in_scope)} локальных identity candidate внутри подтверждённого scope аудита."
+            f"В PCAP есть {len(pcap_in_scope)} локальных identity candidate внутри подтверждённого scope аудита без известного MAC-конфликта."
         )
     elif scope_hint_overlaps or inventory_in_pcap_hints:
         status = "partial"
@@ -277,6 +320,11 @@ def assess_observation_domain(
                 "Недостаточно подтверждённых локальных идентификаторов или scope для сравнения источников."
             )
 
+    if ip_mac_conflicts:
+        reasons.append(
+            f"Обнаружено IP/MAC конфликтов: {len(ip_mac_conflicts)}; такие IP не использовались как доказательство совместимости."
+        )
+
     if interface_mismatch:
         reasons.append(
             f"Интерфейсы различаются: аудит={audit_interface_text}, PCAP={pcap_interface}. Само по себе это не доказывает другой сегмент."
@@ -309,7 +357,9 @@ def assess_observation_domain(
         },
         "matches": {
             "exact_ips": exact_ips,
+            "raw_ip_overlaps": raw_exact_ips,
             "exact_macs": exact_macs,
+            "ip_mac_conflicts": ip_mac_conflicts,
             "pcap_candidates_in_scope": pcap_in_scope,
             "inventory_addresses_in_pcap_hints": inventory_in_pcap_hints,
             "scope_hint_overlaps": scope_hint_overlaps,

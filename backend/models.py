@@ -115,6 +115,9 @@ class CaptureSessionResponse(BaseModel):
     duration_seconds: int | None
     max_filesize_kb: int | None
     promiscuous: bool = True
+    source_origin: str = "captured"
+    original_filename: str | None = None
+    capture_format: str | None = None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -178,110 +181,66 @@ class InterfaceListResponse(BaseModel):
 
 
 class NetworkApplyRequest(BaseModel):
-    role: str = Field(min_length=1, max_length=16)
-    method: str = Field(min_length=1, max_length=16)
+    interface: str = Field(min_length=1, max_length=64)
+    method: str = Field(pattern="^(dhcp|static|none)$")
+    role: str = Field(default="management", pattern="^(management|capture)$")
     address: str | None = Field(default=None, max_length=64)
     gateway: str | None = Field(default=None, max_length=64)
-    dns: list[str] = Field(default_factory=list, max_length=8)
-    confirm: bool = False
-
-    @model_validator(mode="after")
-    def validate_network_apply(self) -> "NetworkApplyRequest":
-        if self.role not in {"management", "capture"}:
-            raise ValueError("role must be management or capture")
-        if self.method not in {"dhcp", "static", "none"}:
-            raise ValueError("method must be dhcp, static, or none")
-        if self.method == "static" and not (self.address or "").strip():
-            raise ValueError("static method requires address")
-        cleaned: list[str] = []
-        for item in self.dns:
-            value = item.strip()
-            if value:
-                cleaned.append(value)
-        self.dns = cleaned
-        return self
+    dns: list[str] = Field(default_factory=list, max_length=4)
 
 
-class AssetPageResponse(BaseModel):
-    items: list[AssetRecord]
-    limit: int
-    offset: int
-    total: int
+class NetworkApplyResponse(BaseModel):
+    interface: str
+    method: str
+    role: str
+    addresses: list[str]
+    gateway: str | None
+    dns: list[str]
+    access_urls: list[str]
+    connectivity_note: str
+    warnings: list[str]
 
 
-class ServicePageResponse(BaseModel):
-    items: list[ServiceRecord]
-    limit: int
-    offset: int
-    total: int
-
-
-class InventorySummaryResponse(InventorySummary):
-    pass
-
-
-class ProtocolAuditRequest(BaseModel):
-    profile: str = "default"
-    modules: list[str] | None = Field(default=None, max_length=32)
-    priority: int = Field(default=0, ge=-100, le=100)
-
-    @model_validator(mode="after")
-    def validate_modules(self) -> "ProtocolAuditRequest":
-        if self.profile != "default":
-            raise ValueError("Only the default protocol-audit profile is available")
-        if self.modules is not None:
-            if not self.modules:
-                raise ValueError("modules must not be empty when provided")
-            for name in self.modules:
-                if not name or len(name) > 32 or not name.replace("-", "").isalnum():
-                    raise ValueError(f"Invalid protocol module name: {name}")
-                if name != name.lower():
-                    raise ValueError("Protocol module names must be lowercase")
-        return self
-
-
-class ProtocolObservationResponse(BaseModel):
-    id: str
-    audit_id: str
-    asset_id: str
-    service_id: str
-    protocol: str
-    module: str
-    kind: str
-    data: dict[str, Any]
-    confidence: str
+class ScopeProposalResponse(BaseModel):
+    interface: str
     source: str
-    evidence_artifact_id: str | None
-    first_seen: datetime
-    last_seen: datetime
+    canonical_targets: list[str]
+    displayed_targets: list[str]
+    rejected_targets: list[str]
+    confidence: str
+    warnings: list[str]
+    vlan_ids: list[int]
+    topology_hints: dict[str, Any] = Field(default_factory=dict)
 
 
-class ObservationPageResponse(BaseModel):
-    items: list[ProtocolObservationResponse]
-    limit: int
-    offset: int
-    total: int
+class ScopeConfirmationRequest(BaseModel):
+    interface: str = Field(min_length=1, max_length=64)
+    targets: list[str] = Field(min_length=1, max_length=256)
+    profile: ActiveProfile
+    confirmed: bool
 
 
-class FindingsJobRequest(BaseModel):
+class ScopeConfirmationResponse(BaseModel):
+    audit_id: str
+    interface: str
+    targets: list[str]
+    profile: ActiveProfile
+    confirmed: bool
+    confirmation_id: str
+    created_at: datetime
+
+
+class ProtocolJobRequest(BaseModel):
+    modules: list[str] | None = Field(default=None, max_length=64)
     priority: int = Field(default=0, ge=-100, le=100)
 
 
-class FindingStateChangeRequest(BaseModel):
-    actor: str | None = Field(default=None, max_length=128)
-    reason: str = Field(min_length=1, max_length=512)
+class FindingJobRequest(BaseModel):
+    priority: int = Field(default=0, ge=-100, le=100)
 
 
-class FindingStateEventResponse(BaseModel):
-    id: int
-    finding_id: str
-    audit_id: str
-    created_at: datetime
-    actor: str
-    from_status: str
-    to_status: str
-    reason: str
-    details: dict[str, Any]
+class ReportJobRequest(BaseModel):
+    priority: int = Field(default=0, ge=-100, le=100)
 
 
 class FindingResponse(BaseModel):
@@ -290,25 +249,17 @@ class FindingResponse(BaseModel):
     asset_id: str | None
     service_id: str | None
     rule_id: str
-    rule_version: str
-    schema_version: int
-    family: str
-    title: str
+    status: str
     severity: str
     confidence: str
-    status: str
+    title: str
     description: str
-    rationale: str
+    evidence: dict[str, Any]
     recommendation: str
-    data: dict[str, Any]
-    observation_ids: list[str]
-    evidence_artifact_ids: list[str]
-    dedupe_key: str
-    first_seen: datetime
-    last_seen: datetime
-    created_at: datetime
-    updated_at: datetime
-    state_events: list[FindingStateEventResponse] = Field(default_factory=list)
+    first_seen_at: datetime
+    last_seen_at: datetime
+    occurrence_count: int
+    state_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class FindingPageResponse(BaseModel):
@@ -318,31 +269,18 @@ class FindingPageResponse(BaseModel):
     total: int
 
 
-class ReportJobRequest(BaseModel):
-    actor: str | None = Field(default=None, max_length=128)
-    priority: int = Field(default=0, ge=-100, le=100)
+class FindingStateRequest(BaseModel):
+    status: str = Field(pattern="^(open|accepted|resolved|false_positive)$")
+    note: str | None = Field(default=None, max_length=2048)
 
 
 class ReportResponse(BaseModel):
     id: str
     audit_id: str
-    job_id: str | None
-    schema_name: str
-    schema_version: int
-    generated_at: datetime
-    actor: str | None
-    source_hash: str
+    job_id: str
+    created_at: datetime
     summary: dict[str, Any]
     json_artifact_id: str
     html_artifact_id: str
-    created_at: datetime
     json_url: str
     html_url: str
-
-
-class ReportPageResponse(BaseModel):
-    items: list[ReportResponse]
-    limit: int
-    offset: int
-    total: int
-

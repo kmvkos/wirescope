@@ -16,6 +16,7 @@ from topology.snmp_extended import (
 from topology.snmp_role_guard import guard_snmp_router_roles
 from topology.source_health import decorate_source_health
 from topology.ssh_management import decorate_global_ssh_management, decorate_ssh_management
+from topology.traffic_overlay import decorate_traffic_overlay
 from topology.upstream import decorate_global_upstream_topology, decorate_upstream_topology
 
 
@@ -39,6 +40,12 @@ def build_topology(services, audit_id: str, *, traffic_analysis_job_id: str | No
     topology = guard_snmp_router_roles(topology)
     topology = decorate_findings(services, audit_id, topology)
     topology = decorate_source_health(services, topology, audit_ids=[audit_id])
+    topology = decorate_traffic_overlay(
+        services,
+        audit_id,
+        topology,
+        traffic_analysis_job_id=traffic_analysis_job_id,
+    )
     return _decorate_operator_view(topology)
 
 

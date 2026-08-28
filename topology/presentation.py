@@ -26,6 +26,26 @@ def _ip(value: Any) -> ipaddress._BaseAddress | None:
         return None
 
 
+def _network(value: Any) -> ipaddress._BaseNetwork | None:
+    try:
+        return ipaddress.ip_network(str(value or ""), strict=False)
+    except ValueError:
+        return None
+
+
+def _node_in_network(
+    node: dict[str, Any],
+    network: ipaddress._BaseNetwork | None,
+) -> bool:
+    if network is None:
+        return False
+    for raw in node.get("addresses") or []:
+        address = _ip(raw)
+        if address is not None and address.version == network.version and address in network:
+            return True
+    return False
+
+
 def _roles(node: dict[str, Any]) -> set[str]:
     return {str(value) for value in (node.get("roles") or []) if value}
 
@@ -39,9 +59,8 @@ def _is_link_local_only(node: dict[str, Any]) -> bool:
 def _directed_broadcasts(topology: dict[str, Any]) -> set[str]:
     result: set[str] = set()
     for segment in topology.get("segments") or []:
-        try:
-            network = ipaddress.ip_network(str(segment.get("network") or ""), strict=False)
-        except ValueError:
+        network = _network(segment.get("network"))
+        if network is None:
             continue
         if network.version == 4 and network.prefixlen < 31:
             result.add(str(network.broadcast_address))
@@ -191,13 +210,33 @@ def decorate_presentation(topology: dict[str, Any]) -> dict[str, Any]:
     segment_groups: list[dict[str, Any]] = []
     for segment in topology.get("segments") or []:
         segment_id = str(segment.get("id") or "")
-        members = [
+        segment_network = _network(segment.get("network"))
+        declared_members = [
             str(value)
             for value in (segment.get("members") or [])
             if str(value) in node_by_id
             and str(value) not in broadcast_ids
             and str(value) not in link_local_only_ids
         ]
+        declared_member_set = set(declared_members)
+
+        # Some decorators run after the canonical segmented topology is built
+        # (PCAP discovery/next-hop, SNMP, SSH).  Their nodes therefore cannot be
+        # present in the original ``segment.members`` array.  Recover logical
+        # segment membership conservatively from an explicit node address that
+        # falls inside the segment CIDR; this is a logical grouping claim only,
+        # never a physical-link or switch-port claim.
+        address_derived_members = [
+            node_id
+            for node_id, node in node_by_id.items()
+            if node_id not in declared_member_set
+            and node_id not in broadcast_ids
+            and node_id not in link_local_only_ids
+            and _node_in_network(node, segment_network)
+        ]
+        address_derived_members.sort(key=lambda node_id: labels.get(node_id, node_id))
+        members = declared_members + address_derived_members
+
         ordinary = [value for value in members if value not in infrastructure_ids]
         ordinary.sort(
             key=lambda node_id: (
@@ -212,6 +251,9 @@ def decorate_presentation(topology: dict[str, Any]) -> dict[str, Any]:
                 "segment_id": segment_id,
                 "network": segment.get("network") or segment.get("label"),
                 "member_count": len(members),
+                "declared_member_count": len(declared_members),
+                "address_derived_member_count": len(address_derived_members),
+                "address_derived_member_ids": address_derived_members,
                 "infrastructure_node_ids": [value for value in members if value in infrastructure_ids],
                 "visible_endpoint_node_ids": visible,
                 "collapsed_endpoint_node_ids": ordinary[MAX_STRUCTURAL_ENDPOINTS_PER_SEGMENT:],

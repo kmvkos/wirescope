@@ -112,6 +112,19 @@ def capture_session_response(
         duration_seconds=parameters.get("duration_seconds"),
         max_filesize_kb=parameters.get("max_filesize_kb"),
         promiscuous=bool(parameters.get("promiscuous", True)),
+        source_origin=str(
+            summary.get("source_origin")
+            or parameters.get("source_origin")
+            or "captured"
+        ),
+        original_filename=(
+            summary.get("original_filename")
+            or parameters.get("original_filename")
+        ),
+        capture_format=(
+            summary.get("capture_format")
+            or parameters.get("capture_format")
+        ),
         created_at=job.created_at,
         started_at=job.started_at,
         finished_at=job.finished_at,
@@ -157,69 +170,3 @@ def report_response(report) -> ReportResponse:
         f"/api/audits/{report.audit_id}/reports/{report.id}/export?format=html"
     )
     return ReportResponse(**payload)
-
-
-def password_change_http_error(error: AuthError) -> HTTPException:
-    if error.code == "invalid_password":
-        return HTTPException(
-            status_code=422,
-            detail={"code": error.code, "message": error.message},
-        )
-    return HTTPException(
-        status_code=401,
-        detail={
-            "code": "invalid_credentials",
-            "message": "Invalid username or password",
-        },
-    )
-
-
-def netctl_http_error(error: Exception) -> HTTPException:
-    code = getattr(error, "code", "netctl_failed")
-    message = getattr(error, "message", str(error))
-    details = getattr(error, "details", {}) or {}
-    status = 400
-    if code in {"unknown_interface", "invalid_interface"}:
-        status = 422
-    if code == "confirm_required":
-        status = 409
-    if code == "netctl_failed":
-        status = 503
-    return HTTPException(
-        status_code=status,
-        detail={
-            "code": code,
-            "message": message,
-            **({"reasons": details.get("reasons")} if details.get("reasons") else {}),
-            **details,
-        },
-    )
-
-
-def not_found(error: Exception) -> HTTPException:
-    return HTTPException(
-        status_code=404,
-        detail={"code": "not_found", "message": str(error)},
-    )
-
-
-def invalid_transition_http(error: InvalidTransition) -> HTTPException:
-    current = getattr(error.current, "value", error.current)
-    desired = getattr(error.desired, "value", error.desired)
-    return HTTPException(
-        status_code=409,
-        detail={
-            "code": "invalid_state_transition",
-            "message": str(error),
-            "entity": error.entity,
-            "current": current,
-            "desired": desired,
-        },
-    )
-
-
-def job_execution_http_error(error: JobExecutionError) -> HTTPException:
-    return HTTPException(
-        status_code=503,
-        detail=error.error.model_dump(mode="json"),
-    )

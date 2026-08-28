@@ -21,23 +21,27 @@
 ### Phase 12.1 — PCAP evidence model
 
 - [x] Зафиксировать milestone и отдельную ветку.
-- [ ] Добавить additive evidence model поверх текущего traffic-analysis результата.
-- [ ] Разделить ARP request/reply semantics.
-- [ ] Ввести состояния endpoint evidence: `confirmed_responder`, `observed_sender`, `observed_peer`, `probed_target`, `external_peer`.
-- [ ] Хранить IP<->MAC observations отдельно с source, confidence, count, first_seen/last_seen.
-- [ ] Добавить directional transport flows с `src/dst endpoint`, `src/dst port`, transport и protocol stack summary.
-- [ ] Разделить capture context и observed VLAN tags.
-- [ ] Добавить observation-domain hints без объявления их доказанной subnet topology.
-- [ ] Regression tests: ARP probing не создаёт confirmed asset; source IP/MAC создаёт identity evidence; flow сохраняет направление и порты; VLAN context не подменяет packet tag.
+- [x] Добавить additive evidence model поверх текущего traffic-analysis результата.
+- [x] Разделить ARP request/reply semantics.
+- [x] Ввести состояния endpoint evidence: `confirmed_responder`, `observed_sender`, `observed_peer`, `probed_target`, `external_peer`.
+- [x] Хранить IP<->MAC observations отдельно с source, confidence, count, first_seen/last_seen.
+- [x] Добавить directional transport flows с `src/dst endpoint`, `src/dst port`, transport и protocol stack summary.
+- [x] Разделить capture context и observed VLAN tags.
+- [x] Добавить observation-domain hints без объявления их доказанной subnet topology.
+- [x] Regression tests: ARP probing не создаёт confirmed asset; source IP/MAC создаёт identity evidence; flow сохраняет направление и порты; VLAN context не подменяет packet tag.
+
+Реализация: analyzer v6 сохраняет старые диагностические поля и добавляет evidence-модель. Поэтому существующие render/report paths пока не ломаются, а новый topology/correlation слой уже может перестать использовать `communications_graph` как доказательство физической связи.
 
 ### Phase 12.2 — Identity resolver
 
-- [ ] Вынести нормализацию evidence в отдельный identity resolver.
+- [x] Вынести нормализацию evidence в отдельный identity resolver.
 - [ ] Не объединять asset только по слабому совпадению имени/IP.
-- [ ] Ввести evidence weights и conflict handling.
+- [x] Ввести evidence weights и conflict handling.
 - [ ] ARP reply/DHCP/ND/CDP/LLDP — strong identity evidence; Ethernet/IP source mapping — contextual evidence.
-- [ ] Сохранять несколько MAC-кандидатов для IP при конфликте/HA вместо немедленного merge.
-- [ ] Не использовать L2 destination MAC как MAC удалённого L3 destination за маршрутизатором.
+- [x] Сохранять несколько MAC-кандидатов для IP при конфликте/HA вместо немедленного merge.
+- [x] Не использовать L2 destination MAC как MAC удалённого L3 destination за маршрутизатором.
+
+Текущий resolver уже исключает `probed_target`, `external_peer` и destination-only `observed_peer` из локальных asset candidates, сохраняет multiple-MAC conflict и оставляет medium-only Ethernet/IP identity как `provisional`. Следующий шаг — добавить strong discovery/DHCP/ND evidence и затем использовать resolver в topology/correlation projection.
 
 ### Phase 12.3 — Discovery protocol extraction
 
@@ -99,8 +103,8 @@ Topology edges должны строиться только из topology eviden
 
 ### Phase 12.8 — Regression and migration
 
-- [ ] Сохранить совместимость старых traffic-analysis полей на переходный период.
-- [ ] Поднять `ANALYZER_VERSION` при изменении persisted semantics.
+- [x] Сохранить совместимость старых traffic-analysis полей на переходный период.
+- [x] Поднять `ANALYZER_VERSION` при изменении persisted semantics.
 - [ ] Добавить synthetic fixtures для routed capture, ARP sweep, VLAN subinterface, external traffic, gateway and discovery protocols.
 - [ ] Реальный PCAP использовать как локальный/manual regression sample без коммита чувствительного capture в репозиторий.
 

@@ -32,6 +32,20 @@ def _bare(value: Any) -> str:
     return str(value or "").split("/", 1)[0].strip()
 
 
+def _mac(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    parts = text.split(":")
+    if len(parts) != 6:
+        return None
+    try:
+        octets = [int(part, 16) for part in parts]
+    except ValueError:
+        return None
+    if text in {"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"} or octets[0] & 0x01:
+        return None
+    return text
+
+
 def _load_document(services, job_id: str) -> dict[str, Any]:
     try:
         job = services.jobs.get_job(job_id)
@@ -120,6 +134,7 @@ def _correlation_summary(
         "pcap_resolved_identity_count": int(resolution.get("resolved_count") or 0),
         "exact_ip_matches": exact_ips,
         "exact_mac_matches": exact_macs,
+        "ip_mac_conflicts": list(matches.get("ip_mac_conflicts") or []),
         "zero_match_is_failure": False if status == "different_domain" else None,
     }
 
@@ -139,6 +154,12 @@ def _aliases(topology: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _candidate_conflicts_with_node(node: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    node_mac = _mac(node.get("mac"))
+    candidate_mac = _mac(candidate.get("mac"))
+    return bool(node_mac and candidate_mac and node_mac != candidate_mac)
+
+
 def _annotate_endpoint_states(topology: dict[str, Any], document: dict[str, Any]) -> None:
     state_by_endpoint = {
         str(item.get("endpoint")): str(item.get("state"))
@@ -152,26 +173,34 @@ def _annotate_endpoint_states(topology: dict[str, Any], document: dict[str, Any]
             continue
         for address in candidate.get("addresses") or []:
             candidate_by_address[_bare(address)] = candidate
-        if candidate.get("mac"):
-            candidate_by_mac[str(candidate["mac"]).lower()] = candidate
+        parsed_mac = _mac(candidate.get("mac"))
+        if parsed_mac:
+            candidate_by_mac[parsed_mac] = candidate
 
     for node in topology.get("nodes") or []:
         if not isinstance(node, dict):
             continue
         addresses = [_bare(value) for value in node.get("addresses") or [] if _bare(value)]
-        states = [state_by_endpoint[address] for address in addresses if address in state_by_endpoint]
-        if states:
-            priority = ["confirmed_responder", "observed_sender", "external_peer", "observed_peer", "probed_target"]
-            node["pcap_state"] = next((state for state in priority if state in states), states[0])
 
         candidate = None
         for address in addresses:
             if address in candidate_by_address:
                 candidate = candidate_by_address[address]
                 break
-        if candidate is None and node.get("mac"):
-            candidate = candidate_by_mac.get(str(node.get("mac")).lower())
-        if candidate is not None:
+        if candidate is None:
+            parsed_node_mac = _mac(node.get("mac"))
+            if parsed_node_mac:
+                candidate = candidate_by_mac.get(parsed_node_mac)
+
+        identity_conflict = bool(
+            candidate is not None and _candidate_conflicts_with_node(node, candidate)
+        )
+        states = [state_by_endpoint[address] for address in addresses if address in state_by_endpoint]
+        if states and not identity_conflict:
+            priority = ["confirmed_responder", "observed_sender", "external_peer", "observed_peer", "probed_target"]
+            node["pcap_state"] = next((state for state in priority if state in states), states[0])
+
+        if candidate is not None and not identity_conflict:
             node["pcap_local_identity"] = True
             node["pcap_identity_status"] = candidate.get("status")
             node["pcap_identity_confidence"] = candidate.get("confidence")
@@ -189,12 +218,21 @@ def _enrich_discovery_devices(topology: dict[str, Any], document: dict[str, Any]
     for index, device in enumerate(devices, start=1):
         if not isinstance(device, dict):
             continue
+        source_mac = _mac(device.get("source_mac"))
         identifiers: list[str] = []
-        if device.get("source_mac"):
-            identifiers.append(str(device["source_mac"]).lower())
+        if source_mac:
+            identifiers.append(source_mac)
         identifiers.extend(_bare(value).lower() for value in device.get("addresses") or [] if _bare(value))
         identifiers.extend(str(value).strip().lower() for value in device.get("names") or [] if str(value).strip())
         node = next((aliases.get(value) for value in identifiers if aliases.get(value)), None)
+
+        # Reused RFC1918 addresses and names are not enough to merge a PCAP
+        # discovery device into an inventory node when both sides know different
+        # unicast MACs. Preserve them as separate identities instead.
+        if node is not None and source_mac:
+            node_mac = _mac(node.get("mac"))
+            if node_mac and node_mac != source_mac:
+                node = None
 
         protocol = str(device.get("protocol") or "discovery").lower()
         names = [str(value) for value in device.get("names") or [] if value]
@@ -202,7 +240,7 @@ def _enrich_discovery_devices(topology: dict[str, Any], document: dict[str, Any]
         label = (
             (names[0] if names else None)
             or (addresses[0] if addresses else None)
-            or device.get("source_mac")
+            or source_mac
             or f"{protocol.upper()} device"
         )
         if node is None:
@@ -232,8 +270,8 @@ def _enrich_discovery_devices(topology: dict[str, Any], document: dict[str, Any]
         node["confidence"] = "confirmed"
         node["pcap_local_identity"] = True
         node["pcap_discovery"] = True
-        if device.get("source_mac"):
-            node["mac"] = str(device["source_mac"]).lower()
+        if source_mac:
+            node["mac"] = node.get("mac") or source_mac
         for key in ("platform", "software", "port_id", "port_description", "native_vlan"):
             if device.get(key) not in {None, ""}:
                 node[key] = device.get(key)

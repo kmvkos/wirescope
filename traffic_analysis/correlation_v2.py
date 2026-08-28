@@ -12,9 +12,6 @@ from collections import defaultdict
 from typing import Any
 
 
-_CONFIDENCE_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
-
-
 def _bare(value: Any) -> str:
     return str(value or "").split("/", 1)[0].strip()
 
@@ -90,6 +87,25 @@ def _candidate_names(document: dict[str, Any]) -> dict[str, set[str]]:
     return dict(names)
 
 
+def _asset_indexes(
+    assets: list[dict[str, Any]],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    by_mac: defaultdict[str, set[str]] = defaultdict(set)
+    by_ip: defaultdict[str, set[str]] = defaultdict(set)
+    for asset in assets:
+        asset_id = str(asset.get("id") or "")
+        if not asset_id:
+            continue
+        asset_mac = _mac(asset.get("mac"))
+        if asset_mac:
+            by_mac[asset_mac].add(asset_id)
+        for address in asset.get("addresses") or []:
+            bare = _bare(address)
+            if bare:
+                by_ip[bare].add(asset_id)
+    return dict(by_mac), dict(by_ip)
+
+
 def correlate_inventory_with_pcap(
     *,
     assets: list[dict[str, Any]],
@@ -145,11 +161,11 @@ def correlate_inventory_with_pcap(
         for name in names_by_candidate.get(candidate_id) or []:
             by_name[name].add(candidate_id)
 
-    matches: list[dict[str, Any]] = []
+    inventory_by_mac, inventory_by_ip = _asset_indexes(assets)
+    provisional_matches: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
     weak_observations: list[dict[str, Any]] = []
-    matched_assets: set[str] = set()
-    matched_candidates: set[str] = set()
+    conflicted_assets: set[str] = set()
 
     for asset in assets:
         asset_id = str(asset.get("id") or "")
@@ -158,16 +174,33 @@ def correlate_inventory_with_pcap(
         asset_names = _normalized_names(list(asset.get("names") or []))
 
         mac_candidates = set(by_mac.get(asset_mac, set())) if asset_mac else set()
-        ip_candidates = set().union(*(by_ip.get(address, set()) for address in asset_ips)) if asset_ips else set()
         name_candidates = set().union(*(by_name.get(name, set()) for name in asset_names)) if asset_names else set()
+        mac_owners = set(inventory_by_mac.get(asset_mac, set())) if asset_mac else set()
 
-        # Exact MAC wins, but multiple candidates with the same MAC are retained
-        # as ambiguity rather than selecting one silently.
-        if len(mac_candidates) == 1:
+        # Exact MAC is strongest only when it also identifies exactly one
+        # inventory asset. Duplicate inventory MACs may still be disambiguated
+        # later by a unique IP match, but MAC alone must not auto-merge.
+        if len(mac_candidates) > 1:
+            conflicts.append(
+                {
+                    "asset_id": asset_id,
+                    "type": "ambiguous_pcap_mac",
+                    "mac": asset_mac,
+                    "candidate_ids": sorted(mac_candidates),
+                    "reason": "Один inventory MAC соответствует нескольким PCAP identity candidates.",
+                }
+            )
+            conflicted_assets.add(asset_id)
+            continue
+
+        duplicate_inventory_mac = bool(mac_candidates and len(mac_owners) > 1)
+        if len(mac_candidates) == 1 and not duplicate_inventory_mac:
             candidate_id = next(iter(mac_candidates))
             candidate = candidate_rows[candidate_id]
-            shared_ips = sorted(asset_ips.intersection({_bare(value) for value in candidate.get("addresses") or []}))
-            matches.append(
+            shared_ips = sorted(
+                asset_ips.intersection({_bare(value) for value in candidate.get("addresses") or []})
+            )
+            provisional_matches.append(
                 {
                     "asset_id": asset_id,
                     "candidate_id": candidate_id,
@@ -183,64 +216,108 @@ def correlate_inventory_with_pcap(
                     "candidate_addresses": list(candidate.get("addresses") or []),
                 }
             )
-            matched_assets.add(asset_id)
-            matched_candidates.add(candidate_id)
-            continue
-        if len(mac_candidates) > 1:
-            conflicts.append(
-                {
-                    "asset_id": asset_id,
-                    "type": "ambiguous_mac",
-                    "mac": asset_mac,
-                    "candidate_ids": sorted(mac_candidates),
-                    "reason": "Один inventory MAC соответствует нескольким PCAP identity candidates.",
-                }
-            )
             continue
 
-        # Exact IP is acceptable only when a known inventory MAC does not
-        # contradict a different known PCAP MAC.
+        # Use only IPs that uniquely identify this inventory asset. A duplicated
+        # inventory IP cannot safely resolve a PCAP candidate by itself.
+        unique_asset_ips = {
+            address
+            for address in asset_ips
+            if inventory_by_ip.get(address, {asset_id}) == {asset_id}
+        }
+        ambiguous_inventory_ips = {
+            address: sorted(inventory_by_ip.get(address) or [])
+            for address in asset_ips
+            if len(inventory_by_ip.get(address) or set()) > 1 and by_ip.get(address)
+        }
+        ip_candidates = (
+            set().union(*(by_ip.get(address, set()) for address in unique_asset_ips))
+            if unique_asset_ips
+            else set()
+        )
+
         if len(ip_candidates) == 1:
             candidate_id = next(iter(ip_candidates))
             candidate = candidate_rows[candidate_id]
             candidate_mac = _mac(candidate.get("mac"))
+            shared_ips = sorted(
+                unique_asset_ips.intersection(
+                    {_bare(value) for value in candidate.get("addresses") or []}
+                )
+            )
             if asset_mac and candidate_mac and asset_mac != candidate_mac:
                 conflicts.append(
                     {
                         "asset_id": asset_id,
                         "candidate_id": candidate_id,
                         "type": "ip_match_mac_conflict",
-                        "shared_ips": sorted(asset_ips.intersection({_bare(value) for value in candidate.get("addresses") or []})),
+                        "shared_ips": shared_ips,
                         "inventory_mac": asset_mac,
                         "pcap_mac": candidate_mac,
                         "reason": "IP совпал, но подтверждённые MAC различаются; автоматический merge запрещён.",
                     }
                 )
+                conflicted_assets.add(asset_id)
                 continue
-            matches.append(
+            provisional_matches.append(
                 {
                     "asset_id": asset_id,
                     "candidate_id": candidate_id,
                     "confidence": "medium" if not candidate_mac or not asset_mac else "high",
                     "basis": "exact_ip",
-                    "reason": "IP совпал без противоречащего MAC evidence.",
-                    "shared_ips": sorted(asset_ips.intersection({_bare(value) for value in candidate.get("addresses") or []})),
+                    "reason": (
+                        "IP уникален для inventory asset и совпал без противоречащего MAC evidence."
+                        if not duplicate_inventory_mac
+                        else "Дублирующийся inventory MAC не использован; asset однозначно сопоставлен по уникальному IP."
+                    ),
+                    "shared_ips": shared_ips,
                     "mac": candidate_mac or asset_mac,
                     "candidate_addresses": list(candidate.get("addresses") or []),
                 }
             )
-            matched_assets.add(asset_id)
-            matched_candidates.add(candidate_id)
             continue
+
         if len(ip_candidates) > 1:
             conflicts.append(
                 {
                     "asset_id": asset_id,
-                    "type": "ambiguous_ip",
+                    "type": "ambiguous_pcap_ip",
                     "candidate_ids": sorted(ip_candidates),
-                    "reason": "Inventory IP соответствует нескольким PCAP identity candidates.",
+                    "reason": "Уникальные inventory IP этого asset соответствуют нескольким PCAP identity candidates.",
                 }
             )
+            conflicted_assets.add(asset_id)
+            continue
+
+        if duplicate_inventory_mac:
+            candidate_id = next(iter(mac_candidates))
+            conflicts.append(
+                {
+                    "asset_id": asset_id,
+                    "candidate_id": candidate_id,
+                    "type": "ambiguous_inventory_mac",
+                    "mac": asset_mac,
+                    "inventory_asset_ids": sorted(mac_owners),
+                    "reason": "Один MAC принадлежит нескольким inventory assets; MAC-only merge запрещён.",
+                }
+            )
+            conflicted_assets.add(asset_id)
+            continue
+
+        if ambiguous_inventory_ips:
+            candidate_ids = sorted(
+                set().union(*(by_ip.get(address, set()) for address in ambiguous_inventory_ips))
+            )
+            conflicts.append(
+                {
+                    "asset_id": asset_id,
+                    "type": "ambiguous_inventory_ip",
+                    "inventory_ip_owners": ambiguous_inventory_ips,
+                    "candidate_ids": candidate_ids,
+                    "reason": "Один и тот же IP присутствует у нескольких inventory assets; IP-only merge запрещён.",
+                }
+            )
+            conflicted_assets.add(asset_id)
             continue
 
         # A name is useful evidence for an operator but never enough for an
@@ -253,12 +330,47 @@ def correlate_inventory_with_pcap(
                     "candidate_ids": sorted(name_candidates),
                     "shared_names": sorted(
                         asset_names.intersection(
-                            set().union(*(set(candidate_rows[cid].get("normalized_names") or []) for cid in name_candidates))
+                            set().union(
+                                *(
+                                    set(candidate_rows[cid].get("normalized_names") or [])
+                                    for cid in name_candidates
+                                )
+                            )
                         )
                     ),
                     "reason": "Совпало только имя; для merge требуется IP/MAC evidence.",
                 }
             )
+
+    # Correlation is one-to-one. A single PCAP identity claiming multiple
+    # inventory assets is an ambiguity regardless of how strong each individual
+    # claim looked in isolation.
+    claims_by_candidate: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for claim in provisional_matches:
+        claims_by_candidate[str(claim["candidate_id"])].append(claim)
+
+    matches: list[dict[str, Any]] = []
+    for candidate_id, claims in claims_by_candidate.items():
+        if len(claims) == 1:
+            matches.append(claims[0])
+            continue
+        claimant_ids = sorted(str(item["asset_id"]) for item in claims)
+        for claim in claims:
+            asset_id = str(claim["asset_id"])
+            conflicts.append(
+                {
+                    "asset_id": asset_id,
+                    "candidate_id": candidate_id,
+                    "type": "candidate_claimed_by_multiple_assets",
+                    "inventory_asset_ids": claimant_ids,
+                    "basis": claim.get("basis"),
+                    "reason": "Один PCAP identity candidate однозначно не принадлежит нескольким inventory assets; auto-merge отменён для всех claims.",
+                }
+            )
+            conflicted_assets.add(asset_id)
+
+    matched_assets = {str(item["asset_id"]) for item in matches}
+    matched_candidates = {str(item["candidate_id"]) for item in matches}
 
     unmatched_assets = [
         {
@@ -269,7 +381,7 @@ def correlate_inventory_with_pcap(
         }
         for asset in assets
         if str(asset.get("id") or "") not in matched_assets
-        and not any(item.get("asset_id") == str(asset.get("id") or "") for item in conflicts)
+        and str(asset.get("id") or "") not in conflicted_assets
     ]
     unmatched_candidates = [
         {
@@ -313,8 +425,9 @@ def correlate_inventory_with_pcap(
         "unmatched_pcap_candidates": unmatched_candidates,
         "weak_observations": weak_observations,
         "rules": {
-            "exact_mac": "strong",
-            "exact_ip_without_mac_conflict": "medium_or_strong",
+            "exact_mac": "strong_when_unique_on_both_sides",
+            "exact_ip_without_mac_conflict": "medium_or_strong_when_inventory_ip_unique",
+            "candidate_cardinality": "one_to_one_required",
             "name_only": "never_auto_merge",
         },
     }

@@ -27,6 +27,22 @@
         return ["high", "medium", "low"].includes(raw) ? raw : "low";
     }
 
+    function categoryLabel(value) {
+        return {
+            infrastructure_gateway: "Инфраструктура · шлюз",
+            infrastructure_dhcp: "Инфраструктура · DHCP",
+            infrastructure_dns: "Инфраструктура · DNS",
+            identity_conflict: "Идентификация устройств",
+            unmatched_internal_endpoints: "Идентификация устройств",
+            service_direction: "Использование сервисов",
+            service_visibility: "Использование сервисов",
+            finding_corroboration: "Проблемы аудита",
+            capture_visibility: "Покрытие PCAP",
+            topology_coverage: "Топология",
+            traffic_graph: "Данные PCAP",
+        }[String(value || "")] || "Дополнительные доказательства";
+    }
+
     function currentJobId() {
         const link = document.getElementById("ga-export-json");
         if (!link) return "";
@@ -61,7 +77,7 @@
         const title = el("div", "ga-gap-title");
         title.append(
             el("strong", "", gap.title || "Нужны дополнительные данные"),
-            el("span", "ga-gap-category", String(gap.category || "").replaceAll("_", " "))
+            el("span", "ga-gap-category", categoryLabel(gap.category))
         );
         head.append(title, el("span", `ga-gap-priority ${priority}`, priorityLabel(gap.priority)));
         card.append(head);

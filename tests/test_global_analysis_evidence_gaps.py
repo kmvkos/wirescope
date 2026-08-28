@@ -80,6 +80,7 @@ def test_evidence_gaps_explain_what_is_missing_and_how_to_collect_it():
     categories = {row["category"] for row in gaps}
 
     assert "infrastructure_gateway" in categories
+    assert "infrastructure_dhcp" not in categories
     assert "service_direction" in categories
     assert "service_visibility" in categories
     assert "finding_corroboration" in categories
@@ -102,6 +103,10 @@ def test_evidence_gaps_explain_what_is_missing_and_how_to_collect_it():
     assert document["summary"]["evidence_gaps_high"] >= 1
     assert document["summary"]["evidence_status"] == "needs_evidence"
     assert any("как это собрать" in line for line in document["operator_summary"]["lines"])
+    assert not any(
+        "dhcp" in line.lower() and "недостаточно независимых источников" in line.lower()
+        for line in document["operator_summary"]["lines"]
+    )
 
 
 def test_evidence_gap_ids_are_stable_for_same_persisted_evidence():

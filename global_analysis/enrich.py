@@ -5,6 +5,8 @@ from __future__ import annotations
 import ipaddress
 from typing import Any
 
+from global_analysis.evidence_gaps import build_evidence_gaps
+
 
 GATEWAY_CONSISTENCY_RULE = "GA-GATEWAY-CONSISTENCY-001"
 DHCP_CONSISTENCY_RULE = "GA-DHCP-CONSISTENCY-001"
@@ -62,16 +64,31 @@ def enrich_global_analysis(
     document["evidence_references"] = lineage
     _attach_row_refs(document)
 
+    evidence_gaps = build_evidence_gaps(
+        document,
+        consistency=consistency,
+        topology=topology,
+        traffic_analysis=traffic_analysis,
+    )
+    _attach_gap_refs(document, evidence_gaps)
+    document["evidence_gaps"] = evidence_gaps
+
     divergent = [name for name, row in consistency.items() if row["status"] == "divergent"]
     insufficient = [name for name, row in consistency.items() if row["status"] == "insufficient"]
     document["operator_summary"] = _operator_summary(
         document,
         divergent=divergent,
         insufficient=insufficient,
+        evidence_gaps=evidence_gaps,
     )
     summary = document.setdefault("summary", {})
     summary["infrastructure_consistency_divergent"] = len(divergent)
     summary["infrastructure_consistency_insufficient"] = len(insufficient)
+    summary["evidence_gaps"] = len(evidence_gaps)
+    summary["evidence_gaps_high"] = sum(1 for row in evidence_gaps if row.get("priority") == "high")
+    summary["evidence_gaps_medium"] = sum(1 for row in evidence_gaps if row.get("priority") == "medium")
+    summary["evidence_gaps_low"] = sum(1 for row in evidence_gaps if row.get("priority") == "low")
+    summary["evidence_status"] = "needs_evidence" if evidence_gaps else "sufficient"
     return document
 
 
@@ -267,11 +284,41 @@ def _attach_row_refs(document: dict[str, Any]) -> None:
         ]
 
 
+def _attach_gap_refs(document: dict[str, Any], gaps: list[dict[str, Any]]) -> None:
+    traffic_job = (document.get("inputs") or {}).get("traffic_analysis_job_id")
+    traffic_artifact = (document.get("inputs") or {}).get("traffic_result_reference")
+    for gap in gaps:
+        affected = gap.get("affected") if isinstance(gap.get("affected"), dict) else {}
+        refs: list[dict[str, Any]] = []
+        if traffic_job:
+            refs.append({"type": "traffic_job", "id": traffic_job})
+        if traffic_artifact:
+            refs.append({"type": "artifact", "id": traffic_artifact})
+        for asset_id in affected.get("asset_ids") or []:
+            refs.append({"type": "asset", "id": asset_id})
+        for service_id in affected.get("service_ids") or []:
+            refs.append({"type": "service", "id": service_id})
+        for finding_id in affected.get("finding_ids") or []:
+            refs.append({"type": "finding", "id": finding_id})
+        seen: set[tuple[str, str]] = set()
+        unique: list[dict[str, Any]] = []
+        for ref in refs:
+            if not ref.get("id"):
+                continue
+            key = (str(ref.get("type")), str(ref.get("id")))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(ref)
+        gap["evidence_refs"] = unique
+
+
 def _operator_summary(
     document: dict[str, Any],
     *,
     divergent: list[str],
     insufficient: list[str],
+    evidence_gaps: list[dict[str, Any]],
 ) -> dict[str, Any]:
     summary = document.get("summary") or {}
     matched = int(summary.get("inventory_assets_observed_in_traffic") or 0)
@@ -286,6 +333,13 @@ def _operator_summary(
         lines.append("Есть расхождения infrastructure evidence: " + ", ".join(divergent) + ".")
     if insufficient:
         lines.append("Для части infrastructure checks недостаточно независимых источников: " + ", ".join(insufficient) + ".")
+    if evidence_gaps:
+        high = [row for row in evidence_gaps if row.get("priority") == "high"]
+        lines.append(
+            f"Для {len(evidence_gaps)} групп выводов нужны дополнительные данные"
+            + (f"; приоритетных пробелов: {len(high)}" if high else "")
+            + ". Ниже указано, чего именно не хватает и как это собрать."
+        )
     if document.get("partial"):
         lines.append("Корреляция частичная: см. source_health, coverage и warnings; отсутствие связи с выбранным PCAP не считается доказательством отсутствия объекта или проблемы.")
     return {

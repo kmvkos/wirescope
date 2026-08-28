@@ -1,0 +1,61 @@
+.ws-topology-pcap-evidence {
+    margin: 12px 0 16px;
+    padding: 14px 16px;
+    border: 1px solid rgba(132, 177, 214, 0.22);
+    border-radius: 12px;
+    background: rgba(9, 28, 43, 0.72);
+}
+
+.ws-topology-pcap-evidence-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.ws-topology-pcap-domain {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 3px 9px;
+    border: 1px solid rgba(132, 177, 214, 0.28);
+    border-radius: 999px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.ws-topology-pcap-domain-compatible {
+    border-color: rgba(68, 193, 145, 0.5);
+    background: rgba(68, 193, 145, 0.1);
+}
+
+.ws-topology-pcap-domain-partial,
+.ws-topology-pcap-domain-insufficient_evidence {
+    border-color: rgba(228, 180, 79, 0.5);
+    background: rgba(228, 180, 79, 0.1);
+}
+
+.ws-topology-pcap-domain-different_domain {
+    border-color: rgba(219, 105, 105, 0.55);
+    background: rgba(219, 105, 105, 0.11);
+}
+
+.ws-topology-pcap-metrics {
+    margin: 10px 0;
+}
+
+.ws-topology-pcap-details {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(132, 177, 214, 0.12);
+}
+
+.ws-topology-pcap-details summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.ws-topology-pcap-details ul {
+    margin: 8px 0 0 18px;
+}

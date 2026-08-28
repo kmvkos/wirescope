@@ -107,6 +107,7 @@
 
         const compatibility = overlay.compatibility || {};
         const correlation = overlay.correlation || {};
+        const topologyEnrichment = overlay.topology_enrichment || {};
         const discovery = overlay.discovery || {};
         const nextHop = overlay.next_hop || {};
         const trafficView = (((topology.presentation || {}).views || {}).traffic || {});
@@ -152,6 +153,14 @@
             ));
         }
 
+        if (topologyEnrichment.allowed === false) {
+            panel.append(el(
+                "p",
+                "Структурное обогащение отключено для этого PCAP: endpoint state, identity, discovery devices и next-hop не переносятся в текущую схему. Raw Traffic/Evidence при этом остаются доступны отдельно.",
+                "ws-topology-enrichment-blocked"
+            ));
+        }
+
         const grid = el("div", null, "ws-metric-grid ws-topology-pcap-metrics");
         grid.append(
             metric("Domain", statusLabel(status)),
@@ -189,7 +198,12 @@
         if (discovery.cdp_devices) discoveryParts.push(`CDP ${discovery.cdp_devices}`);
         if (discovery.lldp_devices) discoveryParts.push(`LLDP ${discovery.lldp_devices}`);
         if (discovery.mndp_devices) discoveryParts.push(`MNDP ${discovery.mndp_devices}`);
-        if (discoveryParts.length) panel.append(el("p", `Discovery: ${discoveryParts.join(" · ")}. Эти объявления используются как identity/topology evidence, а не как обычный traffic edge.`));
+        if (discoveryParts.length) {
+            const discoverySuffix = discovery.topology_enrichment_skipped
+                ? " Объявления сохранены как evidence, но не добавлены в structural map из-за observation-domain guard."
+                : " Эти объявления используются как identity/topology evidence, а не как обычный traffic edge.";
+            panel.append(el("p", `Discovery: ${discoveryParts.join(" · ")}.${discoverySuffix}`));
+        }
 
         renderReasons(panel, compatibility.reasons || []);
 

@@ -64,32 +64,58 @@ def enrich_global_analysis(
     document["evidence_references"] = lineage
     _attach_row_refs(document)
 
-    evidence_gaps = build_evidence_gaps(
-        document,
-        consistency=consistency,
-        topology=topology,
-        traffic_analysis=traffic_analysis,
-    )
+    evidence_gaps = [
+        gap
+        for gap in build_evidence_gaps(
+            document,
+            consistency=consistency,
+            topology=topology,
+            traffic_analysis=traffic_analysis,
+        )
+        if _gap_has_meaningful_starting_evidence(gap, consistency)
+    ]
     _attach_gap_refs(document, evidence_gaps)
     document["evidence_gaps"] = evidence_gaps
 
     divergent = [name for name, row in consistency.items() if row["status"] == "divergent"]
-    insufficient = [name for name, row in consistency.items() if row["status"] == "insufficient"]
+    insufficient_all = [name for name, row in consistency.items() if row["status"] == "insufficient"]
+    insufficient_with_evidence = [
+        name
+        for name, row in consistency.items()
+        if row["status"] == "insufficient" and _has_any_source_value(row)
+    ]
     document["operator_summary"] = _operator_summary(
         document,
         divergent=divergent,
-        insufficient=insufficient,
+        insufficient=insufficient_with_evidence,
         evidence_gaps=evidence_gaps,
     )
     summary = document.setdefault("summary", {})
     summary["infrastructure_consistency_divergent"] = len(divergent)
-    summary["infrastructure_consistency_insufficient"] = len(insufficient)
+    summary["infrastructure_consistency_insufficient"] = len(insufficient_all)
     summary["evidence_gaps"] = len(evidence_gaps)
     summary["evidence_gaps_high"] = sum(1 for row in evidence_gaps if row.get("priority") == "high")
     summary["evidence_gaps_medium"] = sum(1 for row in evidence_gaps if row.get("priority") == "medium")
     summary["evidence_gaps_low"] = sum(1 for row in evidence_gaps if row.get("priority") == "low")
     summary["evidence_status"] = "needs_evidence" if evidence_gaps else "sufficient"
     return document
+
+
+def _has_any_source_value(row: dict[str, Any]) -> bool:
+    sources = row.get("sources") if isinstance(row.get("sources"), dict) else {}
+    return any(bool(values) for values in sources.values())
+
+
+def _gap_has_meaningful_starting_evidence(
+    gap: dict[str, Any],
+    consistency: dict[str, Any],
+) -> bool:
+    category = str(gap.get("category") or "")
+    if not category.startswith("infrastructure_") or gap.get("status") != "needs_evidence":
+        return True
+    domain = category.removeprefix("infrastructure_")
+    row = consistency.get(domain)
+    return isinstance(row, dict) and _has_any_source_value(row)
 
 
 def _compare_sources(rule_id: str, sources: dict[str, list[str]]) -> dict[str, Any]:

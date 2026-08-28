@@ -64,7 +64,8 @@ async def import_pcap(
     """Stage an operator-supplied capture and enqueue offline normalization.
 
     The body is the raw file, not multipart. This keeps uploads streaming and
-    avoids buffering large PCAPs in application memory.
+    avoids buffering large PCAPs in application memory. Gzip-wrapped captures
+    are accepted by content and normalized by the worker before analysis.
     """
 
     max_bytes = _max_import_bytes()
@@ -112,6 +113,7 @@ async def import_pcap(
             interface=None,
             scope={
                 "source_origin": "imported",
+                "source_compression": info.compression,
                 "network_io": False,
                 "active_scope_authorized": False,
             },
@@ -124,11 +126,14 @@ async def import_pcap(
                 target=None,
                 parameters={
                     "source_origin": "imported",
+                    "source_compression": info.compression,
                     "staging_token": token,
                     "original_filename": original_name,
                     "capture_format": info.format,
                     "uploaded_bytes": info.size,
                     "upload_sha256": info.sha256,
+                    "capture_bytes": info.capture_size,
+                    "capture_sha256": info.capture_sha256,
                     "promiscuous": False,
                     "network_io": False,
                     "active_scope_authorized": False,

@@ -97,11 +97,9 @@
         content.querySelector(".ga-evidence-gaps")?.remove();
 
         const gaps = (documentData.evidence_gaps || []).filter((row) => row && typeof row === "object");
-        if (!gaps.length) {
-            renderedJob = jobId;
-            content.dataset.evidenceGapsJob = jobId;
-            return;
-        }
+        renderedJob = jobId;
+        content.dataset.evidenceGapsJob = jobId;
+        if (!gaps.length) return;
 
         const section = el("section", "ga-section ga-evidence-gaps");
         const heading = el("div", "ga-gaps-heading");
@@ -128,8 +126,6 @@
         } else {
             content.append(section);
         }
-        renderedJob = jobId;
-        content.dataset.evidenceGapsJob = jobId;
     }
 
     async function sync() {
@@ -137,7 +133,7 @@
         const content = document.getElementById("ga-content");
         const jobId = currentJobId();
         if (!content || !jobId || inFlightJob === jobId) return;
-        if (renderedJob === jobId && content.querySelector(".ga-evidence-gaps")) return;
+        if (renderedJob === jobId && content.dataset.evidenceGapsJob === jobId) return;
         inFlightJob = jobId;
         try {
             const documentData = await requestDocument(jobId);

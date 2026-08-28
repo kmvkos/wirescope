@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gzip
 import hashlib
 import os
 from pathlib import Path
@@ -30,6 +31,7 @@ _PCAP_MAGIC = {
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
 _PCAPNG_BOM_LE = b"\x4d\x3c\x2b\x1a"
 _PCAPNG_BOM_BE = b"\x1a\x2b\x3c\x4d"
+_GZIP_MAGIC = b"\x1f\x8b\x08"
 _SAFE_NAME = re.compile(r"[^A-Za-zА-Яа-яЁё0-9._ ()+\-]+")
 
 
@@ -45,8 +47,14 @@ class PcapFileInfo:
     format: str
     extension: str
     content_type: str
+    # Uploaded/staging representation. For gzip input these are the compressed
+    # bytes/hash and are used to detect tampering before the worker runs.
     size: int
     sha256: str
+    # Canonical capture representation consumed by downstream analyzers.
+    capture_size: int
+    capture_sha256: str
+    compression: str | None = None
 
 
 def sanitize_original_filename(raw: str | None) -> str:
@@ -109,6 +117,15 @@ def inspect_pcap_file(path: Path, *, max_bytes: int) -> PcapFileInfo:
         handle.seek(0)
         while chunk := handle.read(1024 * 1024):
             digest.update(chunk)
+    outer_sha256 = digest.hexdigest()
+
+    if header[:3] == _GZIP_MAGIC:
+        return _inspect_gzip_capture(
+            path,
+            max_bytes=max_bytes,
+            compressed_size=size,
+            compressed_sha256=outer_sha256,
+        )
 
     format_name, extension, content_type = _detect_format(header, size)
     return PcapFileInfo(
@@ -116,8 +133,132 @@ def inspect_pcap_file(path: Path, *, max_bytes: int) -> PcapFileInfo:
         extension=extension,
         content_type=content_type,
         size=size,
-        sha256=digest.hexdigest(),
+        sha256=outer_sha256,
+        capture_size=size,
+        capture_sha256=outer_sha256,
+        compression=None,
     )
+
+
+def _inspect_gzip_capture(
+    path: Path,
+    *,
+    max_bytes: int,
+    compressed_size: int,
+    compressed_sha256: str,
+) -> PcapFileInfo:
+    """Inspect a gzip-wrapped capture without trusting its filename.
+
+    The decompressed stream is bounded by the same policy as ordinary imports,
+    preventing a small compressed upload from expanding beyond the configured
+    evidence limit.
+    """
+
+    capture_size = 0
+    capture_digest = hashlib.sha256()
+    header = bytearray()
+    try:
+        with gzip.open(path, "rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                capture_size += len(chunk)
+                if capture_size > max_bytes:
+                    raise PcapImportValidationError(
+                        "pcap_import_too_large",
+                        "Decompressed PCAP exceeds the configured size limit",
+                    )
+                if len(header) < 32:
+                    header.extend(chunk[: 32 - len(header)])
+                capture_digest.update(chunk)
+    except PcapImportValidationError:
+        raise
+    except (OSError, EOFError) as exc:
+        raise PcapImportValidationError(
+            "pcap_import_invalid_compression",
+            "GZIP-compressed capture is corrupt or truncated",
+        ) from exc
+
+    if capture_size <= 0:
+        raise PcapImportValidationError(
+            "pcap_import_empty",
+            "GZIP-compressed capture contains no data",
+        )
+
+    format_name, extension, content_type = _detect_format(bytes(header), capture_size)
+    return PcapFileInfo(
+        format=format_name,
+        extension=extension,
+        content_type=content_type,
+        size=compressed_size,
+        sha256=compressed_sha256,
+        capture_size=capture_size,
+        capture_sha256=capture_digest.hexdigest(),
+        compression="gzip",
+    )
+
+
+def materialize_capture_file(
+    source: Path,
+    destination: Path,
+    *,
+    info: PcapFileInfo,
+    max_bytes: int,
+) -> Path:
+    """Return a canonical uncompressed capture path for durable storage.
+
+    Uncompressed uploads are already canonical and are returned as-is. Gzip
+    uploads are decompressed into a sibling temporary file and verified against
+    the metadata produced by :func:`inspect_pcap_file`.
+    """
+
+    if info.compression is None:
+        return source
+    if info.compression != "gzip":
+        raise PcapImportValidationError(
+            "pcap_import_unsupported_compression",
+            f"Unsupported capture compression: {info.compression}",
+        )
+
+    total = 0
+    digest = hashlib.sha256()
+    try:
+        with gzip.open(source, "rb") as input_file, destination.open("xb") as output:
+            os.chmod(destination, 0o600)
+            while chunk := input_file.read(1024 * 1024):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise PcapImportValidationError(
+                        "pcap_import_too_large",
+                        "Decompressed PCAP exceeds the configured size limit",
+                    )
+                output.write(chunk)
+                digest.update(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    except PcapImportValidationError:
+        destination.unlink(missing_ok=True)
+        raise
+    except (OSError, EOFError) as exc:
+        destination.unlink(missing_ok=True)
+        raise PcapImportValidationError(
+            "pcap_import_invalid_compression",
+            "GZIP-compressed capture is corrupt or truncated",
+        ) from exc
+
+    if total != info.capture_size or digest.hexdigest() != info.capture_sha256:
+        destination.unlink(missing_ok=True)
+        raise PcapImportValidationError(
+            "pcap_import_decompression_mismatch",
+            "Decompressed PCAP changed between validation and durable storage",
+        )
+
+    normalized = inspect_pcap_file(destination, max_bytes=max_bytes)
+    if normalized.compression is not None or normalized.format != info.format:
+        destination.unlink(missing_ok=True)
+        raise PcapImportValidationError(
+            "pcap_import_decompression_mismatch",
+            "Decompressed capture format changed during import",
+        )
+    return destination
 
 
 def _detect_format(header: bytes, size: int) -> tuple[str, str, str]:
@@ -151,7 +292,11 @@ def _detect_format(header: bytes, size: int) -> tuple[str, str, str]:
                 "pcap_import_invalid",
                 "PCAPNG section header length is invalid",
             )
-        trailing = int.from_bytes(header[block_length - 4 : block_length], byte_order) if block_length <= len(header) else None
+        trailing = (
+            int.from_bytes(header[block_length - 4 : block_length], byte_order)
+            if block_length <= len(header)
+            else None
+        )
         if trailing is not None and trailing != block_length:
             raise PcapImportValidationError(
                 "pcap_import_invalid",

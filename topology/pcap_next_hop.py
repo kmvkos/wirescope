@@ -21,6 +21,20 @@ def _bare(value: Any) -> str:
     return str(value or "").split("/", 1)[0].strip()
 
 
+def _mac(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    parts = text.split(":")
+    if len(parts) != 6:
+        return None
+    try:
+        octets = [int(part, 16) for part in parts]
+    except ValueError:
+        return None
+    if text in {"00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"} or octets[0] & 0x01:
+        return None
+    return text
+
+
 def _merge_unique(current: list[Any], incoming: list[Any]) -> list[Any]:
     result = list(current)
     for item in incoming:
@@ -68,9 +82,19 @@ def _ensure_node(
     role: str,
     job_id: str,
 ) -> dict[str, Any]:
-    node = aliases.get(address.lower())
-    if node is None and mac:
-        node = aliases.get(mac.lower())
+    parsed_mac = _mac(mac)
+
+    # Exact MAC is stronger than IP. This also handles a host/router whose IP
+    # changed between inventory and the retained PCAP.
+    node = aliases.get(parsed_mac) if parsed_mac else None
+    if node is None:
+        address_node = aliases.get(address.lower())
+        if address_node is not None and parsed_mac:
+            known_mac = _mac(address_node.get("mac"))
+            if known_mac and known_mac != parsed_mac:
+                address_node = None
+        node = address_node
+
     if node is None:
         node = {
             "id": f"pcap-l3:{job_id[:8]}:{address}",
@@ -85,6 +109,8 @@ def _ensure_node(
             "pcap_local_identity": True,
         }
         topology.setdefault("nodes", []).append(node)
+
+    node["addresses"] = _merge_unique(node.get("addresses") or [], [address])
     node["roles"] = _merge_unique(node.get("roles") or [], [role])
     node["provenance"] = _merge_unique(node.get("provenance") or [], ["pcap-next-hop"])
     node["pcap_local_identity"] = True
@@ -92,11 +118,12 @@ def _ensure_node(
         if node.get("kind") == "endpoint":
             node["kind"] = "network-device"
         node["roles"] = _merge_unique(node.get("roles") or [], ["next-hop"])
-    if mac:
-        node["mac"] = node.get("mac") or mac
+    if parsed_mac:
+        node["mac"] = node.get("mac") or parsed_mac
+
     aliases[address.lower()] = node
-    if mac:
-        aliases[mac.lower()] = node
+    if parsed_mac:
+        aliases[parsed_mac] = node
     return node
 
 
@@ -156,8 +183,9 @@ def decorate_pcap_next_hops(
         if not isinstance(candidate, dict):
             continue
         source_ip = _bare(candidate.get("source_ip"))
+        source_mac = _mac(candidate.get("source_mac"))
         next_hop_ip = _bare(candidate.get("next_hop_ip"))
-        next_hop_mac = str(candidate.get("next_hop_mac") or "").lower() or None
+        next_hop_mac = _mac(candidate.get("next_hop_mac"))
         if not source_ip or not next_hop_ip or source_ip == next_hop_ip:
             continue
 
@@ -165,7 +193,7 @@ def decorate_pcap_next_hops(
             topology,
             aliases,
             address=source_ip,
-            mac=None,
+            mac=source_mac,
             role="host",
             job_id=traffic_analysis_job_id,
         )

@@ -105,12 +105,14 @@
         }
         panel.hidden = false;
 
+        const presentation = topology.presentation || {};
         const compatibility = overlay.compatibility || {};
         const correlation = overlay.correlation || {};
         const topologyEnrichment = overlay.topology_enrichment || {};
         const discovery = overlay.discovery || {};
         const nextHop = overlay.next_hop || {};
-        const trafficView = (((topology.presentation || {}).views || {}).traffic || {});
+        const labelConflicts = presentation.identity_label_conflicts || [];
+        const trafficView = ((presentation.views || {}).traffic || {});
         const status = compatibility.status || "insufficient_evidence";
 
         const head = el("div", null, "ws-topology-pcap-evidence-head");
@@ -168,7 +170,9 @@
             metric("Совпало assets", correlation.matched_asset_count ?? (correlation.matches || []).length ?? 0),
             metric("Identity conflicts", (correlation.conflicts || []).length),
             metric("Discovery devices", discovery.device_count ?? 0),
-            metric("L3 next-hop", nextHop.topology_edges_added ?? nextHop.candidate_count ?? 0)
+            metric("L3 next-hop", nextHop.topology_edges_added ?? nextHop.candidate_count ?? 0),
+            metric("Next-hop отброшено", nextHop.identity_collision_count ?? 0),
+            metric("Разделено подписей", labelConflicts.length)
         );
         panel.append(grid);
 
@@ -178,6 +182,13 @@
                 "p",
                 `В структурную/L3-карту добавлено ${nextHop.topology_edges_added} подтверждённых наблюдением next-hop связей. Это immediate next hop в точке захвата, а не дорисованный полный маршрут до Internet.`,
                 "ws-ok"
+            ));
+        }
+        if (nextHop.identity_collision_count) {
+            panel.append(el(
+                "p",
+                `Отброшено next-hop кандидатов из-за identity collision: ${nextHop.identity_collision_count}. Source и next hop разрешились в одно устройство, поэтому self-loop намеренно не рисуется.`,
+                "warning"
             ));
         }
 
@@ -213,6 +224,18 @@
             const list = el("ul");
             correlation.conflicts.slice(0, 20).forEach((item) => {
                 list.append(el("li", item.reason || item.type || JSON.stringify(item)));
+            });
+            details.append(list);
+            panel.append(details);
+        }
+
+        if (labelConflicts.length) {
+            const details = el("details", null, "ws-topology-pcap-details");
+            details.append(el("summary", `Одинаковые подписи, разные identity · ${labelConflicts.length}`));
+            const list = el("ul");
+            labelConflicts.slice(0, 20).forEach((item) => {
+                const macs = (item.macs || []).join(" ↔ ");
+                list.append(el("li", `${item.label || "одинаковая подпись"}: ${macs || item.reason || "разные identity"}`));
             });
             details.append(list);
             panel.append(details);

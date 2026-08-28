@@ -67,6 +67,16 @@
         })[status] || status || "не определено";
     }
 
+    function normalizeRelationLabels(body) {
+        const replacements = {
+            l3_next_hop: "next hop",
+        };
+        body.querySelectorAll(".ws-topology-svg text").forEach((node) => {
+            const current = String(node.textContent || "").trim();
+            if (replacements[current]) node.textContent = replacements[current];
+        });
+    }
+
     function ensurePanel(body, controls) {
         let panel = body.querySelector(".ws-topology-pcap-evidence");
         if (panel) return panel;
@@ -154,6 +164,13 @@
         panel.append(grid);
 
         if (correlation.headline) panel.append(el("p", correlation.headline));
+        if (nextHop.topology_edges_added) {
+            panel.append(el(
+                "p",
+                `В структурную/L3-карту добавлено ${nextHop.topology_edges_added} подтверждённых наблюдением next-hop связей. Это immediate next hop в точке захвата, а не дорисованный полный маршрут до Internet.`,
+                "ws-ok"
+            ));
+        }
 
         const cleanup = [];
         if (trafficView.external_peers_aggregated) {
@@ -216,6 +233,7 @@
         if (!level || !pcap || !apply) return;
 
         const panel = ensurePanel(body, controls);
+        normalizeRelationLabels(body);
 
         // Capture phase runs before topology_hardening's target listener. Keep
         // the operator's chosen map instead of its legacy forced switch to
@@ -233,6 +251,7 @@
                 level.value = preferredView;
                 level.dispatchEvent(new Event("change", { bubbles: true }));
             }
+            normalizeRelationLabels(body);
 
             if (!selectedAnalysis) {
                 panel.hidden = true;
@@ -245,15 +264,21 @@
                     `/audits/${encodeURIComponent(auditId)}/topology?traffic_analysis_job_id=${encodeURIComponent(selectedAnalysis)}`
                 );
                 renderPanel(panel, topology);
+                normalizeRelationLabels(body);
             } catch (error) {
                 panel.hidden = false;
                 panel.replaceChildren(el("p", error.message, "error"));
             }
         }, true);
 
+        level.addEventListener("change", () => {
+            setTimeout(() => normalizeRelationLabels(body), 0);
+        });
+
         if (mode) {
             mode.addEventListener("change", () => {
                 panel.hidden = mode.value === "global" || !pcap.value;
+                setTimeout(() => normalizeRelationLabels(body), 0);
             });
         }
     }
@@ -261,6 +286,7 @@
     async function render(body, auditId) {
         const result = await baseRenderer.render(body, auditId);
         await attach(body, auditId);
+        normalizeRelationLabels(body);
         return result;
     }
 

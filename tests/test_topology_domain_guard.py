@@ -52,10 +52,22 @@ def test_different_domain_skips_pcap_next_hop_structural_projection(monkeypatch)
     )
 
 
-def test_different_domain_keeps_discovery_as_overlay_evidence_without_adding_devices(monkeypatch):
+def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_current_assets(monkeypatch):
     document = {
-        "identity_resolution": {"candidates": []},
-        "endpoint_evidence": [],
+        "identity_resolution": {
+            "candidates": [
+                {
+                    "candidate_id": "foreign-1",
+                    "status": "resolved",
+                    "confidence": "high",
+                    "mac": "00:11:22:33:44:55",
+                    "addresses": ["10.0.0.1"],
+                }
+            ]
+        },
+        "endpoint_evidence": [
+            {"endpoint": "10.0.0.1", "state": "confirmed_responder"}
+        ],
         "discovery_evidence_status": {"status": "available"},
         "discovery_evidence": {
             "devices": [
@@ -103,7 +115,17 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_adding_dev
     )
     topology = {
         "overlay": {"traffic_analysis_job_id": "pcap-job", "interface": "ens38"},
-        "nodes": [],
+        "nodes": [
+            {
+                "id": "asset:current-private-ip",
+                "kind": "asset",
+                "label": "10.0.0.1",
+                "addresses": ["10.0.0.1"],
+                "mac": "66:77:88:99:aa:bb",
+                "roles": [],
+                "provenance": ["inventory"],
+            }
+        ],
         "edges": [],
         "warnings": [],
     }
@@ -115,7 +137,19 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_adding_dev
         traffic_analysis_job_id="pcap-job",
     )
 
-    assert result["nodes"] == []
+    assert len(result["nodes"]) == 1
+    current = result["nodes"][0]
+    assert current["id"] == "asset:current-private-ip"
+    assert "pcap_state" not in current
+    assert "pcap_local_identity" not in current
+    assert "pcap-identity" not in current["provenance"]
+
+    assert result["overlay"]["topology_enrichment"]["allowed"] is False
+    assert (
+        result["overlay"]["topology_enrichment"]["status"]
+        == "skipped_different_domain"
+    )
+    assert result["overlay"]["topology_enrichment"]["endpoint_annotation_applied"] is False
     assert result["overlay"]["discovery"]["device_count"] == 1
     assert result["overlay"]["discovery"]["lldp_devices"] == 1
     assert result["overlay"]["discovery"]["topology_nodes_added"] == 0

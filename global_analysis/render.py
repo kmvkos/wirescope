@@ -85,6 +85,8 @@ def _status(value: Any) -> str:
         "sufficient": "достаточно данных",
         "partial": "частично",
         "missing": "нет данных",
+        "needs_evidence": "нужны дополнительные данные",
+        "conflicting_evidence": "источники расходятся",
         "service_traffic_observed": "трафик связанной службы наблюдался",
         "asset_traffic_observed": "трафик связанного устройства наблюдался",
         "uncorrelated": "не сопоставлено с выбранным PCAP",
@@ -92,6 +94,14 @@ def _status(value: Any) -> str:
     }
     raw = str(value or "unknown")
     return labels.get(raw, raw)
+
+
+def _priority(value: Any) -> str:
+    return {
+        "high": "высокий приоритет",
+        "medium": "средний приоритет",
+        "low": "низкий приоритет",
+    }.get(str(value or ""), str(value or "обычный приоритет"))
 
 
 def _source_line(name: str, values: Any) -> str:
@@ -141,6 +151,67 @@ def _operator_lines(document: dict[str, Any]) -> list[str]:
     return result
 
 
+def _append_gap_text(lines: list[str], document: dict[str, Any]) -> None:
+    gaps = [row for row in document.get("evidence_gaps") or [] if isinstance(row, dict)]
+    if not gaps:
+        return
+    lines.extend(["", "ЧЕГО НЕ ХВАТАЕТ ДЛЯ БОЛЕЕ СИЛЬНЫХ ВЫВОДОВ", "------------------------------------------"])
+    for index, gap in enumerate(gaps, start=1):
+        lines.append(
+            f"{index}. [{_priority(gap.get('priority'))}; {_status(gap.get('status'))}] {_text(gap.get('title'))}"
+        )
+        known = [str(item) for item in gap.get("known_evidence") or [] if item]
+        missing = [str(item) for item in gap.get("missing_evidence") or [] if item]
+        options = [str(item) for item in gap.get("collection_options") or [] if item]
+        if known:
+            lines.append("   Что уже есть:")
+            lines.extend(f"   - {item}" for item in known)
+        if missing:
+            lines.append("   Чего не хватает:")
+            lines.extend(f"   - {item}" for item in missing)
+        if options:
+            lines.append("   Как добрать данные:")
+            lines.extend(f"   - {item}" for item in options)
+        conclusion = gap.get("safe_conclusion")
+        if conclusion:
+            lines.append(f"   Пока корректно утверждать: {conclusion}")
+        lines.append("")
+
+
+def _append_gap_markdown(lines: list[str], document: dict[str, Any]) -> None:
+    gaps = [row for row in document.get("evidence_gaps") or [] if isinstance(row, dict)]
+    if not gaps:
+        return
+    lines.extend(["", "## Чего не хватает для более сильных выводов", ""])
+    for gap in gaps:
+        lines.extend(
+            [
+                f"### {_text(gap.get('title'))}",
+                "",
+                f"**Статус:** {_status(gap.get('status'))} · **Приоритет:** {_priority(gap.get('priority'))}",
+                "",
+            ]
+        )
+        known = [str(item) for item in gap.get("known_evidence") or [] if item]
+        missing = [str(item) for item in gap.get("missing_evidence") or [] if item]
+        options = [str(item) for item in gap.get("collection_options") or [] if item]
+        if known:
+            lines.extend(["**Что уже есть:**", ""])
+            lines.extend(f"- {item}" for item in known)
+            lines.append("")
+        if missing:
+            lines.extend(["**Чего не хватает:**", ""])
+            lines.extend(f"- {item}" for item in missing)
+            lines.append("")
+        if options:
+            lines.extend(["**Как добрать данные:**", ""])
+            lines.extend(f"- {item}" for item in options)
+            lines.append("")
+        conclusion = gap.get("safe_conclusion")
+        if conclusion:
+            lines.extend([f"> **Пока корректно утверждать:** {conclusion}", ""])
+
+
 def render_text(document: dict[str, Any]) -> str:
     summary = document.get("summary") or {}
     audit = document.get("audit") or {}
@@ -165,6 +236,8 @@ def render_text(document: dict[str, Any]) -> str:
     else:
         lines.append("Сопоставление выполнено по сохранённым результатам аудита, анализа PCAP и топологии.")
 
+    _append_gap_text(lines, document)
+
     lines.extend(
         [
             "",
@@ -179,6 +252,7 @@ def render_text(document: dict[str, Any]) -> str:
             f"Служб, использование которых наблюдалось в PCAP: {int(summary.get('services_observed_in_traffic') or 0)}",
             f"Проблем аудита: {int(summary.get('findings') or 0)}",
             f"Внешних коммуникаций у точно сопоставленных устройств: {int(summary.get('external_communications') or 0)}",
+            f"Групп выводов, которым нужны дополнительные данные: {int(summary.get('evidence_gaps') or 0)}",
             "",
             "СОГЛАСОВАННОСТЬ ДАННЫХ ОБ ИНФРАСТРУКТУРЕ",
             "-----------------------------------------",
@@ -258,6 +332,8 @@ def render_markdown(document: dict[str, Any]) -> str:
     if not operator_lines:
         lines.append("- Сопоставление выполнено по сохранённым результатам аудита, анализа PCAP и топологии.")
 
+    _append_gap_markdown(lines, document)
+
     lines.extend(
         [
             "",
@@ -274,6 +350,7 @@ def render_markdown(document: dict[str, Any]) -> str:
             f"| Службы, использование которых наблюдалось в PCAP | {int(summary.get('services_observed_in_traffic') or 0)} |",
             f"| Проблемы аудита | {int(summary.get('findings') or 0)} |",
             f"| Внешние коммуникации точно сопоставленных устройств | {int(summary.get('external_communications') or 0)} |",
+            f"| Группы выводов, которым нужны дополнительные данные | {int(summary.get('evidence_gaps') or 0)} |",
             "",
             "## Согласованность данных об инфраструктуре",
             "",

@@ -1,8 +1,8 @@
 from topology import pcap_next_hop
 
 
-def test_same_source_and_next_hop_mac_is_counted_and_not_projected(monkeypatch):
-    document = {
+def _document() -> dict:
+    return {
         "next_hop_evidence": {
             "candidate_count": 1,
             "high_confidence_count": 1,
@@ -12,7 +12,7 @@ def test_same_source_and_next_hop_mac_is_counted_and_not_projected(monkeypatch):
                     "source_ip": "10.11.11.82",
                     "source_mac": "00:11:22:33:44:55",
                     "next_hop_ip": "10.11.11.1",
-                    "next_hop_mac": "00:11:22:33:44:55",
+                    "next_hop_mac": "66:77:88:99:aa:bb",
                     "confidence": "high",
                     "flow_count": 5,
                     "remote_destination_count": 5,
@@ -20,6 +20,11 @@ def test_same_source_and_next_hop_mac_is_counted_and_not_projected(monkeypatch):
             ],
         }
     }
+
+
+def test_same_source_and_next_hop_mac_is_counted_and_not_projected(monkeypatch):
+    document = _document()
+    document["next_hop_evidence"]["candidates"][0]["next_hop_mac"] = "00:11:22:33:44:55"
     monkeypatch.setattr(
         pcap_next_hop,
         "_load_document",
@@ -44,27 +49,21 @@ def test_same_source_and_next_hop_mac_is_counted_and_not_projected(monkeypatch):
     assert result["edges"] == []
     assert result["overlay"]["next_hop"]["topology_edges_added"] == 0
     assert result["overlay"]["next_hop"]["identity_collision_count"] == 1
+    assert result["overlay"]["next_hop"]["topology_projection_skipped"] is False
 
 
 def test_two_addresses_already_resolving_to_one_asset_do_not_create_self_loop(monkeypatch):
-    document = {
-        "next_hop_evidence": {
-            "candidate_count": 1,
-            "high_confidence_count": 0,
-            "ambiguous": [],
-            "candidates": [
-                {
-                    "source_ip": "10.11.11.37",
-                    "source_mac": None,
-                    "next_hop_ip": "10.11.11.82",
-                    "next_hop_mac": None,
-                    "confidence": "medium",
-                    "flow_count": 1,
-                    "remote_destination_count": 1,
-                }
-            ],
+    document = _document()
+    candidate = document["next_hop_evidence"]["candidates"][0]
+    candidate.update(
+        {
+            "source_ip": "10.11.11.37",
+            "source_mac": None,
+            "next_hop_ip": "10.11.11.82",
+            "next_hop_mac": None,
+            "confidence": "medium",
         }
-    }
+    )
     monkeypatch.setattr(
         pcap_next_hop,
         "_load_document",
@@ -73,7 +72,7 @@ def test_two_addresses_already_resolving_to_one_asset_do_not_create_self_loop(mo
     topology = {
         "overlay": {
             "traffic_analysis_job_id": "pcap-job",
-            "compatibility": {"status": "partial"},
+            "compatibility": {"status": "compatible"},
         },
         "nodes": [
             {
@@ -99,3 +98,69 @@ def test_two_addresses_already_resolving_to_one_asset_do_not_create_self_loop(mo
     assert node["provenance"] == ["inventory"]
     assert result["edges"] == []
     assert result["overlay"]["next_hop"]["identity_collision_count"] == 1
+
+
+def test_partial_domain_retains_next_hop_evidence_without_structural_projection(monkeypatch):
+    document = _document()
+    monkeypatch.setattr(
+        pcap_next_hop,
+        "_load_document",
+        lambda _services, _job_id: document,
+    )
+    topology = {
+        "overlay": {
+            "traffic_analysis_job_id": "pcap-job",
+            "compatibility": {"status": "partial"},
+            "topology_enrichment": {
+                "allowed": False,
+                "status": "skipped_unconfirmed_domain",
+                "reason": "partial_observation_domain",
+            },
+        },
+        "nodes": [],
+        "edges": [],
+    }
+
+    result = pcap_next_hop.decorate_pcap_next_hops(
+        object(),
+        topology,
+        traffic_analysis_job_id="pcap-job",
+    )
+
+    assert result["nodes"] == []
+    assert result["edges"] == []
+    next_hop = result["overlay"]["next_hop"]
+    assert next_hop["candidate_count"] == 1
+    assert next_hop["high_confidence_count"] == 1
+    assert next_hop["topology_edges_added"] == 0
+    assert next_hop["topology_projection_skipped"] is True
+    assert next_hop["topology_projection_skip_reason"] == "partial_observation_domain"
+
+
+def test_insufficient_domain_is_conservative_even_without_topology_enrichment_metadata(monkeypatch):
+    document = _document()
+    monkeypatch.setattr(
+        pcap_next_hop,
+        "_load_document",
+        lambda _services, _job_id: document,
+    )
+    topology = {
+        "overlay": {
+            "traffic_analysis_job_id": "pcap-job",
+            "compatibility": {"status": "insufficient_evidence"},
+        },
+        "nodes": [],
+        "edges": [],
+    }
+
+    result = pcap_next_hop.decorate_pcap_next_hops(
+        object(),
+        topology,
+        traffic_analysis_job_id="pcap-job",
+    )
+
+    assert result["nodes"] == []
+    assert result["edges"] == []
+    next_hop = result["overlay"]["next_hop"]
+    assert next_hop["topology_projection_skipped"] is True
+    assert next_hop["topology_projection_skip_reason"] == "insufficient_observation_domain"

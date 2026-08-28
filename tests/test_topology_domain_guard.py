@@ -21,11 +21,7 @@ def test_different_domain_skips_pcap_next_hop_structural_projection(monkeypatch)
             "ambiguous": [],
         }
     }
-    monkeypatch.setattr(
-        pcap_next_hop,
-        "_load_document",
-        lambda _services, _job_id: document,
-    )
+    monkeypatch.setattr(pcap_next_hop, "_load_document", lambda _services, _job_id: document)
     topology = {
         "overlay": {
             "traffic_analysis_job_id": "pcap-job",
@@ -36,9 +32,7 @@ def test_different_domain_skips_pcap_next_hop_structural_projection(monkeypatch)
     }
 
     result = pcap_next_hop.decorate_pcap_next_hops(
-        object(),
-        topology,
-        traffic_analysis_job_id="pcap-job",
+        object(), topology, traffic_analysis_job_id="pcap-job"
     )
 
     assert result["nodes"] == []
@@ -46,10 +40,7 @@ def test_different_domain_skips_pcap_next_hop_structural_projection(monkeypatch)
     assert result["overlay"]["next_hop"]["candidate_count"] == 1
     assert result["overlay"]["next_hop"]["topology_edges_added"] == 0
     assert result["overlay"]["next_hop"]["topology_projection_skipped"] is True
-    assert (
-        result["overlay"]["next_hop"]["topology_projection_skip_reason"]
-        == "different_observation_domain"
-    )
+    assert result["overlay"]["next_hop"]["topology_projection_skip_reason"] == "different_observation_domain"
 
 
 def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_current_assets(monkeypatch):
@@ -65,9 +56,7 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_
                 }
             ]
         },
-        "endpoint_evidence": [
-            {"endpoint": "10.0.0.1", "state": "confirmed_responder"}
-        ],
+        "endpoint_evidence": [{"endpoint": "10.0.0.1", "state": "confirmed_responder"}],
         "discovery_evidence_status": {"status": "available"},
         "discovery_evidence": {
             "devices": [
@@ -84,16 +73,8 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_
             "mndp": {"devices": []},
         },
     }
-    monkeypatch.setattr(
-        traffic_overlay,
-        "_load_document",
-        lambda _services, _job_id: document,
-    )
-    monkeypatch.setattr(
-        traffic_overlay,
-        "_inventory_assets",
-        lambda _services, _audit_id: [],
-    )
+    monkeypatch.setattr(traffic_overlay, "_load_document", lambda _services, _job_id: document)
+    monkeypatch.setattr(traffic_overlay, "_inventory_assets", lambda _services, _audit_id: [])
     monkeypatch.setattr(
         traffic_overlay,
         "assess_observation_domain",
@@ -108,8 +89,7 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_
         inventory=SimpleNamespace(latest_scope=lambda _audit_id: None),
         jobs=SimpleNamespace(
             get_audit=lambda _audit_id: SimpleNamespace(
-                scope={"targets": ["10.11.11.0/24"]},
-                interface="ens37",
+                scope={"targets": ["10.11.11.0/24"]}, interface="ens37"
             )
         ),
     )
@@ -131,10 +111,7 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_
     }
 
     result = traffic_overlay.decorate_traffic_overlay(
-        services,
-        "audit-1",
-        topology,
-        traffic_analysis_job_id="pcap-job",
+        services, "audit-1", topology, traffic_analysis_job_id="pcap-job"
     )
 
     assert len(result["nodes"]) == 1
@@ -143,21 +120,14 @@ def test_different_domain_keeps_discovery_as_overlay_evidence_without_enriching_
     assert "pcap_state" not in current
     assert "pcap_local_identity" not in current
     assert "pcap-identity" not in current["provenance"]
-
     assert result["overlay"]["topology_enrichment"]["allowed"] is False
-    assert (
-        result["overlay"]["topology_enrichment"]["status"]
-        == "skipped_different_domain"
-    )
+    assert result["overlay"]["topology_enrichment"]["status"] == "skipped_different_domain"
     assert result["overlay"]["topology_enrichment"]["endpoint_annotation_applied"] is False
     assert result["overlay"]["discovery"]["device_count"] == 1
     assert result["overlay"]["discovery"]["lldp_devices"] == 1
     assert result["overlay"]["discovery"]["topology_nodes_added"] == 0
     assert result["overlay"]["discovery"]["topology_enrichment_skipped"] is True
-    assert (
-        result["overlay"]["discovery"]["topology_enrichment_skip_reason"]
-        == "different_observation_domain"
-    )
+    assert result["overlay"]["discovery"]["topology_enrichment_skip_reason"] == "different_observation_domain"
     assert any("другому observation domain" in item for item in result["warnings"])
 
 
@@ -188,9 +158,7 @@ def test_same_ip_different_mac_does_not_overwrite_inventory_identity_during_pcap
                 }
             ]
         },
-        "endpoint_evidence": [
-            {"endpoint": "10.11.11.37", "state": "confirmed_responder"}
-        ],
+        "endpoint_evidence": [{"endpoint": "10.11.11.37", "state": "confirmed_responder"}],
         "discovery_evidence": {
             "devices": [
                 {
@@ -205,25 +173,86 @@ def test_same_ip_different_mac_does_not_overwrite_inventory_identity_during_pcap
     }
 
     traffic_overlay._annotate_endpoint_states(topology, document)
-    added = traffic_overlay._enrich_discovery_devices(
-        topology,
-        document,
-        "pcap-job",
-    )
+    added = traffic_overlay._enrich_discovery_devices(topology, document, "pcap-job")
 
     assert added == 1
     assert len(topology["nodes"]) == 2
-
     inventory = next(node for node in topology["nodes"] if node["id"] == "asset:inventory-host")
     assert inventory["mac"] == "00:11:22:33:44:55"
     assert inventory["kind"] == "asset"
     assert inventory["provenance"] == ["inventory"]
     assert "pcap_state" not in inventory
     assert "pcap_local_identity" not in inventory
-
     pcap_device = next(node for node in topology["nodes"] if node["id"] != "asset:inventory-host")
     assert pcap_device["kind"] == "network-device"
     assert pcap_device["mac"] == "66:77:88:99:aa:bb"
     assert pcap_device["addresses"] == ["10.11.11.37"]
     assert pcap_device["names"] == ["pcap-switch"]
     assert "pcap-discovery" in pcap_device["provenance"]
+
+
+def test_next_hop_projection_keeps_same_ip_different_mac_as_separate_identity():
+    topology = {
+        "nodes": [
+            {
+                "id": "asset:existing-router",
+                "kind": "asset",
+                "label": "10.11.11.1",
+                "addresses": ["10.11.11.1"],
+                "mac": "00:11:22:33:44:55",
+                "roles": [],
+                "provenance": ["inventory"],
+            }
+        ]
+    }
+    aliases = pcap_next_hop._aliases(topology)
+
+    projected = pcap_next_hop._ensure_node(
+        topology,
+        aliases,
+        address="10.11.11.1",
+        mac="66:77:88:99:aa:bb",
+        role="router",
+        job_id="pcap-job",
+    )
+
+    assert projected["id"] != "asset:existing-router"
+    assert projected["mac"] == "66:77:88:99:aa:bb"
+    assert "router" in projected["roles"]
+    existing = topology["nodes"][0]
+    assert existing["mac"] == "00:11:22:33:44:55"
+    assert existing["roles"] == []
+    assert existing["provenance"] == ["inventory"]
+
+
+def test_next_hop_projection_reuses_exact_mac_and_records_changed_ip():
+    topology = {
+        "nodes": [
+            {
+                "id": "asset:moving-host",
+                "kind": "asset",
+                "label": "old-host",
+                "addresses": ["10.11.11.37"],
+                "mac": "00:11:22:33:44:55",
+                "roles": [],
+                "provenance": ["inventory"],
+            }
+        ]
+    }
+    aliases = pcap_next_hop._aliases(topology)
+
+    projected = pcap_next_hop._ensure_node(
+        topology,
+        aliases,
+        address="10.11.11.82",
+        mac="00:11:22:33:44:55",
+        role="host",
+        job_id="pcap-job",
+    )
+
+    assert projected["id"] == "asset:moving-host"
+    assert topology["nodes"] == [projected]
+    assert projected["addresses"] == ["10.11.11.37", "10.11.11.82"]
+    assert projected["mac"] == "00:11:22:33:44:55"
+    assert "host" in projected["roles"]
+    assert "pcap-next-hop" in projected["provenance"]

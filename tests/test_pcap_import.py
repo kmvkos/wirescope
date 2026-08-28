@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gzip
+import hashlib
 import struct
 
 from sqlalchemy import func, select
@@ -77,6 +79,7 @@ def test_import_classic_pcap_becomes_normal_capture_source(api_context):
     audit = jobs.get_audit(ids["audit_id"])
     assert queued.type == "packet_capture"
     assert queued.parameters["source_origin"] == "imported"
+    assert queued.parameters["source_compression"] is None
     assert queued.parameters["network_io"] is False
     assert queued.parameters["active_scope_authorized"] is False
     assert audit.profile == "packet_capture"
@@ -103,6 +106,7 @@ def test_import_classic_pcap_becomes_normal_capture_source(api_context):
 
     result = evidence.read_json(jobs.artifact(completed.result_reference))
     assert result["source_origin"] == "imported"
+    assert result["source_compression"] is None
     assert result["network_io_performed"] is False
     assert result["active_scope_authorized"] is False
     raw = jobs.artifact(result["pcap_artifact_id"])
@@ -115,6 +119,90 @@ def test_import_classic_pcap_becomes_normal_capture_source(api_context):
     assert traffic_job.type == "traffic_analysis"
     assert traffic_job.parameters["source_capture_job_id"] == completed.id
     assert traffic_job.parameters["pcap_artifact_id"] == raw.id
+
+
+def test_import_accepts_gzip_wrapped_pcap_with_pcap_filename(api_context):
+    """Regression for device exports that gzip data but keep a .pcap name."""
+
+    app, jobs, evidence, _environment = api_context
+    capture = _classic_pcap()
+    compressed = gzip.compress(capture, mtime=0)
+    assert compressed[:4] == b"\x1f\x8b\x08\x00"
+
+    accepted = _upload(
+        app,
+        compressed,
+        "capture-GigabitEthernet0-Vlan4-Aug 28 11-12-39.pcap",
+    )
+    assert accepted.status_code == 202, accepted.text
+    queued = jobs.get_job(accepted.json()["job_id"])
+    assert queued.parameters["source_compression"] == "gzip"
+    assert queued.parameters["uploaded_bytes"] == len(compressed)
+    assert queued.parameters["capture_bytes"] == len(capture)
+    assert queued.parameters["upload_sha256"] == hashlib.sha256(compressed).hexdigest()
+    assert queued.parameters["capture_sha256"] == hashlib.sha256(capture).hexdigest()
+
+    staging = evidence.root / "_imports" / f"pcap.tmp-{queued.parameters['staging_token']}"
+    _run_worker(api_context)
+    completed = jobs.get_job(queued.id)
+    assert completed.status.value == "completed"
+    assert not staging.exists()
+    assert not staging.with_name(f"{staging.name}.normalized").exists()
+
+    result = evidence.read_json(jobs.artifact(completed.result_reference))
+    assert result["source_origin"] == "imported"
+    assert result["source_compression"] == "gzip"
+    assert result["capture_format"] == "pcap"
+    assert result["uploaded_bytes"] == len(compressed)
+    assert result["byte_count"] == len(capture)
+    assert result["capture_sha256"] == hashlib.sha256(capture).hexdigest()
+
+    raw = jobs.artifact(result["pcap_artifact_id"])
+    assert raw.content_type == "application/vnd.tcpdump.pcap"
+    assert raw.relative_path.endswith(".pcap")
+    assert raw.size == len(capture)
+    # Managed evidence is canonical/uncompressed even though the operator file
+    # was gzip-wrapped. This keeps all downstream analyzers format-agnostic.
+    assert evidence.read_bytes(raw) == capture
+
+    download = http_request(app, "GET", f"/api/v1/jobs/{completed.id}/pcap")
+    assert download.status_code == 200
+    assert download.content == capture
+    assert download.content[:4] == b"\xd4\xc3\xb2\xa1"
+
+    analysis = http_request(app, "POST", f"/api/v1/captures/{completed.id}/analyze")
+    assert analysis.status_code == 202
+
+
+def test_import_accepts_gzip_wrapped_pcapng(api_context):
+    app, jobs, evidence, _environment = api_context
+    capture = _pcapng()
+    compressed = gzip.compress(capture, mtime=0)
+
+    accepted = _upload(app, compressed, "external.pcapng.gz")
+    assert accepted.status_code == 202, accepted.text
+    _run_worker(api_context)
+
+    job = jobs.get_job(accepted.json()["job_id"])
+    result = evidence.read_json(jobs.artifact(job.result_reference))
+    assert result["source_compression"] == "gzip"
+    assert result["capture_format"] == "pcapng"
+    raw = jobs.artifact(result["pcap_artifact_id"])
+    assert raw.content_type == "application/x-pcapng"
+    assert raw.relative_path.endswith(".pcapng")
+    assert evidence.read_bytes(raw) == capture
+
+
+def test_import_rejects_corrupt_gzip_before_creating_job(api_context):
+    app, jobs, evidence, _environment = api_context
+    invalid = b"\x1f\x8b\x08\x00" + (b"not-a-valid-gzip" * 4)
+
+    response = _upload(app, invalid, "broken.pcap")
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "pcap_import_invalid_compression"
+    assert jobs.list_jobs(limit=100, offset=0, job_type="packet_capture").total == 0
+    imports = evidence.root / "_imports"
+    assert not imports.exists() or not list(imports.iterdir())
 
 
 def test_import_accepts_modified_libpcap_variants(api_context):
@@ -192,6 +280,21 @@ def test_import_size_limit_is_enforced_before_durable_job(api_context, monkeypat
     payload = _classic_pcap() + (b"x" * (1024 * 1024))
 
     response = _upload(app, payload, "too-large.pcap")
+    assert response.status_code == 413
+    assert response.json()["detail"]["code"] == "pcap_import_too_large"
+    assert jobs.list_jobs(limit=100, offset=0, job_type="packet_capture").total == 0
+    imports = evidence.root / "_imports"
+    assert not imports.exists() or not list(imports.iterdir())
+
+
+def test_import_decompressed_size_limit_blocks_gzip_expansion(api_context, monkeypatch):
+    app, jobs, evidence, _environment = api_context
+    monkeypatch.setenv("WIRESCOPE_PCAP_IMPORT_MAX_FILESIZE_MB", "1")
+    expanded = _classic_pcap() + (b"x" * (1024 * 1024))
+    compressed = gzip.compress(expanded, mtime=0)
+    assert len(compressed) < 1024 * 1024
+
+    response = _upload(app, compressed, "compressed-too-large.pcap")
     assert response.status_code == 413
     assert response.json()["detail"]["code"] == "pcap_import_too_large"
     assert jobs.list_jobs(limit=100, offset=0, job_type="packet_capture").total == 0

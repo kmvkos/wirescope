@@ -17,6 +17,18 @@ def _classic_pcap() -> bytes:
     )
 
 
+def _modified_pcap(*, little_endian: bool) -> bytes:
+    if little_endian:
+        return (
+            b"\x34\xcd\xb2\xa1"
+            + struct.pack("<HHIIII", 2, 4, 0, 0, 65535, 1)
+        )
+    return (
+        b"\xa1\xb2\xcd\x34"
+        + struct.pack(">HHIIII", 2, 4, 0, 0, 65535, 1)
+    )
+
+
 def _pcapng() -> bytes:
     return (
         b"\x0a\x0d\x0d\x0a"
@@ -105,6 +117,30 @@ def test_import_classic_pcap_becomes_normal_capture_source(api_context):
     assert traffic_job.parameters["pcap_artifact_id"] == raw.id
 
 
+def test_import_accepts_modified_libpcap_variants(api_context):
+    app, jobs, evidence, _environment = api_context
+
+    for little_endian in (True, False):
+        payload = _modified_pcap(little_endian=little_endian)
+        accepted = _upload(
+            app,
+            payload,
+            f"modified-{'le' if little_endian else 'be'}.pcap",
+        )
+        assert accepted.status_code == 202, accepted.text
+        _run_worker(api_context)
+
+        job = jobs.get_job(accepted.json()["job_id"])
+        assert job.status.value == "completed"
+        session = http_request(app, "GET", f"/api/v1/captures/{job.id}").json()
+        assert session["source_origin"] == "imported"
+        assert session["capture_format"] == "pcap"
+        result = evidence.read_json(jobs.artifact(job.result_reference))
+        raw = jobs.artifact(result["pcap_artifact_id"])
+        assert raw.content_type == "application/vnd.tcpdump.pcap"
+        assert evidence.read_bytes(raw) == payload
+
+
 def test_import_pcapng_preserves_format_filename_and_download(api_context):
     app, jobs, evidence, _environment = api_context
     payload = _pcapng()
@@ -139,6 +175,7 @@ def test_import_rejects_invalid_empty_and_viewer_uploads(api_context):
     invalid = _upload(app, b"this is not a capture", "fake.pcap")
     assert invalid.status_code == 422
     assert invalid.json()["detail"]["code"] == "pcap_import_unsupported"
+    assert "magic: 74 68 69 73" in invalid.json()["detail"]["message"]
 
     empty = _upload(app, b"", "empty.pcap")
     assert empty.status_code == 422

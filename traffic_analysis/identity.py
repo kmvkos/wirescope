@@ -1,7 +1,7 @@
 """Conservative identity resolution for traffic-analysis evidence.
 
 The resolver never treats an ARP request target or a remote external peer as a
-local asset by default.  It groups IP observations around MAC identities only
+local asset by default. It groups IP observations around MAC identities only
 when the evidence model supports that relationship and keeps ambiguity explicit.
 """
 
@@ -13,6 +13,21 @@ from typing import Any
 
 _CONFIDENCE_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
 
+# These observations are emitted by a protocol spoken on/for the local
+# observation domain. They are strong enough to override the generic
+# `external_peer` classification of an address. This matters for routers that
+# advertise a public management/WAN address in CDP/LLDP/MNDP.
+_STRONG_LOCAL_EVIDENCE = {
+    "arp_reply_sender",
+    "cdp_advertisement",
+    "lldp_management",
+    "mndp_advertisement",
+    "dhcp_ack_assignment",
+    "dhcp_offer_assignment",
+    "nd_advertisement",
+    "router_advertisement",
+}
+
 
 def _strongest_confidence(values: list[str]) -> str:
     return max(values or ["none"], key=lambda value: _CONFIDENCE_RANK.get(value, 0))
@@ -22,13 +37,22 @@ def _evidence_total(link: dict[str, Any]) -> int:
     return sum(int(item.get("count") or 0) for item in (link.get("evidence") or []))
 
 
+def _has_strong_local_evidence(link: dict[str, Any]) -> bool:
+    return any(
+        str(item.get("type") or "") in _STRONG_LOCAL_EVIDENCE
+        and int(item.get("count") or 0) > 0
+        for item in (link.get("evidence") or [])
+    )
+
+
 def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
-    """Build explainable local identity candidates from v6 evidence.
+    """Build explainable local identity candidates from evidence.
 
     Rules are deliberately conservative:
 
     * `probed_target` is not an asset candidate.
-    * `external_peer` is not a local asset candidate.
+    * `external_peer` is not local unless an L2/discovery protocol explicitly
+      ties that address to a local MAC identity.
     * multiple MACs claiming the same IP remain a conflict, not an automatic merge.
     * high-confidence links may produce `resolved` candidates; medium-only links
       remain `provisional` until another source confirms them.
@@ -71,8 +95,13 @@ def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
         conflict_addresses = sorted(address for address in addresses if address in conflicts)
         evidence_types: Counter[str] = Counter()
         evidence_count = 0
+        strongly_local_addresses: set[str] = set()
+
         for link in mac_links:
+            address = str(link.get("ip") or "")
             evidence_count += _evidence_total(link)
+            if address and _has_strong_local_evidence(link):
+                strongly_local_addresses.add(address)
             for evidence in link.get("evidence") or []:
                 name = str(evidence.get("type") or "unknown")
                 evidence_types[name] += int(evidence.get("count") or 0)
@@ -80,11 +109,12 @@ def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
         visible_addresses = [
             address
             for address in addresses
-            if endpoint_state.get(address) not in {"probed_target", "external_peer"}
+            if (
+                endpoint_state.get(address) not in {"probed_target", "external_peer"}
+                or address in strongly_local_addresses
+            )
         ]
         if not visible_addresses and addresses:
-            # Keep the MAC candidate out of local identity if every address is
-            # only an external peer/probe observation.
             continue
 
         status = "resolved" if confidence == "high" else "provisional"
@@ -104,6 +134,7 @@ def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
                     {"type": name, "count": count}
                     for name, count in evidence_types.most_common()
                 ],
+                "strong_local_addresses": sorted(strongly_local_addresses),
                 "basis": "mac_identity",
             }
         )
@@ -126,6 +157,7 @@ def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
                 "conflict_addresses": [],
                 "evidence_count": 1,
                 "evidence": [{"type": "observed_sender", "count": 1}],
+                "strong_local_addresses": [],
                 "basis": "ip_sender_only",
             }
         )
@@ -142,7 +174,7 @@ def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "schema": "traffic-identity-resolution",
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_count": len(candidates),
         "resolved_count": sum(1 for item in candidates if item["status"] == "resolved"),
         "provisional_count": sum(
@@ -155,8 +187,10 @@ def build_identity_candidates(document: dict[str, Any]) -> dict[str, Any]:
             for ip_value, mac_values in sorted(conflicts.items())
         ],
         "excluded_states": ["probed_target", "external_peer", "observed_peer"],
+        "strong_local_evidence_types": sorted(_STRONG_LOCAL_EVIDENCE),
         "limitations": [
             "Medium-confidence Ethernet/IP source links remain provisional because a routed capture may expose an immediate next-hop MAC.",
+            "A globally routable IP can still belong to a locally observed router when CDP/LLDP/MNDP or another strong local protocol explicitly advertises that identity.",
             "Multiple MAC claims for one IP are preserved as a conflict; HA/VRRP, address reuse and spoofing require separate evidence.",
         ],
     }

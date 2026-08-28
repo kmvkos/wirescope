@@ -11,11 +11,21 @@ import uuid
 from urllib.parse import unquote
 
 
+# Libpcap variants understood by Wireshark/tshark:
+# - standard microsecond timestamps (both endian orders)
+# - nanosecond timestamps (both endian orders)
+# - Alexey Kuznetsov / ss991029 "modified pcap" (both endian orders)
+#
+# WireScope does not parse packet records at import time; downstream tshark is
+# the canonical decoder. The import boundary only needs to distinguish a known
+# capture container from arbitrary uploaded bytes.
 _PCAP_MAGIC = {
-    b"\xd4\xc3\xb2\xa1",
-    b"\xa1\xb2\xc3\xd4",
-    b"\x4d\x3c\xb2\xa1",
-    b"\xa1\xb2\x3c\x4d",
+    b"\xd4\xc3\xb2\xa1",  # standard, little-endian
+    b"\xa1\xb2\xc3\xd4",  # standard, big-endian
+    b"\x4d\x3c\xb2\xa1",  # nanosecond, little-endian
+    b"\xa1\xb2\x3c\x4d",  # nanosecond, big-endian
+    b"\x34\xcd\xb2\xa1",  # modified pcap, little-endian
+    b"\xa1\xb2\xcd\x34",  # modified pcap, big-endian
 }
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
 _PCAPNG_BOM_LE = b"\x4d\x3c\x2b\x1a"
@@ -149,9 +159,10 @@ def _detect_format(header: bytes, size: int) -> tuple[str, str, str]:
             )
         return "pcapng", ".pcapng", "application/x-pcapng"
 
+    magic = " ".join(f"{byte:02x}" for byte in header[:4]) or "<empty>"
     raise PcapImportValidationError(
         "pcap_import_unsupported",
-        "File is not a supported PCAP or PCAPNG capture",
+        f"File is not a supported PCAP or PCAPNG capture (magic: {magic})",
     )
 
 

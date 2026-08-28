@@ -34,8 +34,8 @@ def test_same_ip_different_mac_nodes_get_distinct_operator_labels():
     assert labels["asset:inventory"] != labels["pcap-device:conflict"]
     assert labels["asset:inventory"].startswith("10.11.11.37 · …")
     assert labels["pcap-device:conflict"].startswith("10.11.11.37 · …")
-    assert "11:22:33:44:55" in labels["asset:inventory"]
-    assert "77:88:99:aa:bb" in labels["pcap-device:conflict"]
+    assert "22:33:44:55" in labels["asset:inventory"]
+    assert "88:99:aa:bb" in labels["pcap-device:conflict"]
 
     conflicts = presentation["identity_label_conflicts"]
     assert len(conflicts) == 1

@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import uuid
 from urllib.parse import unquote
+import zlib
 
 
 # Libpcap variants understood by Wireshark/tshark:
@@ -171,7 +172,7 @@ def _inspect_gzip_capture(
                 capture_digest.update(chunk)
     except PcapImportValidationError:
         raise
-    except (OSError, EOFError) as exc:
+    except (OSError, EOFError, zlib.error) as exc:
         raise PcapImportValidationError(
             "pcap_import_invalid_compression",
             "GZIP-compressed capture is corrupt or truncated",
@@ -237,7 +238,7 @@ def materialize_capture_file(
     except PcapImportValidationError:
         destination.unlink(missing_ok=True)
         raise
-    except (OSError, EOFError) as exc:
+    except (OSError, EOFError, zlib.error) as exc:
         destination.unlink(missing_ok=True)
         raise PcapImportValidationError(
             "pcap_import_invalid_compression",

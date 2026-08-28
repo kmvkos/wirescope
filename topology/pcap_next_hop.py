@@ -149,6 +149,21 @@ def _edge_exists(topology: dict[str, Any], source: str, target: str) -> bool:
     )
 
 
+def _projection_policy(overlay: dict[str, Any]) -> tuple[bool, str | None]:
+    enrichment = overlay.get("topology_enrichment") or {}
+    if "allowed" in enrichment:
+        return bool(enrichment.get("allowed")), enrichment.get("reason")
+
+    status = str((overlay.get("compatibility") or {}).get("status") or "insufficient_evidence")
+    if status == "compatible":
+        return True, None
+    if status == "different_domain":
+        return False, "different_observation_domain"
+    if status == "partial":
+        return False, "partial_observation_domain"
+    return False, "insufficient_observation_domain"
+
+
 def decorate_pcap_next_hops(
     services,
     topology: dict[str, Any],
@@ -165,8 +180,8 @@ def decorate_pcap_next_hops(
     high_confidence_count = int(evidence.get("high_confidence_count") or 0)
 
     overlay = dict(topology.get("overlay") or {})
-    compatibility = overlay.get("compatibility") or {}
-    if compatibility.get("status") == "different_domain":
+    projection_allowed, projection_reason = _projection_policy(overlay)
+    if not projection_allowed:
         overlay["next_hop"] = {
             "candidate_count": candidate_count,
             "high_confidence_count": high_confidence_count,
@@ -174,7 +189,7 @@ def decorate_pcap_next_hops(
             "ambiguous_count": len(evidence.get("ambiguous") or []),
             "identity_collision_count": 0,
             "topology_projection_skipped": True,
-            "topology_projection_skip_reason": "different_observation_domain",
+            "topology_projection_skip_reason": projection_reason,
         }
         topology["overlay"] = overlay
         return topology

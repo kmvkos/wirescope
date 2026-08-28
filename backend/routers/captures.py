@@ -31,6 +31,7 @@ from jobs.models import JobStatus
 from jobs.service import EntityNotFound
 from jobs.state import InvalidTransition
 from providers.bpf import BpfFilterError, normalize_bpf_filter
+from storage.pcap_import import sanitize_original_filename
 
 
 router = APIRouter()
@@ -316,13 +317,34 @@ def download_capture_pcap(
     except JobExecutionError as exc:
         raise job_execution_http_error(exc) from exc
 
-    interface = str(
-        (job.parameters or {}).get("interface") or job.target or "iface"
+    capture_format = str(document.get("capture_format") or "").lower()
+    is_pcapng = (
+        capture_format == "pcapng"
+        or path.suffix.lower() == ".pcapng"
+        or pcap_artifact.content_type == "application/x-pcapng"
     )
-    safe_iface = re.sub(r"[^A-Za-z0-9._-]", "_", interface)[:32] or "iface"
-    filename = f"wirescope-{safe_iface}-{job.id[:8]}.pcap"
+    extension = ".pcapng" if is_pcapng else ".pcap"
+    media_type = (
+        "application/x-pcapng"
+        if is_pcapng
+        else "application/vnd.tcpdump.pcap"
+    )
+
+    if str(document.get("source_origin") or "") == "imported":
+        original = sanitize_original_filename(document.get("original_filename"))
+        stem = re.sub(r"(?i)\.(pcapng|pcap)$", "", original).strip(" .")
+        safe_stem = re.sub(r"[^A-Za-zА-Яа-яЁё0-9._ ()+\-]+", "_", stem)[:80]
+        safe_stem = safe_stem or "external-capture"
+        filename = f"wirescope-import-{job.id[:8]}-{safe_stem}{extension}"
+    else:
+        interface = str(
+            (job.parameters or {}).get("interface") or job.target or "iface"
+        )
+        safe_iface = re.sub(r"[^A-Za-z0-9._-]", "_", interface)[:32] or "iface"
+        filename = f"wirescope-{safe_iface}-{job.id[:8]}{extension}"
+
     return FileResponse(
         path=path,
-        media_type="application/vnd.tcpdump.pcap",
+        media_type=media_type,
         filename=filename,
     )

@@ -34,13 +34,14 @@ class ImportedPacketCaptureHandler:
         )
         expected_sha256 = str(context.job.parameters.get("upload_sha256") or "")
         expected_size = int(context.job.parameters.get("uploaded_bytes") or 0)
+        staging = None
         try:
-            staging = import_staging_path(context.evidence_store.root, token)
-            info = inspect_pcap_file(staging, max_bytes=_max_import_bytes())
-        except PcapImportValidationError as exc:
-            raise self._validation_error(exc) from exc
+            try:
+                staging = import_staging_path(context.evidence_store.root, token)
+                info = inspect_pcap_file(staging, max_bytes=_max_import_bytes())
+            except PcapImportValidationError as exc:
+                raise self._validation_error(exc) from exc
 
-        try:
             if expected_size and info.size != expected_size:
                 raise self._validation_error(
                     PcapImportValidationError(
@@ -139,7 +140,8 @@ class ImportedPacketCaptureHandler:
                 },
             )
         finally:
-            staging.unlink(missing_ok=True)
+            if staging is not None:
+                staging.unlink(missing_ok=True)
 
     @staticmethod
     def _validation_error(exc: PcapImportValidationError) -> JobExecutionError:

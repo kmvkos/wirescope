@@ -150,6 +150,66 @@ def test_structural_projection_separates_pcap_and_hides_directed_broadcast_and_l
     assert presentation["labels"]["asset:host"] == "host.local"
 
 
+def test_late_pcap_next_hop_nodes_join_matching_segment_by_address():
+    topology = _base_topology()
+    topology["nodes"].extend(
+        [
+            {
+                "id": "pcap-l3:deadbeef:10.11.11.229",
+                "kind": "endpoint",
+                "label": "10.11.11.229",
+                "roles": ["host"],
+                "addresses": ["10.11.11.229"],
+                "provenance": ["pcap-next-hop"],
+                "confidence": "observed",
+            },
+            {
+                "id": "pcap-l3:deadbeef:10.11.11.1",
+                "kind": "network-device",
+                "label": "10.11.11.1",
+                "roles": ["router", "next-hop"],
+                "addresses": ["10.11.11.1"],
+                "provenance": ["pcap-next-hop"],
+                "confidence": "observed",
+            },
+            {
+                "id": "pcap-l3:deadbeef:8.8.8.8",
+                "kind": "endpoint",
+                "label": "8.8.8.8",
+                "roles": [],
+                "addresses": ["8.8.8.8"],
+                "provenance": ["pcap"],
+                "confidence": "observed",
+            },
+        ]
+    )
+    topology["edges"].append(
+        {
+            "id": "edge:pcap-next-hop",
+            "source": "pcap-l3:deadbeef:10.11.11.229",
+            "target": "pcap-l3:deadbeef:10.11.11.1",
+            "relation": "l3_next_hop",
+            "layer": "l3",
+            "confidence": "observed",
+            "provenance": ["pcap-next-hop"],
+        }
+    )
+
+    topology = decorate_presentation(topology)
+    structural = topology["presentation"]["views"]["structural"]
+    group = structural["segment_groups"][0]
+
+    assert "pcap-l3:deadbeef:10.11.11.1" in group["infrastructure_node_ids"]
+    assert "pcap-l3:deadbeef:10.11.11.229" in group["visible_endpoint_node_ids"]
+    assert group["address_derived_member_count"] == 2
+    assert set(group["address_derived_member_ids"]) == {
+        "pcap-l3:deadbeef:10.11.11.1",
+        "pcap-l3:deadbeef:10.11.11.229",
+    }
+    assert "pcap-l3:deadbeef:8.8.8.8" not in group["address_derived_member_ids"]
+    assert "edge:pcap-next-hop" in structural["edge_ids"]
+
+
 def test_completeness_states_exactly_what_current_evidence_can_claim():
     topology = decorate_completeness(_base_topology())
     coverage = topology["coverage"]

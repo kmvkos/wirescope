@@ -275,10 +275,12 @@ def decorate_traffic_overlay(
         document=document,
     )
 
-    _annotate_endpoint_states(topology, document)
     different_domain = compatibility.get("status") == "different_domain"
     discovery_nodes_added = 0
+    endpoint_annotation_applied = False
     if not different_domain:
+        _annotate_endpoint_states(topology, document)
+        endpoint_annotation_applied = True
         discovery_nodes_added = _enrich_discovery_devices(
             topology,
             document,
@@ -288,6 +290,13 @@ def decorate_traffic_overlay(
     overlay = dict(topology.get("overlay") or {})
     overlay["compatibility"] = compatibility
     overlay["correlation"] = correlation
+    overlay["topology_enrichment"] = {
+        "allowed": not different_domain,
+        "status": "allowed" if not different_domain else "skipped_different_domain",
+        "reason": None if not different_domain else "different_observation_domain",
+        "endpoint_annotation_applied": endpoint_annotation_applied,
+        "discovery_nodes_added": discovery_nodes_added,
+    }
     overlay["identity_resolution"] = {
         key: value
         for key, value in (document.get("identity_resolution") or {}).items()

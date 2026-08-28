@@ -46,16 +46,20 @@ def test_private_host_using_one_strong_mac_for_many_external_destinations_yields
 
     result = derive_next_hop_evidence(document)
 
+    assert result["schema_version"] == 2
     assert result["candidate_count"] == 1
     assert result["high_confidence_count"] == 1
     candidate = result["candidates"][0]
     assert candidate["source_ip"] == "10.0.18.229"
+    assert candidate["source_mac"] == "d4:9c:53:13:b4:b2"
+    assert candidate["source_mac_count"] == 1
     assert candidate["next_hop_ip"] == "10.0.0.1"
     assert candidate["next_hop_mac"] == "a8:f9:4b:2e:02:80"
     assert candidate["remote_destination_count"] == 3
     assert candidate["flow_count"] == 3
     assert candidate["bytes"] == 6000
     assert candidate["relation"] == "l3_next_hop"
+    assert "stable_ethernet_source_mac_for_local_host" in candidate["evidence"]
 
 
 def test_destination_mac_without_strong_identity_is_not_promoted_to_gateway():
@@ -131,3 +135,43 @@ def test_ambiguous_strong_mac_mapping_is_retained_as_ambiguity_not_gateway():
     result = derive_next_hop_evidence(document)
     assert result["candidate_count"] == 0
     assert result["ambiguous"][0]["candidate_ips"] == ["10.0.0.1", "10.0.0.254"]
+
+
+def test_multiple_source_macs_for_same_source_ip_do_not_claim_stable_source_identity():
+    document = {
+        "identity_observations": {
+            "links": [
+                {
+                    "ip": "10.0.0.1",
+                    "mac": "a8:f9:4b:2e:02:80",
+                    "confidence": "high",
+                    "evidence": [{"type": "arp_reply_sender", "count": 2}],
+                }
+            ]
+        },
+        "directional_flows": [
+            {
+                "src_ip": "10.0.18.229",
+                "src_mac": "00:11:22:33:44:55",
+                "dst_ip": "20.201.1.37",
+                "dst_mac": "a8:f9:4b:2e:02:80",
+                "packets": 10,
+                "bytes": 1000,
+            },
+            {
+                "src_ip": "10.0.18.229",
+                "src_mac": "66:77:88:99:aa:bb",
+                "dst_ip": "31.135.14.238",
+                "dst_mac": "a8:f9:4b:2e:02:80",
+                "packets": 10,
+                "bytes": 1000,
+            },
+        ],
+    }
+
+    result = derive_next_hop_evidence(document)
+    assert result["candidate_count"] == 1
+    candidate = result["candidates"][0]
+    assert candidate["source_mac"] is None
+    assert candidate["source_mac_count"] == 2
+    assert "stable_ethernet_source_mac_for_local_host" not in candidate["evidence"]

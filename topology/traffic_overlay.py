@@ -1,9 +1,9 @@
-"""Milestone-12 safety layer for an explicitly selected traffic overlay.
+"""Milestone-12 safety/enrichment layer for a selected traffic overlay.
 
-The legacy builder still materializes the retained communications graph so old
-exports remain compatible. This decorator adds the missing semantic guardrail:
-before UI/correlation uses that graph, it determines whether the audit inventory
-and selected PCAP plausibly describe the same observation domain.
+Legacy code still materializes retained communications for compatibility. This
+module adds the semantics that raw communication lacks: observation-domain
+compatibility, conservative PCAP↔inventory identity, endpoint state and strong
+CDP/LLDP/MNDP discovery identity.
 """
 
 from __future__ import annotations
@@ -18,6 +18,18 @@ from traffic_analysis.domain import assess_observation_domain
 
 class TrafficOverlaySourceError(RuntimeError):
     pass
+
+
+def _merge_unique(current: list[Any], incoming: list[Any]) -> list[Any]:
+    result = list(current)
+    for item in incoming:
+        if item not in result:
+            result.append(item)
+    return result
+
+
+def _bare(value: Any) -> str:
+    return str(value or "").split("/", 1)[0].strip()
 
 
 def _load_document(services, job_id: str) -> dict[str, Any]:
@@ -86,14 +98,10 @@ def _correlation_summary(
         )
     elif exact_ips or exact_macs:
         result_status = "matched"
-        headline = (
-            f"Есть прямые identity совпадения: MAC={len(exact_macs)}, IP={len(exact_ips)}."
-        )
+        headline = f"Есть прямые identity совпадения: MAC={len(exact_macs)}, IP={len(exact_ips)}."
     elif status == "compatible":
         result_status = "compatible_without_exact_identity"
-        headline = (
-            "PCAP совместим со scope аудита, но точных inventory identity совпадений пока нет."
-        )
+        headline = "PCAP совместим со scope аудита, но точных inventory identity совпадений пока нет."
     elif status == "partial":
         result_status = "partial"
         headline = "Источники частично совместимы; автоматические merge должны оставаться консервативными."
@@ -116,6 +124,127 @@ def _correlation_summary(
     }
 
 
+def _aliases(topology: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for node in topology.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        values = [node.get("mac"), node.get("label")]
+        values.extend(node.get("addresses") or [])
+        values.extend(node.get("names") or [])
+        for value in values:
+            key = _bare(value).lower()
+            if key:
+                result.setdefault(key, node)
+    return result
+
+
+def _annotate_endpoint_states(topology: dict[str, Any], document: dict[str, Any]) -> None:
+    state_by_endpoint = {
+        str(item.get("endpoint")): str(item.get("state"))
+        for item in document.get("endpoint_evidence") or []
+        if isinstance(item, dict) and item.get("endpoint") and item.get("state")
+    }
+    candidate_by_address: dict[str, dict[str, Any]] = {}
+    candidate_by_mac: dict[str, dict[str, Any]] = {}
+    for candidate in (document.get("identity_resolution") or {}).get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        for address in candidate.get("addresses") or []:
+            candidate_by_address[_bare(address)] = candidate
+        if candidate.get("mac"):
+            candidate_by_mac[str(candidate["mac"]).lower()] = candidate
+
+    for node in topology.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        addresses = [_bare(value) for value in node.get("addresses") or [] if _bare(value)]
+        states = [state_by_endpoint[address] for address in addresses if address in state_by_endpoint]
+        if states:
+            priority = ["confirmed_responder", "observed_sender", "external_peer", "observed_peer", "probed_target"]
+            node["pcap_state"] = next((state for state in priority if state in states), states[0])
+
+        candidate = None
+        for address in addresses:
+            if address in candidate_by_address:
+                candidate = candidate_by_address[address]
+                break
+        if candidate is None and node.get("mac"):
+            candidate = candidate_by_mac.get(str(node.get("mac")).lower())
+        if candidate is not None:
+            node["pcap_local_identity"] = True
+            node["pcap_identity_status"] = candidate.get("status")
+            node["pcap_identity_confidence"] = candidate.get("confidence")
+            node["provenance"] = _merge_unique(node.get("provenance") or [], ["pcap-identity"])
+
+
+def _enrich_discovery_devices(topology: dict[str, Any], document: dict[str, Any], job_id: str) -> int:
+    discovery = document.get("discovery_evidence") or {}
+    devices = discovery.get("devices") or []
+    if not isinstance(devices, list):
+        return 0
+
+    aliases = _aliases(topology)
+    added = 0
+    for index, device in enumerate(devices, start=1):
+        if not isinstance(device, dict):
+            continue
+        identifiers: list[str] = []
+        if device.get("source_mac"):
+            identifiers.append(str(device["source_mac"]).lower())
+        identifiers.extend(_bare(value).lower() for value in device.get("addresses") or [] if _bare(value))
+        identifiers.extend(str(value).strip().lower() for value in device.get("names") or [] if str(value).strip())
+        node = next((aliases.get(value) for value in identifiers if aliases.get(value)), None)
+
+        protocol = str(device.get("protocol") or "discovery").lower()
+        names = [str(value) for value in device.get("names") or [] if value]
+        addresses = [_bare(value) for value in device.get("addresses") or [] if _bare(value)]
+        label = (
+            (names[0] if names else None)
+            or (addresses[0] if addresses else None)
+            or device.get("source_mac")
+            or f"{protocol.upper()} device"
+        )
+        if node is None:
+            node = {
+                "id": f"pcap-device:{job_id[:8]}:{protocol}:{index}",
+                "kind": "network-device",
+                "label": label,
+                "roles": [],
+                "addresses": [],
+                "names": [],
+                "provenance": [],
+                "confidence": "confirmed",
+                "pcap_only": True,
+            }
+            topology.setdefault("nodes", []).append(node)
+            added += 1
+
+        node["kind"] = "network-device"
+        node["label"] = names[0] if names else node.get("label") or label
+        node["roles"] = _merge_unique(
+            node.get("roles") or [],
+            ["network-device", *[str(role) for role in device.get("roles") or []]],
+        )
+        node["addresses"] = _merge_unique(node.get("addresses") or [], addresses)
+        node["names"] = _merge_unique(node.get("names") or [], names)
+        node["provenance"] = _merge_unique(node.get("provenance") or [], [protocol, "pcap-discovery"])
+        node["confidence"] = "confirmed"
+        node["pcap_local_identity"] = True
+        node["pcap_discovery"] = True
+        if device.get("source_mac"):
+            node["mac"] = str(device["source_mac"]).lower()
+        for key in ("platform", "software", "port_id", "port_description", "native_vlan"):
+            if device.get(key) not in {None, ""}:
+                node[key] = device.get(key)
+
+        for value in [node.get("mac"), node.get("label"), *node.get("addresses", []), *node.get("names", [])]:
+            alias = _bare(value).lower()
+            if alias:
+                aliases[alias] = node
+    return added
+
+
 def decorate_traffic_overlay(
     services,
     audit_id: str,
@@ -123,7 +252,7 @@ def decorate_traffic_overlay(
     *,
     traffic_analysis_job_id: str | None,
 ) -> dict[str, Any]:
-    """Attach domain/correlation semantics before presentation projections."""
+    """Attach compatibility/correlation and enrich strong PCAP identity."""
     if not traffic_analysis_job_id or not topology.get("overlay"):
         return topology
 
@@ -146,6 +275,13 @@ def decorate_traffic_overlay(
         document=document,
     )
 
+    _annotate_endpoint_states(topology, document)
+    discovery_nodes_added = _enrich_discovery_devices(
+        topology,
+        document,
+        traffic_analysis_job_id,
+    )
+
     overlay = dict(topology.get("overlay") or {})
     overlay["compatibility"] = compatibility
     overlay["correlation"] = correlation
@@ -160,6 +296,7 @@ def decorate_traffic_overlay(
         "cdp_devices": len(((document.get("discovery_evidence") or {}).get("cdp") or {}).get("devices") or []),
         "lldp_devices": len(((document.get("discovery_evidence") or {}).get("lldp") or {}).get("devices") or []),
         "mndp_devices": len(((document.get("discovery_evidence") or {}).get("mndp") or {}).get("devices") or []),
+        "topology_nodes_added": discovery_nodes_added,
     }
     topology["overlay"] = overlay
 

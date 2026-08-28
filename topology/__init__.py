@@ -17,11 +17,13 @@ from topology.snmp_role_guard import guard_snmp_router_roles
 from topology.source_health import decorate_source_health
 from topology.ssh_management import decorate_global_ssh_management, decorate_ssh_management
 from topology.traffic_overlay import decorate_traffic_overlay
+from topology.traffic_presentation import decorate_traffic_presentation
 from topology.upstream import decorate_global_upstream_topology, decorate_upstream_topology
 
 
 def _decorate_operator_view(topology):
     topology = decorate_presentation(topology)
+    topology = decorate_traffic_presentation(topology)
     return decorate_completeness(topology)
 
 

@@ -5,8 +5,9 @@ never selected by default. Absence of an optional provider degrades
 capability, not installer success after the base set.
 
 Kiosk packages are an optional local-display stack (Cage or xinit plus
-Chromium, plus VMware Xorg drivers), not a full desktop. They are not
-required on headless servers.
+Chromium and generic Xorg input support), not a full desktop. Hypervisor guest
+integration packages are intentionally not part of this generic stack: they
+are deployment-specific and must never make a normal appliance install fail.
 """
 
 from __future__ import annotations
@@ -173,20 +174,10 @@ _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
         "rhel": ("chromium",),
         "suse": ("chromium",),
     },
-    "xserver-video-vmware": {
-        "debian": ("xserver-xorg-video-vmware",),
-        "rhel": ("xorg-x11-drv-vmware",),
-        "suse": ("xf86-video-vmware",),
-    },
     "xserver-input": {
         "debian": ("xserver-xorg-input-all",),
         "rhel": ("xorg-x11-drivers",),
         "suse": ("xorg-x11-driver-input",),
-    },
-    "open-vm-tools": {
-        "debian": ("open-vm-tools",),
-        "rhel": ("open-vm-tools",),
-        "suse": ("open-vm-tools",),
     },
 }
 

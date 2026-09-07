@@ -1,9 +1,12 @@
 # optional local operator display (not a full desktop)
+# generic non-Pi fallback stack
 cage
 xserver-xorg
 xinit
 openbox
 chromium
-xserver-xorg-video-vmware
 xserver-xorg-input-all
-open-vm-tools
+
+# Raspberry Pi system install intentionally selects only:
+# cage
+# chromium

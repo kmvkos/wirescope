@@ -2,22 +2,27 @@
 
 [Русский](README.md) · **English**
 
-WireScope is a self-contained Linux network auditor. It can run on a dedicated PC, laptop, server, virtual machine, or ARM64 device and be used as a portable appliance for inspecting an unfamiliar network segment.
+WireScope is a self-contained Linux network auditor. It can run on a dedicated PC, laptop, server, virtual machine, or ARM64 device, including Raspberry Pi, and be used as a portable appliance for inspecting an unfamiliar network segment.
 
-WireScope observes the network passively first. The operator then explicitly confirms the allowed active scope. The system builds inventory, runs active discovery and protocol audits, produces findings, analyzes retained PCAP, builds topology, and can correlate persisted results from different sources. Reachability from the host is never treated as scanning authorization by itself.
+WireScope observes the network passively first. Active checks run only after the operator explicitly confirms the allowed scope. Reachability from the host is never treated as scanning authorization by itself.
 
-Supported targets include Debian/Ubuntu, Fedora/RHEL/Rocky, and openSUSE on `amd64` and `arm64`. Raspberry Pi is one possible hardware platform, not a requirement.
+Supported platforms:
 
-## Workflow
+- Debian / Ubuntu / Raspberry Pi OS;
+- Fedora / RHEL / Rocky;
+- openSUSE;
+- `amd64` and `arm64`.
+
+## What WireScope does
+
+Main workflow:
 
 ```text
 connect to network
         ↓
-host / interface state
-        ↓
 passive observation
         ↓
-operator-confirmed active scope
+confirm active scope
         ↓
 Discovery / Standard / Deep
         ↓
@@ -28,132 +33,72 @@ protocol audits
 findings + evidence
         ↓
 Audit Report
+```
 
-separate retained PCAP
+PCAP workflow:
+
+```text
+retained or imported PCAP
         ↓
 Traffic Analysis
         ↓
-optional: Network Topology overlay / Correlated Assessment
+Network Topology
+        ↓
+Correlated Assessment
 ```
 
-A separate **Listening** mode records PCAP from a selected interface with an optional BPF/tcpdump filter, duration, and size limit.
+### Passive discovery
 
-## Main capabilities
-
-### Passive analysis
-
-`dumpcap` performs bounded capture and `tshark` decodes the retained data. WireScope extracts Ethernet/MAC, VLAN/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS, and SSDP observations.
-
-Observations remain separate from assumptions: ARP does not prove a subnet mask, and untagged traffic never receives an invented VLAN ID.
+`dumpcap` performs bounded capture and `tshark` decodes the PCAP. WireScope extracts Ethernet/MAC, VLAN/QinQ, ARP, DHCPv4/v6, LLDP, CDP, STP, IPv6 RA/ND, mDNS, LLMNR, NBNS, and SSDP observations.
 
 ### Active discovery
 
-Nmap runs only inside operator-confirmed scope. `discovery`, `standard`, and `deep` profiles are declared in `config/active_profiles.json`; arbitrary Nmap command lines are not accepted through the API.
+Nmap runs only inside operator-confirmed scope. `discovery`, `standard`, and `deep` profiles are available. Arbitrary Nmap command lines are not accepted through the API.
 
-### Inventory
+### Inventory, protocol audits, and findings
 
-Passive and active observations converge into normalized inventory. Identity correlation is conservative: MAC/IP are evidence, while hostname alone is not enough to merge assets. Conflicts remain explicit as `identity_conflict`.
+Passive and active observations converge into normalized inventory. After discovery, WireScope runs only read-only/diagnostic checks appropriate for discovered services: SSH, TLS, HTTP/HTTPS, SMB, DNS, SNMP, and LDAP.
 
-Assets receive a confidence-rated device-class hint (`server-like`, `workstation-like`, `network-device-like`, `printer-like`, `iot-like`, `unknown`). This is an inventory hint, not a finding.
-
-### Protocol audits and findings
-
-After discovery, WireScope starts only read-only/diagnostic modules appropriate for discovered services: SSH, TLS, HTTP/HTTPS, SMB, DNS, SNMP, and LDAP.
-
-Protocol modules persist observations. A separate rule engine produces findings over normalized facts. A finding contains severity, confidence, asset/service references, rationale, recommendation, and evidence references.
+Protocol modules persist observations. A separate rule engine produces findings with severity, confidence, rationale, recommendation, and evidence references.
 
 ### Audit Report
 
-Audit Report is the source-of-truth for the audit itself:
+Audit Report is the source of truth for the audit itself:
 
 - inventory;
 - discovered services;
 - protocol-audit results;
 - findings;
-- rationale/recommendations;
+- rationale and recommendations;
 - audit evidence.
 
-Self-contained HTML, canonical `audit-report` v1 JSON, and Markdown are available. Reports are rendered from persisted data without re-scanning.
+Self-contained HTML, canonical `audit-report` v1 JSON, and Markdown are available.
 
-### PCAP Traffic Analysis
+### Traffic Analysis
 
-Retained PCAP is analyzed by a separate durable job without starting a new capture or contacting the network.
+Traffic Analysis works on already-retained PCAP and does not contact the network. It reports facts from the selected capture window: volume/rates, top talkers, communications graph, TCP health, DNS latency/errors, ARP/DHCP/ICMP diagnostics, broadcast/multicast contributors, and protocol metadata.
 
-Traffic Analysis owns **what was observed during a specific capture window**:
+### Manual PCAP import — v1.4
 
-- duration/frames/bytes/rates;
-- top talkers and communications graph;
-- TCP health;
-- DNS latency/errors;
-- ARP/DHCP/ICMP diagnostics;
-- broadcast/multicast contributors;
-- TLS/HTTP/QUIC/SMB metadata without payload decryption;
-- ACK RTT summaries;
-- comparison of retained analyses.
+External `.pcap`, `.pcapng`, and gzip-wrapped captures can be uploaded through the Web UI/API. Import is offline: WireScope does not start packet capture, discovery, or protocol probes, and addresses observed only in imported traffic never expand active scope.
 
-The canonical result is `traffic-analysis` JSON. The latest PCAP is never silently mixed into topology or other results.
+After format, size, and SHA-256 validation, an imported capture becomes a normal persisted `packet_capture`. The operator can then explicitly start Traffic Analysis and, if required, Correlated Assessment.
 
 ### Network Topology
 
-WireScope builds explainable topology from persisted evidence. Structural, L2, L3, Traffic, All Evidence, VLAN focus, and historical compare views are available.
+Topology is built from persisted evidence: inventory, ARP/ND, routes, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, an explicitly selected Traffic Analysis, and optional SNMP/SSH enrichment.
 
-Sources include inventory, ARP/ND, routes, DHCP, LLDP/CDP, STP, VLAN/QinQ, active discovery, an explicitly selected Traffic Analysis, and optional read-only SNMP/SSH enrichment.
+When evidence is incomplete, WireScope reports `sufficient / partial / missing` instead of inventing a gateway, physical link, or VLAN.
 
-`coverage` / claimability reports `sufficient / partial / missing`. When evidence is insufficient, WireScope reports the limitation instead of guessing a gateway, physical link, VLAN, or Wi-Fi attachment.
+### Correlated Assessment
 
-Management-learned topology never expands active scope.
+Correlated Assessment compares an already-persisted audit with an explicitly selected Traffic Analysis and topology. It reports cross-source relationships and evidence gaps rather than duplicating Audit Report or Traffic Analysis.
 
-See [docs/en/TOPOLOGY_MODEL.md](docs/en/TOPOLOGY_MODEL.md).
+For backward compatibility, internal identifiers remain `global_analysis`, `global-analysis`, and `/global-analysis`.
 
-### Correlated Assessment — v1.3
+## Architecture and privileges
 
-**Correlated Assessment** (Russian UI: **«Корреляция результатов»**) compares an already-persisted audit with one explicitly selected Traffic Analysis and topology.
-
-It shows cross-source relationships only, for example:
-
-- inventory assets exact-matched to traffic;
-- discovered service ports observed in the selected capture;
-- findings attached to assets/services visible in traffic;
-- traffic endpoints not matched to inventory;
-- exact-correlated internal assets communicating with globally routable endpoints;
-- gateway/DHCP/DNS observations that agree or diverge across independent sources.
-
-It is **not a second Audit Report and not a second Traffic Analysis**. Full source reports are not duplicated; a source fact appears only when required to explain a relationship.
-
-The feature is fully offline: no scanner is started, PCAP is not re-read, and no new network I/O occurs.
-
-For backward compatibility, internal job/schema/API identifiers remain `global_analysis`, `global-analysis`, and `/global-analysis`.
-
-See [docs/en/GLOBAL_ANALYSIS_MODEL.md](docs/en/GLOBAL_ANALYSIS_MODEL.md).
-
-## Web/kiosk and operations
-
-The GUI exposes the durable pipeline and persisted audits. Auditors can use diagnostics, operational audit log, retention preview/cleanup, job recovery, and backup/restore. Viewers can read permitted persisted results without starting mutating jobs.
-
-Key runtime endpoints:
-
-```text
-GET /api/v1/health
-GET /api/v1/ready
-GET /api/v1/capabilities
-GET /api/v1/diagnostics
-```
-
-A normal appliance install listens on `0.0.0.0:8000`; the local kiosk opens `http://127.0.0.1:8000/`. Firewall, loopback-only bind, reverse proxy, and TLS remain deployment controls.
-
-## Recovery and lifecycle
-
-If the worker restarts during a job, the running job becomes `interrupted` and stale resource locks are released. Explicit retry creates a new durable job and never rewrites history.
-
-Credentialed `snmp_topology` and `ssh_topology` jobs never reuse consume-once credentials. Retention is conservative: raw evidence is removed only through explicit preview/confirm cleanup.
-
-SQLite + evidence backup/restore is part of the appliance CLI.
-
-See [docs/en/OPERATIONS.md](docs/en/OPERATIONS.md).
-
-## Architecture
-
-WireScope is a modular monolith. API and worker run as separate processes over the same local state model.
+WireScope is a modular monolith. API and worker run as separate unprivileged processes over SQLite + evidence storage.
 
 ```text
 browser / kiosk
@@ -172,30 +117,18 @@ SQLite + evidence store
       ▲
       │
 worker
-      ├── passive / capture
-      ├── active discovery
-      ├── protocol audits
-      ├── traffic analysis
-      ├── SNMP/SSH topology enrichment
-      ├── correlated assessment
-      └── findings / reports
 ```
 
-`wirescope-api` and `wirescope-worker` run unprivileged. Packet-capture privileges are limited to `dumpcap`. External commands are constructed as argv and do not use `shell=True`.
+Raw packet-capture privileges are limited to `/usr/bin/dumpcap` via `cap_net_admin,cap_net_raw`. API and worker never run as root.
 
-See [docs/en/ARCHITECTURE.md](docs/en/ARCHITECTURE.md).
+See [docs/en/ARCHITECTURE.md](docs/en/ARCHITECTURE.md) and [docs/en/SECURITY_MODEL.md](docs/en/SECURITY_MODEL.md).
 
 ## Quick installation
 
-The repository is private, so GitHub SSH/token access is required.
+The repository is public. For a normal system installation, use `/opt/wirescope`.
 
 ```bash
-git clone git@github.com:kmvkos/wirescope.git
-cd wirescope
-
-# Switch to the intended checkpoint/tag for reproducible deployment.
-
-cd ..
+git clone https://github.com/kmvkos/wirescope.git
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
 
@@ -205,6 +138,8 @@ sudo ./packaging/install.sh \
   --enable-kiosk
 ```
 
+> System installs from `/home/...` are intentionally rejected by the installer because generated systemd units use `ProtectHome=true`. Move the checkout to `/opt/wirescope` first.
+
 Main paths:
 
 ```text
@@ -213,11 +148,28 @@ Main paths:
 /var/lib/wirescope   SQLite, runtime, evidence, backups
 ```
 
+After installation:
+
+```bash
+systemctl is-active wirescope-api wirescope-worker
+curl -sS http://127.0.0.1:8000/api/v1/health
+curl -sS http://127.0.0.1:8000/api/v1/ready
+sudo cat /etc/wirescope/initial-admin.txt
+```
+
+The default username is `auditor`.
+
 See [docs/en/INSTALLATION.md](docs/en/INSTALLATION.md).
+
+## Kiosk
+
+`--with-kiosk --enable-kiosk` installs a minimal local display stack with Chromium and Cage or Xorg/xinit. A full desktop environment is not required.
+
+The kiosk opens `http://127.0.0.1:8000/` on `tty1`. API and worker remain independent of Chromium and keep running if the kiosk restarts.
 
 ## Development and CI
 
-Python 3.11+ is required.
+Python 3.11+:
 
 ```bash
 python3 -m venv .venv
@@ -226,14 +178,21 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-GitHub Actions runs compileall, the default pytest suite, browser regression, JavaScript syntax checks for feature UI, wheel build, and an installed-wheel smoke test outside the source tree.
+GitHub Actions runs compileall, the default pytest suite, browser regression, JavaScript syntax checks, wheel build, and an installed-wheel smoke test.
 
-## Current stage
+## Current release line
 
-**v1.3 Correlated Assessment is complete and live-validated.**
+The current line is **v1.4 Manual PCAP Import**, built on completed v1.1 Traffic Analysis, v1.2 Network Topology, and v1.3 Correlated Assessment work.
 
-The next stage is a **Product Coherence Review** across Audit Report, Traffic Analysis, Network Topology, Correlated Assessment, and dashboard/operator views. The objective is to establish source-of-truth ownership for every information class and remove duplicated report blocks.
+Key documents:
 
-External PCAP import is considered a separate future feature and is intentionally not specified yet.
-
-See [docs/en/ROADMAP.md](docs/en/ROADMAP.md).
+| Document | Contents |
+| --- | --- |
+| [Installation](docs/en/INSTALLATION.md) | install, kiosk, bind, TLS, upgrade/rollback |
+| [API](docs/en/API.md) | `/api/v1`, jobs, evidence, topology, correlation |
+| [Architecture](docs/en/ARCHITECTURE.md) | modules, data flow, jobs, persistence |
+| [PCAP management](docs/en/PCAP_MANAGEMENT.md) | retained/imported capture lifecycle |
+| [Topology](docs/en/TOPOLOGY_MODEL.md) | evidence graph, coverage, L2/L3/VLAN |
+| [Correlated Assessment](docs/en/GLOBAL_ANALYSIS_MODEL.md) | cross-source correlation and evidence gaps |
+| [Operations](docs/en/OPERATIONS.md) | diagnostics, recovery, retention, backup/restore |
+| [Roadmap](docs/en/ROADMAP.md) | completed milestones and next work |

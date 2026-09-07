@@ -172,9 +172,9 @@ def test_kiosk_packages_are_minimal_not_a_desktop():
     assert "xinit" in selected.kiosk
     assert "xserver-xorg" in selected.kiosk
     assert "openbox" in selected.kiosk
-    assert "xserver-xorg-video-vmware" in selected.kiosk
     assert "xserver-xorg-input-all" in selected.kiosk
-    assert "open-vm-tools" in selected.kiosk
+    assert "xserver-xorg-video-vmware" not in selected.kiosk
+    assert "open-vm-tools" not in selected.kiosk
     assert "labwc" not in selected.kiosk
     combined = " ".join(selected.all_selected)
     assert "gnome" not in combined

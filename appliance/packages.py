@@ -15,10 +15,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 from typing import Mapping
 
 APT_LOCK_FRONTEND = "/var/lib/dpkg/lock-frontend"
 APT_LOCK_WAIT_SECONDS = 180
+RASPBERRY_PI_MODEL = Path("/proc/device-tree/model")
 
 APT_NONINTERACTIVE_OPTIONS: tuple[str, ...] = (
     "-y",
@@ -218,6 +220,16 @@ def _first_names(groups: tuple[tuple[str, ...], ...]) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def running_on_raspberry_pi(model_path: Path = RASPBERRY_PI_MODEL) -> bool:
+    try:
+        model = model_path.read_bytes().replace(b"\x00", b"").decode(
+            "utf-8", errors="ignore"
+        )
+    except OSError:
+        return False
+    return "raspberry pi" in model.lower()
+
+
 REQUIRED_PACKAGES: tuple[str, ...] = _first_names(_groups_for(_REQUIRED, "debian"))
 OPTIONAL_PROVIDERS: tuple[str, ...] = _first_names(_groups_for(_OPTIONAL, "debian"))
 KIOSK_PACKAGES: tuple[str, ...] = _first_names(_groups_for(_KIOSK, "debian"))
@@ -247,10 +259,12 @@ def select_packages(
     family: str = "debian",
     optional_providers: bool = True,
     kiosk: bool = False,
-    raspberry_pi: bool = False,
+    raspberry_pi: bool | None = None,
 ) -> PackageSelection:
     required_groups = _groups_for(_REQUIRED, family)
     optional_groups = _groups_for(_OPTIONAL, family) if optional_providers else ()
+    if raspberry_pi is None:
+        raspberry_pi = running_on_raspberry_pi()
     if kiosk:
         kiosk_table = _KIOSK_WAYLAND if raspberry_pi else _KIOSK
         kiosk_groups = _groups_for(kiosk_table, family)
@@ -276,7 +290,12 @@ def select_packages(
 
 def packages_by_family() -> dict[str, PackageSelection]:
     return {
-        family: select_packages(family=family, optional_providers=True, kiosk=True)
+        family: select_packages(
+            family=family,
+            optional_providers=True,
+            kiosk=True,
+            raspberry_pi=False,
+        )
         for family in ("debian", "rhel", "suse")
     }
 

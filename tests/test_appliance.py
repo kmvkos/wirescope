@@ -229,4 +229,5 @@ def test_install_sh_uses_checkout_directory_as_project_root():
     text = (root / "packaging" / "install.sh").read_text(encoding="utf-8")
     assert '--project-root "$here"' in text
     assert "dirname" in text
-    assert text.count("/opt/wirescope") <= 1
+    assert "system install from a home directory is unsupported" in text
+    assert "/opt/wirescope" in text

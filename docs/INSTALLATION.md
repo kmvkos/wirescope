@@ -2,9 +2,11 @@
 
 [English](en/INSTALLATION.md)
 
-WireScope можно поставить на отдельный Linux appliance, ВМ или существующий сервер. Поддерживаются Debian/Ubuntu, Fedora/RHEL/Rocky и openSUSE на `amd64` и `arm64`. Raspberry Pi подходит как аппаратная платформа, но не является обязательным.
+WireScope можно установить как отдельный Linux appliance, ВМ или приложение на существующий сервер. Поддерживаются Debian/Ubuntu/Raspberry Pi OS, Fedora/RHEL/Rocky и openSUSE на `amd64` и `arm64`.
 
-Установщик работает **из Git checkout**. Для system install рекомендуемый layout такой:
+## Рекомендуемый system layout
+
+System install запускается из Git checkout и использует:
 
 ```text
 /opt/wirescope                  Git checkout + .venv
@@ -13,58 +15,25 @@ WireScope можно поставить на отдельный Linux appliance,
 /etc/systemd/system             systemd units
 ```
 
-## Клонирование
+Системная установка из `/home/...` или `/root/...` намеренно блокируется. Сгенерированные systemd units используют `ProtectHome=true`, поэтому production checkout должен находиться вне home directory.
 
-Репозиторий приватный, поэтому нужен SSH key или GitHub token.
+## Чистая установка из публичного GitHub
 
 ```bash
-git clone git@github.com:kmvkos/wirescope.git
-cd wirescope
-git fetch --tags origin
-
-# Для воспроизводимой установки выберите нужный release/tag/checkpoint:
-# git checkout <release-or-checkpoint>
-
-cd ..
+git clone https://github.com/kmvkos/wirescope.git
 sudo mv wirescope /opt/wirescope
 cd /opt/wirescope
 ```
 
-Не используйте имя старой milestone-ветки, скопированное из исторической инструкции. Для production-like deployment лучше фиксировать конкретный release/tag/checkpoint и записывать его SHA.
+Не нужно делать `git checkout milestone-*` или выбирать внутреннюю development-ветку из старых инструкций. Обычный `git clone` должен давать текущую публичную линию проекта.
 
-Клон лучше делать без `sudo`: иначе Git использует SSH-конфигурацию root. Checkout выполняется до переноса в `/opt`, чтобы не создавать лишних проблем с ownership и `safe.directory`.
-
-## Базовая system install
+### Базовая установка
 
 ```bash
 sudo ./packaging/install.sh --generate-admin-password
 ```
 
-Обычная appliance-установка слушает **`0.0.0.0:8000`**. Это намеренная модель WireScope: UI должен быть доступен через любой настроенный интерфейс устройства — Ethernet, Wi‑Fi и т.д.
-
-Локальный браузер при этом может открывать:
-
-```text
-http://127.0.0.1:8000/
-```
-
-а другой компьютер — адрес конкретного интерфейса:
-
-```text
-http://<ip-wirescope>:8000/
-```
-
-Если в конкретном развёртывании нужен только loopback, это задаётся явно:
-
-```bash
-sudo ./packaging/install.sh \
-  --generate-admin-password \
-  --bind-host 127.0.0.1
-```
-
-Firewall, TLS и reverse proxy остаются доступными вариантами ужесточения доступа, но не являются обязательным условием работы WireScope.
-
-## Локальный kiosk
+### Appliance с локальным kiosk
 
 ```bash
 sudo ./packaging/install.sh \
@@ -73,63 +42,40 @@ sudo ./packaging/install.sh \
   --enable-kiosk
 ```
 
-`--with-kiosk` ставит минимальный display stack: Chromium и Cage либо Xorg/xinit. Полный GNOME/KDE/XFCE не требуется. На VMware используется Xorg path.
+`--with-kiosk` устанавливает минимальный display stack: Chromium и Cage либо Xorg/xinit. GNOME/KDE/XFCE не требуются. На Raspberry Pi OS дополнительный desktop environment устанавливать не нужно.
 
-После boot системный kiosk занимает `tty1` и открывает `http://127.0.0.1:8000/`. Перезапуск Chromium не останавливает API, worker или выполняющийся audit.
+Обычная appliance-установка слушает `0.0.0.0:8000`. Локальный kiosk открывает `http://127.0.0.1:8000/`.
 
-## TLS / reverse proxy — по необходимости
-
-Если WireScope работает в сети, где обычный HTTP нежелателен, можно оставить приложение на loopback и поставить Caddy/nginx:
-
-```text
-browser → HTTPS 443 → Caddy/nginx → 127.0.0.1:8000
-```
-
-Пример установки:
+Если нужен только loopback:
 
 ```bash
 sudo ./packaging/install.sh \
   --generate-admin-password \
-  --bind-host 127.0.0.1 \
-  --trust-proxy
+  --bind-host 127.0.0.1
 ```
-
-Шаблоны находятся в `packaging/proxy/` и при system install копируются в `/etc/wirescope/proxy/`. Installer не запускает Caddy/nginx автоматически и не меняет firewall хоста.
-
-Direct TLS тоже поддерживается:
-
-```bash
-sudo ./packaging/install.sh \
-  --generate-admin-password \
-  --bind-host 0.0.0.0 \
-  --bind-port 8443 \
-  --tls-cert /etc/wirescope/tls/cert.pem \
-  --tls-key /etc/wirescope/tls/key.pem
-```
-
-В environment/systemd попадают пути к сертификату и ключу, а не PEM-содержимое.
 
 ## Что делает installer
 
-`packaging/install.sh` вызывает appliance installer и идемпотентно выполняет:
+`packaging/install.sh` идемпотентно выполняет:
 
-1. определение distro family, package manager и архитектуры;
-2. установку обязательных пакетов и доступных optional providers;
-3. создание или переиспользование unprivileged account `wirescope`;
-4. создание data/runtime/evidence directories;
-5. настройку privileges только для `dumpcap`;
-6. создание `.venv` и установку pinned Python dependencies;
-7. запись `/etc/wirescope/wirescope.env`;
-8. установку systemd units для API/worker и optional kiosk;
-9. Alembic migrations;
-10. создание первого `auditor` без встроенного default password;
-11. запуск сервисов, если не указан `--no-start`.
+1. определяет distro family, package manager и архитектуру;
+2. устанавливает обязательные пакеты и доступные optional providers;
+3. создаёт или переиспользует непривилегированный account `wirescope`;
+4. создаёт data/runtime/evidence directories;
+5. обеспечивает наличие группы `wireshark` на чистых Debian/Raspberry Pi OS системах;
+6. настраивает packet-capture privileges только для `/usr/bin/dumpcap`;
+7. создаёт `.venv` и устанавливает Python dependencies;
+8. записывает `/etc/wirescope/wirescope.env`;
+9. устанавливает systemd units для API/worker и optional kiosk;
+10. применяет Alembic migrations;
+11. создаёт первого `auditor` без встроенного default password;
+12. запускает сервисы, если не указан `--no-start`.
 
-Nuclei и Nikto по умолчанию не устанавливаются. Optional topology management providers включают Net-SNMP tools и OpenSSH client; их отсутствие не делает базовый appliance `not_ready`.
+Generic kiosk dependency set не должен содержать VMware-only пакеты. VMware-specific Xorg integration не является зависимостью Raspberry Pi/ARM64 установки.
 
 ## Сервисы
 
-Обычный system install запускает:
+System install использует:
 
 ```text
 wirescope-api.service
@@ -137,9 +83,9 @@ wirescope-worker.service
 [wirescope-kiosk.service]
 ```
 
-API и worker работают от непривилегированного пользователя.
+API и worker работают без root.
 
-Packet capture privileges должны оставаться только у `dumpcap`:
+Packet capture privileges остаются только у `dumpcap`:
 
 ```text
 /usr/bin/dumpcap
@@ -148,8 +94,6 @@ owner: root
  mode: 0750
  capabilities: cap_net_admin,cap_net_raw=eip
 ```
-
-Python и uvicorn этих capabilities получать не должны.
 
 Проверка:
 
@@ -161,62 +105,83 @@ sudo -u wirescope /usr/bin/dumpcap -D
 
 ## Первый вход
 
-При `--generate-admin-password` installer создаёт защищённый файл с первоначальным паролем, обычно:
+При `--generate-admin-password` первоначальный пароль сохраняется в защищённый файл:
 
 ```text
 /etc/wirescope/initial-admin.txt
 ```
 
-Username по умолчанию — `auditor`. Постоянного встроенного пароля нет. После сохранения пароля в password manager файл лучше удалить.
+Username по умолчанию:
 
-Сброс пароля:
+```text
+auditor
+```
+
+Проверить пароль:
 
 ```bash
-/opt/wirescope/.venv/bin/python -m appliance set-password auditor
+sudo cat /etc/wirescope/initial-admin.txt
 ```
+
+После сохранения пароля в password manager файл можно удалить.
 
 ## Проверка после установки
 
 ```bash
-systemctl status wirescope-api wirescope-worker
+systemctl is-active wirescope-api
+systemctl is-active wirescope-worker
+systemctl is-active wirescope-kiosk 2>/dev/null || true
+
 curl -sS http://127.0.0.1:8000/api/v1/health
 curl -sS http://127.0.0.1:8000/api/v1/ready
 curl -sS http://127.0.0.1:8000/api/v1/capabilities
 ```
 
-С другого компьютера подставьте IP WireScope вместо `127.0.0.1`.
+Ожидается:
 
-`/health` показывает, что API жив. `/ready` проверяет SQLite, migrations, worker, `dumpcap` и `tshark`. Необязательные providers показываются через `/capabilities` и не делают весь appliance `not_ready`.
+- `/health` → API жив;
+- `/ready` → database, migrations, worker, `dumpcap`, `tshark` готовы;
+- `/capabilities` → доступность optional providers.
 
-## Дистрибутивы
+## Raspberry Pi OS
 
-### Debian / Ubuntu
+Рекомендуется 64-bit Raspberry Pi OS Lite. Полный desktop не требуется.
 
-Installer использует `apt`. В базовый набор входят Python, `iproute2`, `tshark`/Wireshark CLI, SQLite и `libcap2-bin`.
+Типовой appliance layout:
+
+- `wlan0` — management/Web UI;
+- `eth0` — audited network;
+- kiosk — локальный Chromium на дисплее устройства.
+
+WireScope не требует Raspberry Pi OS как единственную платформу, но Pi OS является удобной базой для Raspberry Pi hardware/display ecosystem.
+
+## TLS / reverse proxy
+
+Для loopback + reverse proxy:
 
 ```bash
-sudo ./packaging/install.sh --generate-admin-password
+sudo ./packaging/install.sh \
+  --generate-admin-password \
+  --bind-host 127.0.0.1 \
+  --trust-proxy
 ```
 
-### Fedora / RHEL / Rocky
+Шаблоны Caddy/nginx находятся в `packaging/proxy/` и при system install копируются в `/etc/wirescope/proxy/`. Installer не запускает reverse proxy и не меняет firewall автоматически.
 
-Используется `dnf`, либо `yum` fallback. `dumpcap`/`tshark` обычно приходят из `wireshark-cli`.
-
-```bash
-sudo dnf -y install python3
-sudo ./packaging/install.sh --generate-admin-password
-```
-
-### openSUSE / SLES
-
-Используется `zypper` и distro package для Wireshark CLI.
+Direct TLS:
 
 ```bash
-sudo zypper --non-interactive install python3
-sudo ./packaging/install.sh --generate-admin-password
+sudo ./packaging/install.sh \
+  --generate-admin-password \
+  --bind-host 0.0.0.0 \
+  --bind-port 8443 \
+  --tls-cert /etc/wirescope/tls/cert.pem \
+  --tls-key /etc/wirescope/tls/key.pem
 ```
 
 ## User install
+
+Для user-systemd установка может выполняться из home checkout:
 
 ```bash
 ./packaging/install.sh \
@@ -224,15 +189,13 @@ sudo ./packaging/install.sh --generate-admin-password
   --generate-admin-password
 ```
 
-User install использует:
+Используются:
 
 ```text
 ~/.local/share/wirescope
 ~/.config/wirescope
 ~/.config/systemd/user
 ```
-
-OS packages и первоначальная настройка `dumpcap` всё равно могут потребовать root один раз.
 
 ## Основные флаги
 
@@ -248,14 +211,14 @@ OS packages и первоначальная настройка `dumpcap` всё 
 --user-install            user systemd install
 --bind-host               bind API; appliance default 0.0.0.0
 --bind-port               порт API; default 8000
---trust-proxy             режим reverse proxy
+--trust-proxy             reverse-proxy mode
 --tls-cert / --tls-key    direct TLS
 --overwrite-env           переписать wirescope.env
 ```
 
-## Обновление установленной ВМ
+## Обновление
 
-Если checkout уже находится в `/opt/wirescope`, сначала убедитесь, что рабочее дерево чистое:
+Проверьте состояние checkout:
 
 ```bash
 cd /opt/wirescope
@@ -265,19 +228,16 @@ git rev-parse HEAD
 git fetch --tags origin
 ```
 
-Для воспроизводимого upgrade переключайтесь на конкретный проверенный ref:
-
-```bash
-git checkout <release-tag-or-checkpoint>
-git rev-parse HEAD
-```
-
-Перед существенным обновлением сделайте backup, затем используйте полный upgrade path:
+Перед существенным обновлением сделайте backup:
 
 ```bash
 sudo -u wirescope env WIRESCOPE_DATA_DIR=/var/lib/wirescope \
   /opt/wirescope/.venv/bin/python -m appliance backup
+```
 
+Затем:
+
+```bash
 sudo ./packaging/upgrade.sh --project-root /opt/wirescope
 ```
 
@@ -286,35 +246,18 @@ sudo ./packaging/upgrade.sh --project-root /opt/wirescope
 ```bash
 systemctl is-active wirescope-api wirescope-worker
 curl -sS http://127.0.0.1:8000/api/v1/ready
-curl -sS http://127.0.0.1:8000/api/v1/capabilities
 ```
 
-Не используйте `git pull` как замену выбору release/checkpoint, если appliance должен оставаться на воспроизводимом revision.
+Для production/reproducible deployment фиксируйте release/tag/commit SHA, а не случайный промежуточный development revision.
 
-Upgrade использует appliance default `0.0.0.0`, если явно не передан другой `--bind-host`.
+## Диагностика установки
 
-## Backup и rollback
+Если installer сообщает, что systemd service не стартовал, сначала смотрите реальную причину в journal:
 
-Перед существенным upgrade backup уже должен быть создан командой выше.
+```bash
+sudo journalctl -u wirescope-api.service -b -n 120 --no-pager
+sudo journalctl -u wirescope-worker.service -b -n 120 --no-pager
+sudo journalctl -u wirescope-kiosk.service -b -n 120 --no-pager
+```
 
-При rollback:
-
-1. остановить API и worker;
-2. восстановить backup, если менялась schema/data format;
-3. вернуть предыдущий проверенный Git revision;
-4. при необходимости переустановить package в `.venv`;
-5. запустить worker и API;
-6. проверить `/api/v1/ready`.
-
-## Restart / power loss
-
-SQLite работает в WAL mode с короткими транзакциями, evidence записывается атомарно.
-
-После worker restart:
-
-- `running` jobs становятся `interrupted` с `application_restart`;
-- `queued` остаются queued;
-- автоматического retry нет;
-- stale locks/temp files очищаются консервативно.
-
-Перезапуск браузера или kiosk не меняет состояние jobs.
+Не переносите уже созданный `.venv` между разными путями. Если checkout действительно был перемещён после создания venv, удалите только `.venv` и создайте его заново installer'ом.

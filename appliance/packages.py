@@ -4,10 +4,11 @@ Package names differ across apt, dnf/yum, and zypper. Nuclei and Nikto are
 never selected by default. Absence of an optional provider degrades
 capability, not installer success after the base set.
 
-Kiosk packages are an optional local-display stack (Cage or xinit plus
-Chromium and generic Xorg input support), not a full desktop. Hypervisor guest
-integration packages are intentionally not part of this generic stack: they
-are deployment-specific and must never make a normal appliance install fail.
+Kiosk packages are an optional local-display stack. Raspberry Pi uses the
+native KMS/Wayland path (Cage + Chromium) and intentionally does not install
+the Xorg fallback stack. Generic non-Pi installs keep Xorg/xinit as a fallback.
+Hypervisor guest integration packages are deployment-specific and must never
+make a normal appliance install fail.
 """
 
 from __future__ import annotations
@@ -148,12 +149,20 @@ _OPTIONAL: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
-_KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
+_KIOSK_WAYLAND: dict[str, dict[str, tuple[str, ...]]] = {
     "cage": {
         "debian": ("cage",),
         "rhel": ("cage",),
         "suse": ("cage",),
     },
+    "chromium": {
+        "debian": ("chromium", "chromium-browser"),
+        "rhel": ("chromium",),
+        "suse": ("chromium",),
+    },
+}
+
+_KIOSK_XORG_FALLBACK: dict[str, dict[str, tuple[str, ...]]] = {
     "xserver": {
         "debian": ("xserver-xorg",),
         "rhel": ("xorg-x11-server-Xorg",),
@@ -169,16 +178,16 @@ _KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
         "rhel": ("openbox",),
         "suse": ("openbox",),
     },
-    "chromium": {
-        "debian": ("chromium", "chromium-browser"),
-        "rhel": ("chromium",),
-        "suse": ("chromium",),
-    },
     "xserver-input": {
         "debian": ("xserver-xorg-input-all",),
         "rhel": ("xorg-x11-drivers",),
         "suse": ("xorg-x11-driver-input",),
     },
+}
+
+_KIOSK: dict[str, dict[str, tuple[str, ...]]] = {
+    **_KIOSK_WAYLAND,
+    **_KIOSK_XORG_FALLBACK,
 }
 
 KIOSK_PACKAGE_FALLBACKS: dict[str, tuple[str, ...]] = {
@@ -238,10 +247,15 @@ def select_packages(
     family: str = "debian",
     optional_providers: bool = True,
     kiosk: bool = False,
+    raspberry_pi: bool = False,
 ) -> PackageSelection:
     required_groups = _groups_for(_REQUIRED, family)
     optional_groups = _groups_for(_OPTIONAL, family) if optional_providers else ()
-    kiosk_groups = _groups_for(_KIOSK, family) if kiosk else ()
+    if kiosk:
+        kiosk_table = _KIOSK_WAYLAND if raspberry_pi else _KIOSK
+        kiosk_groups = _groups_for(kiosk_table, family)
+    else:
+        kiosk_groups = ()
     selection = PackageSelection(
         required=_first_names(required_groups),
         optional=_first_names(optional_groups),
